@@ -6,6 +6,7 @@ import { Topbar } from "@/components/Topbar";
 import { CategoryModal, type CategoryRecord } from "@/components/CategoryModal";
 import { apiFetch, type Page } from "@/lib/api";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
+import { relTime } from "@/lib/userUiShared";
 
 const Ic = ({ d, size = 16 }: { d: React.ReactNode | string; size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden="true" focusable="false">
@@ -81,7 +82,7 @@ function RowActions({ onEdit, onDelete, canEdit, canDelete, disabled = false, de
   );
 }
 
-function CategoryRow({ category, showTracking, canEdit, canDelete, onOpen, onEdit, onDelete, disabled = false, deleteBusy = false }: { category: CategoryRecord; showTracking: boolean; canEdit: boolean; canDelete: boolean; onOpen?: () => void; onEdit?: () => void; onDelete?: () => void; disabled?: boolean; deleteBusy?: boolean }) {
+function CategoryRow({ category, isChildrenView, childCount, trackingSummary, canEdit, canDelete, onOpen, onEdit, onDelete, disabled = false, deleteBusy = false }: { category: CategoryRecord; isChildrenView: boolean; childCount: number; trackingSummary: string; canEdit: boolean; canDelete: boolean; onOpen?: () => void; onEdit?: () => void; onDelete?: () => void; disabled?: boolean; deleteBusy?: boolean }) {
   const resolvedType = category.resolved_category_type ?? category.category_type;
   const resolvedTracking = category.resolved_tracking_type ?? category.tracking_type;
   const resolvedRate = category.resolved_depreciation_rate ?? category.default_depreciation_rate;
@@ -107,14 +108,20 @@ function CategoryRow({ category, showTracking, canEdit, canDelete, onOpen, onEdi
           {resolvedType !== category.category_type && <span className="muted-note mono">Raw: {formatLabel(category.category_type)}</span>}
         </div>
       </td>
-      {showTracking && (
+      {isChildrenView ? (
         <td>
           <div className="group-cell">
             <span className="chip">{formatLabel(resolvedTracking)}</span>
             {resolvedTracking !== category.tracking_type && <span className="muted-note mono">Raw: {formatLabel(category.tracking_type)}</span>}
           </div>
         </td>
+      ) : (
+        <>
+          <td className="mono">{childCount}</td>
+          <td><span className="chip">{trackingSummary}</span></td>
+        </>
       )}
+      {isChildrenView && <td>{category.parent_category_display ?? "Root category"}</td>}
       <td>
         <div className="login-cell">
           <div>{showDepreciation ? formatRate(resolvedRate) : "—"}</div>
@@ -124,10 +131,65 @@ function CategoryRow({ category, showTracking, canEdit, canDelete, onOpen, onEdi
         </div>
       </td>
       <td><StatusPill active={category.is_active} /></td>
+      <td className="col-login">
+        <div className="login-cell">
+          <div>{category.updated_at ? relTime(category.updated_at) : "Unknown"}</div>
+        </div>
+      </td>
       <td className="col-actions">
         <RowActions canEdit={canEdit} canDelete={canDelete} onEdit={onEdit} onDelete={onDelete} disabled={disabled} deleteBusy={deleteBusy} />
       </td>
     </tr>
+  );
+}
+
+function CategoryCard({ category, childCount, trackingSummary, canEdit, canDelete, pageBusy, deleteBusy, onOpen, onEdit, onDelete }: { category: CategoryRecord; childCount: number; trackingSummary: string; canEdit: boolean; canDelete: boolean; pageBusy: boolean; deleteBusy: boolean; onOpen?: () => void; onEdit: () => void; onDelete: () => void }) {
+  const resolvedType = category.resolved_category_type ?? category.category_type;
+  const resolvedTracking = category.resolved_tracking_type ?? category.tracking_type;
+  const resolvedRate = category.resolved_depreciation_rate ?? category.default_depreciation_rate;
+
+  return (
+    <div className="user-card" onClick={onOpen} style={onOpen ? { cursor: "pointer" } : undefined}>
+      <div className="user-card-head">
+        <div className="avatar" style={{ width: 44, height: 44, fontSize: 12, background: "linear-gradient(135deg, color-mix(in oklch, var(--primary) 82%, white), var(--primary))" }}>
+          {(category.name || "CA").split(" ").map(n => n[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "CA"}
+        </div>
+        <StatusPill active={category.is_active} />
+      </div>
+      <div className="user-card-name">{category.name}</div>
+      <div className="user-card-meta mono">{category.code}</div>
+      <div className="user-card-section">
+        <div className="eyebrow">Classification</div>
+        <div className="group-cell">
+          <span className="chip">{formatLabel(resolvedType)}</span>
+          {resolvedTracking ? <span className="chip">{formatLabel(resolvedTracking)}</span> : <span className="chip">{trackingSummary}</span>}
+        </div>
+      </div>
+      <div className="user-card-section">
+        <div className="eyebrow">Structure</div>
+        <div style={{ fontSize: 13, color: "var(--text-1)" }}>
+          {category.parent_category_display ?? `${childCount} direct subcategories`}
+        </div>
+      </div>
+      <div className="user-card-section">
+        <div className="eyebrow">Depreciation</div>
+        <div className="mono" style={{ fontSize: 13, color: "var(--text-1)" }}>{resolvedType === "FIXED_ASSET" ? formatRate(resolvedRate) : "-"}</div>
+      </div>
+      <div className="user-card-foot">
+        <div>
+          <div className="eyebrow">Updated</div>
+          <div className="user-card-last mono">{category.updated_at ? relTime(category.updated_at) : "Unknown"}</div>
+        </div>
+        <RowActions
+          canEdit={canEdit}
+          canDelete={canDelete}
+          disabled={pageBusy}
+          deleteBusy={deleteBusy}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -147,6 +209,7 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [density, setDensity] = useState<"compact" | "balanced" | "comfortable">("balanced");
+  const [mode, setMode] = useState<"table" | "grid">("table");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<CategoryRecord | null>(null);
   const [busyAction, setBusyAction] = useState<{ kind: "delete"; categoryId: number } | null>(null);
@@ -227,6 +290,34 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
     });
     return Array.from(values).sort();
   }, [categories]);
+
+  const childCountByCategory = useMemo(() => {
+    const counts = new Map<number, number>();
+    allCategories.forEach(category => {
+      if (category.parent_category != null) {
+        counts.set(category.parent_category, (counts.get(category.parent_category) ?? 0) + 1);
+      }
+    });
+    return counts;
+  }, [allCategories]);
+
+  const trackingSummaryByCategory = useMemo(() => {
+    const summary = new Map<number, string>();
+    allCategories
+      .filter(category => category.parent_category != null)
+      .forEach(category => {
+        const parentId = category.parent_category;
+        if (parentId == null) return;
+        const tracking = formatLabel(category.resolved_tracking_type ?? category.tracking_type, "Unassigned");
+        const existing = summary.get(parentId);
+        if (!existing) {
+          summary.set(parentId, tracking);
+        } else if (!existing.split(" / ").includes(tracking)) {
+          summary.set(parentId, `${existing} / ${tracking}`);
+        }
+      });
+    return summary;
+  }, [allCategories]);
 
   const openCreateModal = useCallback(() => {
     setEditingCategory(null);
@@ -372,6 +463,14 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
 
           <div className="filter-bar-right">
             <DensityToggle density={density} setDensity={setDensity} />
+            <div className="seg" title="View mode">
+              <button type="button" className={"seg-btn icon-only" + (mode === "table" ? " active" : "")} onClick={() => setMode("table")} title="Table">
+                <Ic d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" size={14} />
+              </button>
+              <button type="button" className={"seg-btn icon-only" + (mode === "grid" ? " active" : "")} onClick={() => setMode("grid")} title="Grid">
+                <Ic d={<><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></>} size={14} />
+              </button>
+            </div>
             {canManageCategories && (
               <button type="button" className="btn btn-sm btn-primary" onClick={openCreateModal} disabled={pageBusy || (isChildrenView && !parentCategory)}>
                 <Ic d="M12 5v14M5 12h14" size={14} />
@@ -381,6 +480,7 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
           </div>
         </div>
 
+        {mode === "table" ? (
         <div className="table-card">
           <div className="table-card-head">
             <div className="table-card-head-left">
@@ -406,16 +506,18 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
                     <th>Category</th>
                     <th>Code</th>
                     <th>Type</th>
-                    {showTrackingColumn && <th>Tracking</th>}
+                    {showTrackingColumn ? <th>Tracking</th> : <th>Subcategories</th>}
+                    {showTrackingColumn ? <th>Parent</th> : <th>Tracking Profile</th>}
                     <th>Depreciation</th>
                     <th>Status</th>
-                    <th style={{ textAlign: "right" }}>Actions</th>
+                    <th>Updated</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredCategories.length === 0 ? (
                     <tr>
-                      <td colSpan={showTrackingColumn ? 7 : 6}>
+                      <td colSpan={9}>
                         <div style={{ padding: "32px 12px", textAlign: "center", color: "var(--text-2)", fontSize: 13 }}>
                           {emptyMessage}
                         </div>
@@ -426,7 +528,9 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
                       <CategoryRow
                         key={category.id}
                         category={category}
-                        showTracking={showTrackingColumn}
+                        isChildrenView={isChildrenView}
+                        childCount={childCountByCategory.get(category.id) ?? 0}
+                        trackingSummary={trackingSummaryByCategory.get(category.id) ?? "No subcategories"}
                         canEdit={canManageCategories}
                         canDelete={canDeleteCategories}
                         onOpen={openCategory ? () => openCategory(category) : undefined}
@@ -449,6 +553,31 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
             </div>
           </div>
         </div>
+        ) : filteredCategories.length > 0 ? (
+          <div className="users-grid">
+            {filteredCategories.map(category => (
+              <CategoryCard
+                key={category.id}
+                category={category}
+                childCount={childCountByCategory.get(category.id) ?? 0}
+                trackingSummary={trackingSummaryByCategory.get(category.id) ?? "No subcategories"}
+                canEdit={canManageCategories}
+                canDelete={canDeleteCategories}
+                pageBusy={pageBusy}
+                deleteBusy={deleteBusyCategoryId === category.id}
+                onOpen={openCategory ? () => openCategory(category) : undefined}
+                onEdit={() => openEditModal(category)}
+                onDelete={() => handleDelete(category)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="table-card">
+            <div style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>
+              {emptyMessage}
+            </div>
+          </div>
+        )}
 
         <CategoryModal
           open={modalOpen}

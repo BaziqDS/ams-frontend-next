@@ -397,6 +397,96 @@ function ItemActions({
   );
 }
 
+function ItemCard({
+  item,
+  canEdit,
+  canDelete,
+  pageBusy,
+  deleteBusy,
+  onOpen,
+  onEdit,
+  onDelete,
+}: {
+  item: ItemRecord;
+  canEdit: boolean;
+  canDelete: boolean;
+  pageBusy: boolean;
+  deleteBusy: boolean;
+  onOpen: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const tone = itemStatusTone(item);
+  const instanceVisible = canShowInstances(item.tracking_type);
+  const quickLink = instanceVisible ? `/items/${item.id}/instances` : `/items/${item.id}/batches`;
+
+  return (
+    <div className="user-card" onClick={onOpen} style={{ cursor: "pointer" }}>
+      <div className="user-card-head">
+        <div className="avatar" style={{ width: 44, height: 44, fontSize: 12, background: "linear-gradient(135deg, color-mix(in oklch, var(--primary) 82%, white), var(--primary))" }}>
+          {(item.name || "IT").split(" ").map(n => n[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "IT"}
+        </div>
+        <StatusPill tone={tone} label={tone === "warning" ? "No Available Stock" : undefined} />
+      </div>
+      <div className="user-card-name">{item.name}</div>
+      <div className="user-card-meta mono">{item.code}</div>
+      <div className="user-card-eid mono">{item.acct_unit ?? "unit"}</div>
+      <div className="user-card-section">
+        <div className="eyebrow">Category</div>
+        <div className="group-cell">
+          <span className="chip">{item.category_display ?? "Uncategorized"}</span>
+          {item.category_type && <span className="muted-note mono">{formatItemLabel(item.category_type)}</span>}
+        </div>
+      </div>
+      <div className="user-card-section">
+        <div className="eyebrow">Tracking</div>
+        <div className="group-cell">
+          <span className="chip">{formatItemLabel(String(item.tracking_type ?? ""))}</span>
+          <Link className="btn btn-xs btn-ghost" href={instanceVisible ? `/items/${item.id}/instances` : `/items/${item.id}/batches`} onClick={event => event.stopPropagation()}>
+            {instanceVisible ? "Instances" : "Batches"}
+          </Link>
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 12 }}>
+        {[
+          ["Total", item.total_quantity],
+          ["Available", item.available_quantity],
+          ["Transit", item.in_transit_quantity],
+        ].map(([label, value]) => (
+          <div key={String(label)} style={{ border: "1px solid var(--hairline)", borderRadius: 8, padding: 8, background: "var(--surface-2)", textAlign: "center" }}>
+            <div className="eyebrow">{label}</div>
+            <div className="mono" style={{ color: "var(--text-1)", fontWeight: 700, marginTop: 3 }}>{formatQuantity(value as number | string | null | undefined)}</div>
+          </div>
+        ))}
+      </div>
+      <div className="user-card-foot">
+        <div>
+          <div className="eyebrow">Updated</div>
+          <div className="user-card-last mono">{formatItemDate(item.updated_at, "Unknown")}</div>
+        </div>
+        <div className="row-actions">
+          <button type="button" className="btn btn-xs btn-ghost row-action icon-only" onClick={event => { event.stopPropagation(); onOpen(); }} title="Open distribution" disabled={pageBusy}>
+            <Ic d="M9 18l6-6-6-6" size={13} />
+          </button>
+          <Link className="btn btn-xs btn-ghost row-action icon-only" href={quickLink} onClick={event => event.stopPropagation()} title={instanceVisible ? "View instances" : "View batches"}>
+            <Ic d={instanceVisible ? "M4 7h16M4 12h16M4 17h16" : "M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"} size={13} />
+          </Link>
+          {canEdit && (
+            <button type="button" className="btn btn-xs btn-ghost row-action icon-only" onClick={event => { event.stopPropagation(); onEdit(); }} title="Edit item" disabled={pageBusy}>
+              <Ic d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" size={13} />
+            </button>
+          )}
+          {canDelete && (
+            <button type="button" className="btn btn-xs btn-danger-ghost row-action icon-only" onClick={event => { event.stopPropagation(); onDelete(); }} title={deleteBusy ? "Deleting item" : "Delete item"} disabled={pageBusy}>
+              <Ic d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12h6l1-12" size={13} />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ItemListView() {
   const router = useRouter();
   const { isLoading: capsLoading } = useCapabilities();
@@ -413,6 +503,7 @@ export function ItemListView() {
   const [trackingFilter, setTrackingFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [density, setDensity] = useState<Density>("balanced");
+  const [mode, setMode] = useState<"table" | "grid">("table");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ItemRecord | null>(null);
   const [busyAction, setBusyAction] = useState<{ kind: "delete"; itemId: number } | null>(null);
@@ -594,26 +685,30 @@ export function ItemListView() {
               </label>
             </div>
 
-            <div className="chip-filter-group">
+            <div className="filter-select-group">
               <div className="chip-filter-label">Status</div>
-              <div className="chip-filter">
-                {[
-                  { k: "all", label: "All" },
-                  { k: "available", label: "Available" },
-                  { k: "out", label: "No stock" },
-                  { k: "active", label: "Active" },
-                  { k: "disabled", label: "Disabled" },
-                ].map(option => (
-                  <button key={option.k} type="button" className={"chip-filter-btn" + (statusFilter === option.k ? " active" : "")} onClick={() => setStatusFilter(option.k)}>
-                    {option.label}
-                  </button>
-                ))}
-              </div>
+              <label className="filter-select-wrap">
+                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} aria-label="Filter items by status">
+                  <option value="all">All statuses</option>
+                  <option value="available">Available</option>
+                  <option value="out">No stock</option>
+                  <option value="active">Active</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </label>
             </div>
           </div>
 
           <div className="filter-bar-right">
             <DensityToggle density={density} setDensity={setDensity} />
+            <div className="seg" title="View mode">
+              <button type="button" className={"seg-btn icon-only" + (mode === "table" ? " active" : "")} onClick={() => setMode("table")} title="Table">
+                <Ic d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" size={14} />
+              </button>
+              <button type="button" className={"seg-btn icon-only" + (mode === "grid" ? " active" : "")} onClick={() => setMode("grid")} title="Grid">
+                <Ic d={<><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></>} size={14} />
+              </button>
+            </div>
             {canManageItems && (
               <button type="button" className="btn btn-sm btn-primary" onClick={openCreateModal} disabled={pageBusy}>
                 <Ic d="M12 5v14M5 12h14" size={14} />
@@ -623,6 +718,7 @@ export function ItemListView() {
           </div>
         </div>
 
+        {mode === "table" ? (
         <div className="table-card">
           <div className="table-card-head">
             <div className="table-card-head-left">
@@ -651,7 +747,7 @@ export function ItemListView() {
                     <th>In Transit</th>
                     <th>Status</th>
                     <th>Updated</th>
-                    <th style={{ textAlign: "right" }}>Actions</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -715,6 +811,29 @@ export function ItemListView() {
             </div>
           </div>
         </div>
+        ) : filteredItems.length > 0 ? (
+          <div className="users-grid">
+            {filteredItems.map(item => (
+              <ItemCard
+                key={item.id}
+                item={item}
+                canEdit={canManageItems}
+                canDelete={canDeleteItems}
+                pageBusy={pageBusy}
+                deleteBusy={deleteBusyItemId === item.id}
+                onOpen={() => router.push(`/items/${item.id}`)}
+                onEdit={() => openEditModal(item)}
+                onDelete={() => handleDelete(item)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="table-card">
+            <div style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>
+              No items match the current filters.
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -882,7 +1001,7 @@ export function ItemDistributionView({ itemId }: { itemId: string }) {
                     <th>In Transit</th>
                     <th>Store Rows</th>
                     <th>Issued Targets</th>
-                    <th style={{ textAlign: "right" }}>Action</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>

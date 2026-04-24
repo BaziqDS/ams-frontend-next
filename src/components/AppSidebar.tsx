@@ -36,6 +36,13 @@ const LockIcon = ({ size = 12 }: { size?: number }) => (
   </svg>
 );
 
+const SidebarToggleIcon = ({ size = 16 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+    <rect x="4" y="5" width="16" height="14" rx="2" />
+    <path d="M10 5v14" />
+  </svg>
+);
+
 const NAV_ITEMS: NavGroup[] = [
   {
     group: "Overview",
@@ -98,11 +105,14 @@ export function AppSidebar() {
           <Image src="/ned_seal.webp" alt="NED" width={28} height={28} style={{ width: "100%", height: "100%", objectFit: "contain", padding: 3 }} />
         </div>
         {!collapsed && (
-          <div>
+          <div className="sb-brand-copy">
             <div className="sb-brand-title">NED University</div>
             <div className="sb-brand-sub">Asset Management</div>
           </div>
         )}
+        <button type="button" className="sb-brand-toggle" onClick={() => setCollapsed(!collapsed)} title={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
+          <SidebarToggleIcon size={18} />
+        </button>
       </div>
 
       {/* Nav */}
@@ -173,13 +183,6 @@ export function AppSidebar() {
         </button>
         {!collapsed && <div className="sb-ver"><span className="mono" style={{ fontSize: 10 }}>v4.1.0</span></div>}
       </div>
-
-      {/* Collapse toggle */}
-      <button type="button" className="sb-collapse" onClick={() => setCollapsed(!collapsed)} title={collapsed ? "Expand" : "Collapse"}>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-          {collapsed ? <path d="M9 18l6-6-6-6" /> : <path d="M15 18l-6-6 6-6" />}
-        </svg>
-      </button>
     </aside>
   );
 }

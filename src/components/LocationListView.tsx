@@ -482,7 +482,7 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
                     <th>Level</th>
                     <th>Status</th>
                     <th>Updated At</th>
-                    <th style={{ textAlign: "right" }}>Actions</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
