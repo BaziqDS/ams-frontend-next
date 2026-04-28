@@ -15,12 +15,13 @@ jobs:
     steps:
       - name: Stop frontend service
         run: |
-          try {
-          nssm stop AMSFrontend
-        } catch {
-          Write-Host "Service not running, continuing..."
-        }
-          Start-Sleep -Seconds 3
+          $svc = Get-Service -Name AMSFrontend -ErrorAction SilentlyContinue
+          if ($svc -and $svc.Status -eq 'Running') {
+            nssm stop AMSFrontend
+            Start-Sleep -Seconds 3
+          } else {
+            Write-Host "AMSFrontend is not running, skipping stop."
+          }
 
       - name: Checkout code
         uses: actions/checkout@v4
@@ -61,14 +62,16 @@ jobs:
             Write-Host "ERROR: Next CLI not found at $nextCli"
             exit 1
           }
-          
+
           # Stop if running
-          nssm stop AMSFrontend 2>$null
-          Start-Sleep -Seconds 3
-          
+          $svc = Get-Service -Name AMSFrontend -ErrorAction SilentlyContinue
+          if ($svc -and $svc.Status -eq 'Running') {
+            nssm stop AMSFrontend
+            Start-Sleep -Seconds 3
+          }
+
           # Remove existing service
-          $service = Get-Service -Name AMSFrontend -ErrorAction SilentlyContinue
-          if ($service) {
+          if ($svc) {
             nssm remove AMSFrontend confirm
             Start-Sleep -Seconds 2
           }
@@ -83,7 +86,7 @@ jobs:
           nssm set AMSFrontend AppRotateFiles 1
           nssm set AMSFrontend AppRotateBytes 10485760
           nssm set AMSFrontend Start SERVICE_AUTO_START
-          
+
           # Start
           nssm start AMSFrontend
           Write-Host "AMSFrontend started."
