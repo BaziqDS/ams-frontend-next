@@ -1,0 +1,119 @@
+name: Deploy to Production
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: powershell
+
+    steps:
+      - name: Stop frontend service
+        run: |
+          nssm stop AMSFrontend 2>$null
+          Start-Sleep -Seconds 3
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Create logs directory
+        run: |
+          if (-not (Test-Path "logs")) { New-Item -ItemType Directory -Path "logs" }
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create environment file
+        run: |
+          Set-Content -Path .env.local -Value "NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}"
+
+      - name: Build
+        run: npm run build
+
+      - name: Deploy frontend service
+        run: |
+          $appDir = (Resolve-Path ".").Path
+          $nodeExe = (Get-Command node).Source
+          $nodeDir = Split-Path -Parent $nodeExe
+          $nextCli = Join-Path $appDir "node_modules\next\dist\bin\next"
+
+          if (-not (Test-Path $nodeExe)) {
+            Write-Host "ERROR: node.exe could not be resolved from the workflow environment."
+            exit 1
+          }
+
+          if (-not (Test-Path $nextCli)) {
+            Write-Host "ERROR: Next CLI not found at $nextCli"
+            exit 1
+          }
+          
+          # Stop if running
+          nssm stop AMSFrontend 2>$null
+          Start-Sleep -Seconds 3
+          
+          # Remove existing service
+          $service = Get-Service -Name AMSFrontend -ErrorAction SilentlyContinue
+          if ($service) {
+            nssm remove AMSFrontend confirm
+            Start-Sleep -Seconds 2
+          }
+
+          Write-Host "Installing AMSFrontend service..."
+          nssm install AMSFrontend $nodeExe
+          nssm set AMSFrontend AppParameters "`"$nextCli`" start -p 3000"
+          nssm set AMSFrontend AppDirectory $appDir
+          nssm set AMSFrontend AppEnvironmentExtra "NODE_ENV=production`nPORT=3000`nPATH=$nodeDir;$env:PATH"
+          nssm set AMSFrontend AppStdout "$appDir\logs\frontend.log"
+          nssm set AMSFrontend AppStderr "$appDir\logs\frontend-error.log"
+          nssm set AMSFrontend AppRotateFiles 1
+          nssm set AMSFrontend AppRotateBytes 10485760
+          nssm set AMSFrontend Start SERVICE_AUTO_START
+          
+          # Start
+          nssm start AMSFrontend
+          Write-Host "AMSFrontend started."
+
+      - name: Verify frontend is running
+        run: |
+          $frontend = Get-Service -Name AMSFrontend -ErrorAction SilentlyContinue
+          if (-not $frontend) {
+            Write-Host "ERROR: AMSFrontend service does not exist."
+            exit 1
+          }
+
+          if ($frontend.Status -ne "Running") {
+            Write-Host "ERROR: AMSFrontend is not running. Status: $($frontend.Status)"
+            exit 1
+          }
+
+          $healthy = $false
+          for ($attempt = 1; $attempt -le 12; $attempt++) {
+            try {
+              $response = Invoke-WebRequest -Uri "http://127.0.0.1:3000/" -TimeoutSec 10
+              if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
+                Write-Host "AMSFrontend is serving traffic on attempt $attempt."
+                $healthy = $true
+                break
+              }
+            } catch {
+              Write-Host "Frontend health check attempt $attempt failed: $($_.Exception.Message)"
+            }
+
+            Start-Sleep -Seconds 5
+          }
+
+          if (-not $healthy) {
+            Write-Host "ERROR: AMSFrontend service is running but did not respond successfully on port 3000."
+            exit 1
+          }

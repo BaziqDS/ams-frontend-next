@@ -1,0 +1,1526 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>NED AMS — Detail pages</title>
+<link rel="stylesheet" href="globals.css" />
+<link rel="stylesheet" href="detail.css" />
+</head>
+<body>
+
+<!-- =========== APP SHELL =========== -->
+<div class="app-frame">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="sb-brand">
+      <div class="sb-brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style="padding:3px">
+          <circle cx="16" cy="16" r="13" fill="none" stroke="#2A2F3A" stroke-width="1.4"/>
+          <circle cx="16" cy="16" r="9" fill="none" stroke="#2A2F3A" stroke-width="0.8"/>
+          <text x="16" y="19.5" font-family="Instrument Serif, serif" font-size="10" text-anchor="middle" fill="#0E1116" font-weight="500">NED</text>
+        </svg>
+      </div>
+      <div class="sb-brand-copy">
+        <div class="sb-brand-title">NED University</div>
+        <div class="sb-brand-sub">Asset Management</div>
+      </div>
+      <button class="sb-brand-toggle" title="Collapse sidebar" aria-label="Collapse sidebar">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M10 5v14"/></svg>
+      </button>
+    </div>
+
+    <nav class="sb-nav">
+      <div class="sb-group">
+        <div class="sb-group-label">Overview</div>
+        <a class="sb-item" href="#">
+          <span class="sb-rail"></span>
+          <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-8 9 8M5 10v10h14V10"/></svg></span>
+          <span class="sb-label">Dashboard</span>
+        </a>
+      </div>
+
+      <div class="sb-group">
+        <div class="sb-group-label">Inventory</div>
+        <a class="sb-item" href="#">
+          <span class="sb-rail"></span>
+          <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.5-7-12a7 7 0 1114 0c0 5.5-7 12-7 12z"/><circle cx="12" cy="9" r="2.5"/></svg></span>
+          <span class="sb-label">Locations</span>
+        </a>
+        <a class="sb-item" href="#">
+          <span class="sb-rail"></span>
+          <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 13.5l-7 7a1.5 1.5 0 01-2.12 0L3 12.12V3h9.12l8.38 8.38a1.5 1.5 0 010 2.12z"/><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor"/></svg></span>
+          <span class="sb-label">Categories</span>
+        </a>
+        <a class="sb-item" href="#">
+          <span class="sb-rail"></span>
+          <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg></span>
+          <span class="sb-label">Items</span>
+        </a>
+      </div>
+
+      <div class="sb-group">
+        <div class="sb-group-label">Operations</div>
+        <a class="sb-item" id="nav-stock" href="#" data-target="stock">
+          <span class="sb-rail"></span>
+          <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6M9 13h6M9 17h4"/></svg></span>
+          <span class="sb-label">Stock Entries</span>
+        </a>
+        <a class="sb-item" id="nav-ins" href="#" data-target="ins">
+          <span class="sb-rail"></span>
+          <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 7-7"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span>
+          <span class="sb-label">Inspections</span>
+        </a>
+        <a class="sb-item" href="#">
+          <span class="sb-rail"></span>
+          <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg></span>
+          <span class="sb-label">Stock Registers</span>
+        </a>
+      </div>
+
+      <div class="sb-group">
+        <div class="sb-group-label">Administration</div>
+        <a class="sb-item" href="#">
+          <span class="sb-rail"></span>
+          <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="7" r="2.6"/><path d="M21 19c0-2.7-1.8-5-4.5-5"/></svg></span>
+          <span class="sb-label">User Management</span>
+        </a>
+        <a class="sb-item" href="#">
+          <span class="sb-rail"></span>
+          <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="3"/><path d="M8 9h8M8 13h5"/></svg></span>
+          <span class="sb-label">Roles</span>
+        </a>
+        <a class="sb-item" href="#">
+          <span class="sb-rail"></span>
+          <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg></span>
+          <span class="sb-label">Audit Log</span>
+        </a>
+      </div>
+    </nav>
+
+    <div class="sb-footer">
+      <a class="sb-item" href="#">
+        <span class="sb-rail"></span>
+        <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg></span>
+        <span class="sb-label">Sign Out</span>
+      </a>
+      <div class="sb-ver"><span class="mono" style="font-size:10px">v4.1.0</span></div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN COL ============ -->
+  <div class="main-col">
+
+    <!-- TOPBAR -->
+    <div class="topbar">
+      <div class="topbar-inner">
+        <div class="tb-breadcrumb" id="breadcrumb">
+          <span style="display:flex;align-items:center;gap:8px"><span class="tb-crumb">Operations</span></span>
+          <span style="display:flex;align-items:center;gap:8px"><span class="tb-sep">›</span><span class="tb-crumb" id="crumb-list">Stock Entries</span></span>
+          <span style="display:flex;align-items:center;gap:8px"><span class="tb-sep">›</span><span class="tb-crumb current" id="crumb-current">SE-2026-00184</span></span>
+        </div>
+
+        <div class="tb-actions">
+          <div class="tb-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input placeholder="Search anything… ⌘K" />
+          </div>
+          <div class="tb-divider"></div>
+          <button class="btn btn-ghost btn-icon" title="Notifications">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+          </button>
+          <div class="tb-divider"></div>
+          <div class="tb-user">
+            <div class="tb-avatar">SR</div>
+            <div class="tb-user-text">
+              <div class="tb-user-name">Saad Rizvi</div>
+              <div class="tb-user-role">Inventory Officer</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DOC SWITCH (prototype-only, tabs between the two detail pages) -->
+    <div style="padding:14px 28px 0 28px;display:flex;align-items:center;justify-content:space-between;gap:16px">
+      <div class="doc-switch" role="tablist">
+        <button data-active="false" data-target="stock" class="ds-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6M9 13h6M9 17h4"/></svg>
+          Stock Entry — detail
+        </button>
+        <button data-active="false" data-target="ins" class="ds-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 7-7"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          Inspection Certificate — detail
+        </button>
+        <button data-active="true" data-target="inst" class="ds-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg>
+          Item Instance — detail
+        </button>
+      </div>
+      <div class="mono-small muted">prototype: switch between the two detail page designs</div>
+    </div>
+
+    <!-- ============================================================
+         STOCK ENTRY DETAIL
+         ============================================================ -->
+    <div class="page" id="page-stock" data-density="balanced" style="display:none">
+      <a class="page-back" href="#" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);text-decoration:none;margin-bottom:8px">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        Back to Stock Entries
+      </a>
+
+      <!-- Page head -->
+      <div class="page-head-detail">
+        <div class="page-title-group">
+          <div class="eyebrow">Stock Entry · Issue voucher</div>
+          <h1 class="display">Office furniture &amp; LCD displays — Civil Eng. Dept.</h1>
+          <div class="page-sub">Issue from <strong>Central Store · Bin C-3-12</strong> to <strong>Civil Engineering Department · Faculty Office Block</strong>. Awaiting acknowledgment by recipient officer.</div>
+          <div class="page-id-row">
+            <span class="doc-no">SE-2026-00184</span>
+            <span class="pill pill-info pill-lg"><span class="status-dot active" style="background:var(--primary);box-shadow:0 0 0 3px color-mix(in oklch,var(--primary) 20%,transparent)"></span>In transit · Awaiting acknowledgment</span>
+            <span class="doc-meta">
+              <span class="dot-sep">·</span>
+              <span>Issued <strong>22 Apr 2026, 11:42</strong></span>
+              <span class="dot-sep">·</span>
+              <span>Register <span class="mono-small">CEN-MAIN-2026 / pg 47</span></span>
+            </span>
+          </div>
+        </div>
+
+        <div class="page-head-actions">
+          <button class="btn btn-ghost btn-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
+            Print voucher
+          </button>
+          <button class="btn btn-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>
+            Export PDF
+          </button>
+          <button class="btn btn-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 12l-4-4-4 4M12 8v8"/></svg>
+            Re-send to recipient
+          </button>
+          <button class="btn btn-primary btn-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            Mark acknowledged
+          </button>
+        </div>
+      </div>
+
+      <!-- Notice -->
+      <div class="notice notice-warn">
+        <div class="notice-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+        </div>
+        <div class="notice-body">
+          <div class="notice-title">Acknowledgment pending for 3 days</div>
+          <div class="notice-text">Items have left the central store but Civil Engineering Dept. has not confirmed receipt. After 7 days the voucher auto-flags for audit review. Expected by <strong>29 Apr 2026</strong>.</div>
+        </div>
+        <div class="notice-actions">
+          <button class="btn btn-xs">Notify recipient</button>
+        </div>
+      </div>
+
+      <!-- Origin → recipient -->
+      <div class="routing" style="margin-bottom:16px">
+        <div class="routing-end">
+          <div class="role">From · Source store</div>
+          <div class="name">Central Store</div>
+          <div class="sub">Building B · Bin C-3-12 · Page 47</div>
+          <div class="person"><span class="av">AK</span> Issued by Aamir Khaliq · Store-keeper</div>
+        </div>
+        <div class="routing-arrow">
+          <span class="arrow">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+            ISSUE
+          </span>
+        </div>
+        <div class="routing-end">
+          <div class="role">To · Recipient department</div>
+          <div class="name">Civil Engineering Department</div>
+          <div class="sub">Faculty Office Block · Register CIV-2026 / pg 12</div>
+          <div class="person"><span class="av">FH</span> Recipient: Faisal Hassan · Dept. inventory officer</div>
+        </div>
+      </div>
+
+      <!-- Stat strip -->
+      <div class="stat-strip" style="margin-bottom:16px">
+        <div class="stat stat-accent">
+          <div class="stat-label">Line items</div>
+          <div class="stat-value">7</div>
+          <div class="stat-sub">across 3 categories</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Total quantity</div>
+          <div class="stat-value">26</div>
+          <div class="stat-sub">units issued</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Total value</div>
+          <div class="stat-value">PKR 482,400</div>
+          <div class="stat-sub">at booked rates</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Linked inspection</div>
+          <div class="stat-value" style="font-size:18px">INS-2026-0091</div>
+          <div class="stat-sub">Stage 4 · Finalized</div>
+        </div>
+      </div>
+
+      <!-- Two-column layout -->
+      <div class="detail-grid">
+        <!-- MAIN -->
+        <div class="detail-main">
+
+          <!-- Items table -->
+          <div class="card">
+            <div class="card-head">
+              <h3>Items issued</h3>
+              <div class="head-meta">
+                <span>7 line items</span>
+                <span class="dot-sep">·</span>
+                <span>Coordinates verified against destination register</span>
+              </div>
+              <div class="card-head-actions">
+                <div class="seg">
+                  <button class="seg-btn active">Balanced</button>
+                  <button class="seg-btn">Compact</button>
+                </div>
+              </div>
+            </div>
+            <table class="items-table">
+              <thead>
+                <tr>
+                  <th class="idx">#</th>
+                  <th>Item</th>
+                  <th class="num">Qty</th>
+                  <th>Unit</th>
+                  <th class="num">Unit rate</th>
+                  <th class="num">Line total</th>
+                  <th>Source register</th>
+                  <th>Dest. register</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="idx">01</td>
+                  <td>
+                    <div class="item-name">Executive office chair · ergonomic mesh-back</div>
+                    <div class="item-cat">Furniture <span class="crumb">›</span> Seating <span class="crumb">›</span> ITEM-FUR-0291</div>
+                  </td>
+                  <td class="num">6</td>
+                  <td>units</td>
+                  <td class="num">22,500.00</td>
+                  <td class="num amount-strong">135,000.00</td>
+                  <td><span class="coord">CEN-MAIN-2026 · pg 47 · ln 04</span></td>
+                  <td><span class="coord">CIV-2026 · pg 12 · ln 01</span></td>
+                </tr>
+                <tr>
+                  <td class="idx">02</td>
+                  <td>
+                    <div class="item-name">Conference table · 8-seat oak veneer</div>
+                    <div class="item-cat">Furniture <span class="crumb">›</span> Tables <span class="crumb">›</span> ITEM-FUR-0144</div>
+                  </td>
+                  <td class="num">1</td>
+                  <td>unit</td>
+                  <td class="num">88,000.00</td>
+                  <td class="num amount-strong">88,000.00</td>
+                  <td><span class="coord">CEN-MAIN-2026 · pg 47 · ln 05</span></td>
+                  <td><span class="coord">CIV-2026 · pg 12 · ln 02</span></td>
+                </tr>
+                <tr>
+                  <td class="idx">03</td>
+                  <td>
+                    <div class="item-name">LCD monitor · 27" 4K · Dell U2723QE</div>
+                    <div class="item-cat">Electronics <span class="crumb">›</span> Displays <span class="crumb">›</span> ITEM-ELE-0507</div>
+                  </td>
+                  <td class="num">8</td>
+                  <td>units</td>
+                  <td class="num">19,800.00</td>
+                  <td class="num amount-strong">158,400.00</td>
+                  <td><span class="coord">CEN-MAIN-2026 · pg 51 · ln 12</span></td>
+                  <td><span class="coord">CIV-2026 · pg 12 · ln 03</span></td>
+                </tr>
+                <tr>
+                  <td class="idx">04</td>
+                  <td>
+                    <div class="item-name">Wireless keyboard &amp; mouse combo · Logitech MK540</div>
+                    <div class="item-cat">Electronics <span class="crumb">›</span> Peripherals <span class="crumb">›</span> ITEM-ELE-0512</div>
+                  </td>
+                  <td class="num">8</td>
+                  <td>sets</td>
+                  <td class="num">4,200.00</td>
+                  <td class="num amount-strong">33,600.00</td>
+                  <td><span class="coord">CEN-MAIN-2026 · pg 51 · ln 14</span></td>
+                  <td><span class="coord">CIV-2026 · pg 12 · ln 04</span></td>
+                </tr>
+                <tr>
+                  <td class="idx">05</td>
+                  <td>
+                    <div class="item-name">Whiteboard · magnetic · 6×4 ft</div>
+                    <div class="item-cat">Furniture <span class="crumb">›</span> Boards <span class="crumb">›</span> ITEM-FUR-0084</div>
+                  </td>
+                  <td class="num">1</td>
+                  <td>unit</td>
+                  <td class="num">14,500.00</td>
+                  <td class="num amount-strong">14,500.00</td>
+                  <td><span class="coord">CEN-MAIN-2026 · pg 47 · ln 09</span></td>
+                  <td><span class="coord">CIV-2026 · pg 12 · ln 05</span></td>
+                </tr>
+                <tr>
+                  <td class="idx">06</td>
+                  <td>
+                    <div class="item-name">Filing cabinet · 4-drawer · steel</div>
+                    <div class="item-cat">Furniture <span class="crumb">›</span> Storage <span class="crumb">›</span> ITEM-FUR-0322</div>
+                  </td>
+                  <td class="num">2</td>
+                  <td>units</td>
+                  <td class="num">18,750.00</td>
+                  <td class="num amount-strong">37,500.00</td>
+                  <td><span class="coord">CEN-MAIN-2026 · pg 48 · ln 02</span></td>
+                  <td><span class="coord">CIV-2026 · pg 12 · ln 06</span></td>
+                </tr>
+                <tr>
+                  <td class="idx">07</td>
+                  <td>
+                    <div class="item-name">UPS · APC Back-UPS Pro · 1500VA</div>
+                    <div class="item-cat">Electronics <span class="crumb">›</span> Power <span class="crumb">›</span> ITEM-ELE-0419</div>
+                  </td>
+                  <td class="num">2</td>
+                  <td>units</td>
+                  <td class="num">7,700.00</td>
+                  <td class="num amount-strong">15,400.00</td>
+                  <td><span class="coord">CEN-MAIN-2026 · pg 51 · ln 19</span></td>
+                  <td><span class="coord">CIV-2026 · pg 12 · ln 07</span></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="items-foot">
+              <div class="items-foot-meta">All amounts in PKR · inclusive of GST where applicable</div>
+              <div class="items-foot-totals">
+                <div class="total-block">
+                  <span class="total-label">Subtotal</span>
+                  <span class="total-value">482,400.00</span>
+                </div>
+                <div class="total-block">
+                  <span class="total-label">Adjustments</span>
+                  <span class="total-value">0.00</span>
+                </div>
+                <div class="total-block total-grand">
+                  <span class="total-label">Grand total</span>
+                  <span class="total-value">PKR 482,400.00</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Voucher details -->
+          <div class="card">
+            <div class="card-head"><h3>Voucher details</h3></div>
+            <div class="card-body">
+              <div class="kv-grid">
+                <div class="kv">
+                  <div class="kv-label">Document type</div>
+                  <div class="kv-value">Issue voucher · ISS</div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Voucher number</div>
+                  <div class="kv-value mono">SE-2026-00184</div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Issued on</div>
+                  <div class="kv-value">22 Apr 2026 · 11:42 PKT</div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Fiscal year</div>
+                  <div class="kv-value">FY 2025-26</div>
+                </div>
+
+                <div class="kv">
+                  <div class="kv-label">Issue reason</div>
+                  <div class="kv-value">Departmental allocation</div>
+                  <div class="kv-sub">Following approved BoQ for CE-Faculty refresh</div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Linked PO</div>
+                  <div class="kv-value mono">PO-2026-0337</div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Linked inspection</div>
+                  <div class="kv-value mono">INS-2026-0091</div>
+                  <div class="kv-sub">Finalized · 18 Apr 2026</div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Approval reference</div>
+                  <div class="kv-value mono">APR/CE/26-0042</div>
+                </div>
+
+                <div class="kv" style="grid-column: span 4">
+                  <div class="kv-label">Remarks</div>
+                  <div class="kv-value" style="font-weight:400;font-size:13px;color:var(--ink-2);line-height:1.55">Items dispatched against the Civil Engineering faculty office refresh. All items physically verified by store-keeper before loading. Recipient is required to confirm full receipt and match against the destination register entries before close-out.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sign-off -->
+          <div>
+            <div class="section-h">
+              <span class="eyebrow">Sign-off</span>
+              <span class="section-h-meta">2 of 3 signatures captured</span>
+            </div>
+            <div class="signoff">
+              <div class="so">
+                <div class="so-role">Issued by</div>
+                <div class="so-name">Aamir Khaliq</div>
+                <div class="so-sig">A. Khaliq</div>
+                <div class="so-when">22 Apr 2026 · 11:42</div>
+              </div>
+              <div class="so">
+                <div class="so-role">Approved by</div>
+                <div class="so-name">Dr. Hina Saleem</div>
+                <div class="so-sig">H. Saleem</div>
+                <div class="so-when">22 Apr 2026 · 12:08</div>
+              </div>
+              <div class="so pending">
+                <div class="so-role">Acknowledged by</div>
+                <div class="so-name">Faisal Hassan</div>
+                <div class="so-sig">Awaiting signature</div>
+                <div class="so-when">expected by 29 Apr 2026</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ASIDE -->
+        <div class="detail-aside">
+
+          <!-- Status / quick actions -->
+          <div class="card">
+            <div class="card-head"><h3>Status</h3></div>
+            <div class="card-body card-body-tight">
+              <div class="kv" style="margin-bottom:12px">
+                <div class="kv-label">Current state</div>
+                <div class="kv-value">
+                  <span class="pill pill-info"><span class="status-dot active" style="background:var(--primary);box-shadow:0 0 0 3px color-mix(in oklch,var(--primary) 20%,transparent)"></span>In transit · awaiting ack</span>
+                </div>
+                <div class="kv-sub">Day 3 of 7 before audit auto-flag</div>
+              </div>
+              <div class="kv" style="margin-bottom:8px">
+                <div class="kv-label">Editable</div>
+                <div class="kv-value" style="font-weight:400;font-size:12.5px;color:var(--ink-2)">No · Voucher locked once issued. Use a correction voucher to amend.</div>
+              </div>
+              <hr class="h-rule" />
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <button class="btn btn-sm" style="justify-content:flex-start">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+                  Message recipient officer
+                </button>
+                <button class="btn btn-sm" style="justify-content:flex-start">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
+                  Issue correction voucher
+                </button>
+                <button class="btn btn-sm btn-danger-ghost" style="justify-content:flex-start">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M4.93 4.93l14.14 14.14"/></svg>
+                  Void voucher
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Linked refs -->
+          <div class="card">
+            <div class="card-head"><h3>Linked records</h3></div>
+            <div class="ref-list">
+              <a class="ref-row" href="#">
+                <div class="ref-text">
+                  <div class="ref-doc">INS-2026-0091</div>
+                  <div class="ref-sub">Inspection certificate · Finalized</div>
+                </div>
+                <span class="ref-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+              </a>
+              <a class="ref-row" href="#">
+                <div class="ref-text">
+                  <div class="ref-doc">PO-2026-0337</div>
+                  <div class="ref-sub">Purchase order · Office furniture refresh</div>
+                </div>
+                <span class="ref-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+              </a>
+              <a class="ref-row" href="#">
+                <div class="ref-text">
+                  <div class="ref-doc">CEN-MAIN-2026 / pg 47–51</div>
+                  <div class="ref-sub">Source register · Central Store</div>
+                </div>
+                <span class="ref-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+              </a>
+              <a class="ref-row" href="#">
+                <div class="ref-text">
+                  <div class="ref-doc">CIV-2026 / pg 12</div>
+                  <div class="ref-sub">Destination register · Civil Eng. Dept.</div>
+                </div>
+                <span class="ref-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+              </a>
+              <a class="ref-row" href="#">
+                <div class="ref-text">
+                  <div class="ref-doc">APR/CE/26-0042</div>
+                  <div class="ref-sub">Approval memo · Dean of Engineering</div>
+                </div>
+                <span class="ref-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+              </a>
+            </div>
+          </div>
+
+          <!-- Activity timeline -->
+          <div class="card">
+            <div class="card-head">
+              <h3>Activity</h3>
+              <div class="head-meta">5 events</div>
+            </div>
+            <div class="timeline">
+              <div class="tl-item">
+                <div class="tl-dot info"></div>
+                <div class="tl-content">
+                  <div class="tl-title"><span class="who">Aamir Khaliq</span> created issue voucher</div>
+                  <div class="tl-meta"><span>Store-keeper</span><span class="dot-sep">·</span><span class="when">22 Apr 2026 · 11:42</span></div>
+                </div>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot ok"></div>
+                <div class="tl-content">
+                  <div class="tl-title"><span class="who">Dr. Hina Saleem</span> approved voucher</div>
+                  <div class="tl-meta"><span>Stores in-charge</span><span class="dot-sep">·</span><span class="when">22 Apr 2026 · 12:08</span></div>
+                  <div class="tl-note">Approved against BoQ APR/CE/26-0042. Quantities verified against linked inspection.</div>
+                </div>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot ok"></div>
+                <div class="tl-content">
+                  <div class="tl-title">Items dispatched from Central Store</div>
+                  <div class="tl-meta"><span>Bin C-3-12</span><span class="dot-sep">·</span><span class="when">22 Apr 2026 · 14:15</span></div>
+                </div>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot warn"></div>
+                <div class="tl-content">
+                  <div class="tl-title">Reminder sent to <span class="who">Faisal Hassan</span></div>
+                  <div class="tl-meta"><span>Auto-reminder · day 2</span><span class="dot-sep">·</span><span class="when">24 Apr 2026 · 09:00</span></div>
+                </div>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot"></div>
+                <div class="tl-content">
+                  <div class="tl-title muted" style="color:var(--muted)">Pending: recipient acknowledgment</div>
+                  <div class="tl-meta"><span>expected by</span><span class="when">29 Apr 2026</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         INSPECTION CERTIFICATE DETAIL
+         ============================================================ -->
+    <div class="page" id="page-ins" data-density="balanced" style="display:none">
+      <a class="page-back" href="#" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);text-decoration:none;margin-bottom:8px">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        Back to Inspections
+      </a>
+
+      <div class="page-head-detail">
+        <div class="page-title-group">
+          <div class="eyebrow">Inspection Certificate · Acceptance</div>
+          <h1 class="display">Server-room hardware delivery — IT Services</h1>
+          <div class="page-sub">Acceptance inspection of IT-Services purchase order <strong>PO-2026-0411</strong>, vendor <strong>Megaplus Systems (Pvt.) Ltd.</strong> Delivery received on 24 Apr 2026, currently under Stage&nbsp;2 review by the central inspection committee.</div>
+          <div class="page-id-row">
+            <span class="doc-no">INS-2026-0117</span>
+            <span class="pill pill-info pill-lg"><span class="status-dot active" style="background:var(--primary);box-shadow:0 0 0 3px color-mix(in oklch,var(--primary) 20%,transparent)"></span>Stage 2 of 4 · Central register review</span>
+            <span class="doc-meta">
+              <span class="dot-sep">·</span>
+              <span>Opened <strong>24 Apr 2026, 10:18</strong></span>
+              <span class="dot-sep">·</span>
+              <span>Register <span class="mono-small">CEN-INSP-2026 / pg 14</span></span>
+            </span>
+          </div>
+        </div>
+
+        <div class="page-head-actions">
+          <button class="btn btn-ghost btn-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
+            Print certificate
+          </button>
+          <button class="btn btn-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>
+            Export PDF
+          </button>
+          <button class="btn btn-sm btn-danger-ghost">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+            Reject &amp; return
+          </button>
+          <button class="btn btn-primary btn-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            Approve &amp; advance to Stage 3
+          </button>
+        </div>
+      </div>
+
+      <!-- Workflow tracker -->
+      <div class="workflow" style="margin-bottom:16px">
+        <div class="wf-step done">
+          <div class="wf-marker"><div class="wf-num">✓</div><div class="wf-label">Department stock recorded</div></div>
+          <div class="wf-meta">
+            Dept. inventory officer logs delivery against the department register and opens an inspection request.
+            <span class="when">Completed 24 Apr · 10:18 by Imran Q.</span>
+          </div>
+          <div class="wf-bar"></div>
+        </div>
+        <div class="wf-step active">
+          <div class="wf-marker"><div class="wf-num">2</div><div class="wf-label">Central register review</div></div>
+          <div class="wf-meta">
+            Central inspection committee verifies items against PO and BoQ, and records to the central register.
+            <span class="when">In progress · assigned to Inspection Cmte. (3 reviewers)</span>
+          </div>
+          <div class="wf-bar"></div>
+        </div>
+        <div class="wf-step">
+          <div class="wf-marker"><div class="wf-num">3</div><div class="wf-label">Finance review</div></div>
+          <div class="wf-meta">
+            Finance officer reconciles values against PO &amp; budget allocation, releases payment hold.
+            <span class="when">Pending · awaits Stage 2 approval</span>
+          </div>
+          <div class="wf-bar"></div>
+        </div>
+        <div class="wf-step">
+          <div class="wf-marker"><div class="wf-num">4</div><div class="wf-label">Finalized</div></div>
+          <div class="wf-meta">
+            Certificate signed off, items become available for issue. Linked to issue vouchers.
+            <span class="when">Pending · target close 30 Apr 2026</span>
+          </div>
+          <div class="wf-bar"></div>
+        </div>
+      </div>
+
+      <!-- Stat strip -->
+      <div class="stat-strip" style="margin-bottom:16px">
+        <div class="stat stat-accent">
+          <div class="stat-label">Items inspected</div>
+          <div class="stat-value">5</div>
+          <div class="stat-sub">of 5 line items on PO</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Tendered qty</div>
+          <div class="stat-value">22</div>
+          <div class="stat-sub">units presented</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Accepted</div>
+          <div class="stat-value" style="color:var(--success)">19</div>
+          <div class="stat-sub">86.4% acceptance</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Rejected</div>
+          <div class="stat-value" style="color:var(--danger)">3</div>
+          <div class="stat-sub">2 items partly returned</div>
+        </div>
+      </div>
+
+      <div class="detail-grid">
+        <!-- MAIN -->
+        <div class="detail-main">
+
+          <!-- Certificate info -->
+          <div class="card">
+            <div class="card-head"><h3>Certificate information</h3></div>
+            <div class="card-body">
+              <div class="kv-grid">
+                <div class="kv">
+                  <div class="kv-label">Certificate no.</div>
+                  <div class="kv-value mono">INS-2026-0117</div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Inspection type</div>
+                  <div class="kv-value">Acceptance inspection</div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Linked PO</div>
+                  <div class="kv-value mono">PO-2026-0411</div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Fiscal year</div>
+                  <div class="kv-value">FY 2025-26</div>
+                </div>
+
+                <div class="kv">
+                  <div class="kv-label">Vendor</div>
+                  <div class="kv-value">Megaplus Systems (Pvt.) Ltd.</div>
+                  <div class="kv-sub">NTN 0922471-3 · Karachi</div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Delivery received on</div>
+                  <div class="kv-value">24 Apr 2026 · 09:50 PKT</div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Receiving department</div>
+                  <div class="kv-value">IT Services</div>
+                  <div class="kv-sub">Server room · IT-Block · Floor 2</div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Total certified value</div>
+                  <div class="kv-value mono">PKR 2,148,500.00</div>
+                  <div class="kv-sub">subject to Stage 3 reconciliation</div>
+                </div>
+
+                <div class="kv">
+                  <div class="kv-label">Dept. register</div>
+                  <div class="kv-value"><span class="coord">ITS-2026 · pg 22 · ln 03–07</span></div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Central register</div>
+                  <div class="kv-value"><span class="coord">CEN-INSP-2026 · pg 14</span></div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Inspection committee</div>
+                  <div class="kv-value">3 members</div>
+                  <div class="kv-sub">Convener: Dr. Imran Qureshi</div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Target close date</div>
+                  <div class="kv-value">30 Apr 2026</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Items inspected -->
+          <div>
+            <div class="section-h">
+              <span class="eyebrow">Items inspected</span>
+              <span class="section-h-meta">5 line items · expand to see per-stage register entries</span>
+            </div>
+
+            <!-- ITEM 1 — accepted in full -->
+            <div class="ins-item">
+              <div class="ins-item-head">
+                <div class="ins-item-head-left">
+                  <div class="ins-item-idx">01</div>
+                  <div>
+                    <div class="ins-item-title">Rack server · Dell PowerEdge R760 · 2× Xeon Gold 6438Y</div>
+                    <div class="ins-item-cat">Electronics <span class="crumb">›</span> Servers <span class="crumb">›</span> ITEM-ELE-0901</div>
+                  </div>
+                </div>
+                <div><span class="pill pill-success"><span class="status-dot active"></span>Accepted</span></div>
+              </div>
+              <div class="ins-item-body">
+                <div class="kv">
+                  <div class="kv-label">Make / Model</div>
+                  <div class="kv-value">Dell PowerEdge R760</div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Serial numbers</div>
+                  <div class="kv-value mono" style="font-size:11.5px">SN-7Q9KX21<br/>SN-7Q9KX38</div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Unit rate</div>
+                  <div class="kv-value mono">PKR 612,000.00</div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Line total</div>
+                  <div class="kv-value mono"><strong>PKR 1,224,000.00</strong></div>
+                </div>
+                <div class="kv" style="grid-column: span 2">
+                  <div class="kv-label">Quantity breakdown</div>
+                  <div class="qty-grid">
+                    <div class="qty"><div class="qty-label">Tendered</div><div class="qty-value">2</div></div>
+                    <div class="qty accept"><div class="qty-label">Accepted</div><div class="qty-value">2</div></div>
+                    <div class="qty reject"><div class="qty-label">Rejected</div><div class="qty-value">0</div></div>
+                  </div>
+                </div>
+                <div class="kv" style="grid-column: span 2">
+                  <div class="kv-label">Register coordinates</div>
+                  <div class="kv-value" style="font-weight:400;font-size:12.5px">
+                    <div class="row-flex" style="gap:6px;margin-top:2px">
+                      <span class="mono-small muted">Stage 1</span> <span class="coord">ITS-2026 · pg 22 · ln 03</span>
+                    </div>
+                    <div class="row-flex" style="gap:6px;margin-top:6px">
+                      <span class="mono-small muted">Stage 2</span> <span class="coord">CEN-INSP-2026 · pg 14 · ln 01</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="ins-item-foot">
+                <span>Verified by Dr. Imran Qureshi · Specs match PO line 1</span>
+                <span class="mono-small">last update 25 Apr · 14:02</span>
+              </div>
+            </div>
+
+            <!-- ITEM 2 — partial reject -->
+            <div class="ins-item">
+              <div class="ins-item-head">
+                <div class="ins-item-head-left">
+                  <div class="ins-item-idx">02</div>
+                  <div>
+                    <div class="ins-item-title">Network switch · Cisco Catalyst 9300 · 48-port PoE+</div>
+                    <div class="ins-item-cat">Electronics <span class="crumb">›</span> Networking <span class="crumb">›</span> ITEM-ELE-0784</div>
+                  </div>
+                </div>
+                <div><span class="pill pill-warn"><span class="status-dot" style="background:var(--warn)"></span>Partly accepted</span></div>
+              </div>
+              <div class="ins-item-body">
+                <div class="kv">
+                  <div class="kv-label">Make / Model</div>
+                  <div class="kv-value">Cisco C9300-48P-A</div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Serial numbers</div>
+                  <div class="kv-value mono" style="font-size:11.5px">SN-FCW2738D · accepted<br/>SN-FCW2741K · accepted<br/>SN-FCW2745P · <span style="color:var(--danger)">rejected</span></div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Unit rate</div>
+                  <div class="kv-value mono">PKR 145,500.00</div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Line total (accepted)</div>
+                  <div class="kv-value mono"><strong>PKR 291,000.00</strong></div>
+                </div>
+                <div class="kv" style="grid-column: span 2">
+                  <div class="kv-label">Quantity breakdown</div>
+                  <div class="qty-grid">
+                    <div class="qty"><div class="qty-label">Tendered</div><div class="qty-value">3</div></div>
+                    <div class="qty accept"><div class="qty-label">Accepted</div><div class="qty-value">2</div></div>
+                    <div class="qty reject"><div class="qty-label">Rejected</div><div class="qty-value">1</div></div>
+                  </div>
+                </div>
+                <div class="kv" style="grid-column: span 2">
+                  <div class="kv-label">Rejection reason</div>
+                  <div class="kv-value" style="font-weight:400;font-size:12.5px;color:var(--ink-2);line-height:1.5">SN-FCW2745P arrived with damaged front-panel and 1 inoperative SFP slot. Vendor to replace under warranty within 5 working days.</div>
+                </div>
+              </div>
+              <div class="ins-item-foot">
+                <span>Replacement RMA: <span class="mono-small">RMA-MGP-2026-114</span></span>
+                <span class="mono-small">last update 25 Apr · 16:48</span>
+              </div>
+            </div>
+
+            <!-- ITEM 3 — pending -->
+            <div class="ins-item">
+              <div class="ins-item-head">
+                <div class="ins-item-head-left">
+                  <div class="ins-item-idx">03</div>
+                  <div>
+                    <div class="ins-item-title">UPS · APC Smart-UPS SRT 5000VA · rack-mount</div>
+                    <div class="ins-item-cat">Electronics <span class="crumb">›</span> Power <span class="crumb">›</span> ITEM-ELE-0419</div>
+                  </div>
+                </div>
+                <div><span class="pill pill-draft"><span class="status-dot"></span>Pending Stage 2 review</span></div>
+              </div>
+              <div class="ins-item-body">
+                <div class="kv">
+                  <div class="kv-label">Make / Model</div>
+                  <div class="kv-value">APC SRT5KRMXLI</div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Serial numbers</div>
+                  <div class="kv-value mono" style="font-size:11.5px">SN-APC73X1<br/>SN-APC73X2</div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Unit rate</div>
+                  <div class="kv-value mono">PKR 198,500.00</div>
+                </div>
+                <div class="kv">
+                  <div class="kv-label">Line total (provisional)</div>
+                  <div class="kv-value mono">PKR 397,000.00</div>
+                </div>
+                <div class="kv" style="grid-column: span 2">
+                  <div class="kv-label">Quantity breakdown</div>
+                  <div class="qty-grid">
+                    <div class="qty"><div class="qty-label">Tendered</div><div class="qty-value">2</div></div>
+                    <div class="qty accept"><div class="qty-label">Accepted</div><div class="qty-value">—</div></div>
+                    <div class="qty reject"><div class="qty-label">Rejected</div><div class="qty-value">—</div></div>
+                  </div>
+                </div>
+                <div class="kv" style="grid-column: span 2">
+                  <div class="kv-label">Notes</div>
+                  <div class="kv-value" style="font-weight:400;font-size:12.5px;color:var(--ink-2);line-height:1.5">Awaiting load-test report from electrical wing before Stage 2 sign-off.</div>
+                </div>
+              </div>
+              <div class="ins-item-foot">
+                <span>Assigned to Eng. Naveed Ahsan</span>
+                <span class="mono-small">last update 25 Apr · 11:15</span>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Supporting documents -->
+          <div class="card">
+            <div class="card-head">
+              <h3>Supporting documents</h3>
+              <div class="card-head-actions">
+                <button class="btn btn-xs">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                  Attach
+                </button>
+              </div>
+            </div>
+            <div class="docs-list">
+              <div class="doc-row">
+                <div class="doc-icon pdf">PDF</div>
+                <div class="doc-meta">
+                  <div class="doc-name">Delivery challan — DC-MGP-26-0411.pdf</div>
+                  <div class="doc-sub"><span class="mono">412 KB</span><span class="dot-sep">·</span><span>uploaded by Imran Q. · 24 Apr</span></div>
+                </div>
+                <button class="btn btn-xs btn-ghost icon-only" title="Download"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg></button>
+              </div>
+              <div class="doc-row">
+                <div class="doc-icon img">JPG</div>
+                <div class="doc-meta">
+                  <div class="doc-name">Damaged-switch evidence — IMG_2274.jpg</div>
+                  <div class="doc-sub"><span class="mono">2.1 MB</span><span class="dot-sep">·</span><span>annotated · linked to item 02</span></div>
+                </div>
+                <button class="btn btn-xs btn-ghost icon-only" title="Download"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg></button>
+              </div>
+              <div class="doc-row">
+                <div class="doc-icon xls">XLS</div>
+                <div class="doc-meta">
+                  <div class="doc-name">Inspection-checklist — INS-0117.xlsx</div>
+                  <div class="doc-sub"><span class="mono">88 KB</span><span class="dot-sep">·</span><span>committee filled · 25 Apr</span></div>
+                </div>
+                <button class="btn btn-xs btn-ghost icon-only" title="Download"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg></button>
+              </div>
+              <div class="doc-row">
+                <div class="doc-icon pdf">PDF</div>
+                <div class="doc-meta">
+                  <div class="doc-name">Vendor RMA acknowledgment — RMA-MGP-114.pdf</div>
+                  <div class="doc-sub"><span class="mono">96 KB</span><span class="dot-sep">·</span><span>received 25 Apr</span></div>
+                </div>
+                <button class="btn btn-xs btn-ghost icon-only" title="Download"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sign-off -->
+          <div>
+            <div class="section-h">
+              <span class="eyebrow">Sign-off chain</span>
+              <span class="section-h-meta">1 of 3 captured · 2 pending</span>
+            </div>
+            <div class="signoff">
+              <div class="so">
+                <div class="so-role">Stage 1 · Dept. officer</div>
+                <div class="so-name">Imran Qureshi</div>
+                <div class="so-sig">I. Qureshi</div>
+                <div class="so-when">24 Apr 2026 · 10:18</div>
+              </div>
+              <div class="so pending">
+                <div class="so-role">Stage 2 · Inspection cmte.</div>
+                <div class="so-name">Convener — Dr. Imran Q.</div>
+                <div class="so-sig">In progress</div>
+                <div class="so-when">target 27 Apr 2026</div>
+              </div>
+              <div class="so pending">
+                <div class="so-role">Stage 3 · Finance officer</div>
+                <div class="so-name">M. Ovais Sheikh</div>
+                <div class="so-sig">Awaiting Stage 2</div>
+                <div class="so-when">target 30 Apr 2026</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ASIDE -->
+        <div class="detail-aside">
+
+          <!-- Status / actions -->
+          <div class="card">
+            <div class="card-head"><h3>Stage 2 actions</h3></div>
+            <div class="card-body card-body-tight">
+              <div class="kv" style="margin-bottom:12px">
+                <div class="kv-label">Your role</div>
+                <div class="kv-value">Inspection committee · convener</div>
+                <div class="kv-sub">You can advance, reject, or request changes</div>
+              </div>
+              <div class="kv" style="margin-bottom:12px">
+                <div class="kv-label">Items pending your review</div>
+                <div class="kv-value"><strong>2</strong> of 5 items</div>
+              </div>
+              <hr class="h-rule" />
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <button class="btn btn-primary btn-sm" style="justify-content:flex-start">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                  Approve &amp; advance to Stage 3
+                </button>
+                <button class="btn btn-sm" style="justify-content:flex-start">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0118 0M21 12a9 9 0 01-18 0"/><path d="M21 5v4h-4M3 19v-4h4"/></svg>
+                  Send back to Stage 1
+                </button>
+                <button class="btn btn-sm btn-danger-ghost" style="justify-content:flex-start">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+                  Reject delivery
+                </button>
+                <button class="btn btn-sm" style="justify-content:flex-start">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+                  Add note to vendor
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Stage summary -->
+          <div class="card">
+            <div class="card-head"><h3>Stage 2 summary</h3></div>
+            <div class="card-body card-body-tight" style="display:flex;flex-direction:column;gap:10px">
+              <div class="kv">
+                <div class="kv-label">Items reviewed</div>
+                <div class="kv-value"><strong>3</strong> of 5</div>
+              </div>
+              <div class="kv">
+                <div class="kv-label">Accepted value</div>
+                <div class="kv-value mono">PKR 1,515,000.00</div>
+              </div>
+              <div class="kv">
+                <div class="kv-label">Rejected value</div>
+                <div class="kv-value mono" style="color:var(--danger)">PKR 145,500.00</div>
+              </div>
+              <div class="kv">
+                <div class="kv-label">Provisional / pending</div>
+                <div class="kv-value mono">PKR 488,000.00</div>
+              </div>
+              <hr class="h-rule" style="margin:6px 0" />
+              <div class="kv">
+                <div class="kv-label">Reviewers</div>
+                <div class="kv-value" style="display:flex;gap:6px;align-items:center;font-size:12.5px;font-weight:400">
+                  <span class="tb-avatar" style="width:22px;height:22px;font-size:9.5px">IQ</span>
+                  <span class="tb-avatar" style="width:22px;height:22px;font-size:9.5px;background:linear-gradient(135deg,#7a8195,#3a4256)">NA</span>
+                  <span class="tb-avatar" style="width:22px;height:22px;font-size:9.5px;background:linear-gradient(135deg,#a08070,#5b3a2a)">SP</span>
+                  <span class="muted" style="font-size:11.5px;margin-left:4px">Imran Q., Naveed A., Sana P.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Linked refs -->
+          <div class="card">
+            <div class="card-head"><h3>Linked records</h3></div>
+            <div class="ref-list">
+              <a class="ref-row" href="#">
+                <div class="ref-text">
+                  <div class="ref-doc">PO-2026-0411</div>
+                  <div class="ref-sub">Purchase order · IT Services · PKR 2,148,500</div>
+                </div>
+                <span class="ref-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+              </a>
+              <a class="ref-row" href="#">
+                <div class="ref-text">
+                  <div class="ref-doc">RMA-MGP-2026-114</div>
+                  <div class="ref-sub">Vendor return · 1 unit · partial item 02</div>
+                </div>
+                <span class="ref-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+              </a>
+              <a class="ref-row" href="#">
+                <div class="ref-text">
+                  <div class="ref-doc">ITS-2026 / pg 22</div>
+                  <div class="ref-sub">Stage 1 register · IT Services dept.</div>
+                </div>
+                <span class="ref-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+              </a>
+              <a class="ref-row" href="#">
+                <div class="ref-text">
+                  <div class="ref-doc">CEN-INSP-2026 / pg 14</div>
+                  <div class="ref-sub">Stage 2 register · central inspection</div>
+                </div>
+                <span class="ref-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+              </a>
+              <a class="ref-row" href="#">
+                <div class="ref-text">
+                  <div class="ref-doc">VEN-MGP-014</div>
+                  <div class="ref-sub">Vendor file · Megaplus Systems</div>
+                </div>
+                <span class="ref-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+              </a>
+            </div>
+          </div>
+
+          <!-- Workflow history -->
+          <div class="card">
+            <div class="card-head">
+              <h3>Workflow history</h3>
+              <div class="head-meta">6 events</div>
+            </div>
+            <div class="timeline">
+              <div class="tl-item">
+                <div class="tl-dot info"></div>
+                <div class="tl-content">
+                  <div class="tl-title"><span class="who">Imran Qureshi</span> opened inspection request</div>
+                  <div class="tl-meta"><span>Stage 1</span><span class="dot-sep">·</span><span class="when">24 Apr · 10:18</span></div>
+                  <div class="tl-note">Delivery from Megaplus Systems received in IT-block server room. 5 line items logged to ITS-2026 / pg 22.</div>
+                </div>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot ok"></div>
+                <div class="tl-content">
+                  <div class="tl-title">Stage 1 closed · advanced to central register</div>
+                  <div class="tl-meta"><span>Auto · all dept fields filled</span><span class="dot-sep">·</span><span class="when">24 Apr · 17:02</span></div>
+                </div>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot info"></div>
+                <div class="tl-content">
+                  <div class="tl-title">Inspection committee assigned</div>
+                  <div class="tl-meta"><span>3 reviewers</span><span class="dot-sep">·</span><span class="when">24 Apr · 17:02</span></div>
+                </div>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot ok"></div>
+                <div class="tl-content">
+                  <div class="tl-title"><span class="who">Dr. Imran Q.</span> accepted item 01 in full</div>
+                  <div class="tl-meta"><span>2 of 2 units</span><span class="dot-sep">·</span><span class="when">25 Apr · 14:02</span></div>
+                </div>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot warn"></div>
+                <div class="tl-content">
+                  <div class="tl-title"><span class="who">Sana Parveen</span> partly accepted item 02</div>
+                  <div class="tl-meta"><span>2 of 3 units · 1 RMA</span><span class="dot-sep">·</span><span class="when">25 Apr · 16:48</span></div>
+                  <div class="tl-note">Damaged front panel on SN-FCW2745P. RMA-MGP-2026-114 raised against vendor.</div>
+                </div>
+              </div>
+              <div class="tl-item">
+                <div class="tl-dot"></div>
+                <div class="tl-content">
+                  <div class="tl-title muted" style="color:var(--muted)">Pending: items 03, 04, 05 review</div>
+                  <div class="tl-meta"><span>assigned to</span><span>Eng. Naveed Ahsan</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         ITEM INSTANCE DETAIL
+         ============================================================ -->
+    <div class="page" id="page-inst" data-density="balanced">
+      <a class="page-back" href="#" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);text-decoration:none;margin-bottom:8px">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        Back to Dell PowerEdge R760 — instances
+      </a>
+
+      <!-- Page head -->
+      <div class="page-head-detail">
+        <div class="page-title-group">
+          <div class="eyebrow">Item Instance · Serialized asset</div>
+          <h1 class="display">Dell PowerEdge R760 — unit #2 of 2</h1>
+          <div class="page-sub">A single physical, serial-tracked instance of <strong>Rack server · Dell PowerEdge R760</strong>. Instance is currently in service at the IT-Services server room and was last verified during the Stage&nbsp;1 acceptance inspection on 25 Apr 2026.</div>
+          <div class="page-id-row">
+            <span class="doc-no">SN-7Q9KX38</span>
+            <span class="pill pill-info pill-lg"><span class="status-dot active" style="background:var(--success);box-shadow:0 0 0 3px color-mix(in oklch,var(--success) 22%,transparent)"></span>In service · Allocated</span>
+            <span class="doc-meta">
+              <span class="dot-sep">·</span>
+              <span>Created <strong>24 Apr 2026, 10:18</strong></span>
+              <span class="dot-sep">·</span>
+              <span>by <span class="mono-small">Imran Qureshi</span></span>
+            </span>
+          </div>
+        </div>
+
+        <div class="page-head-actions">
+          <button class="btn btn-ghost btn-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            Print QR label
+          </button>
+          <button class="btn btn-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
+            Re-allocate
+          </button>
+          <button class="btn btn-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+            Transfer location
+          </button>
+          <button class="btn btn-primary btn-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Edit instance
+          </button>
+        </div>
+      </div>
+
+      <!-- Hero: identity + parent + QR -->
+      <div class="inst-hero">
+        <div class="inst-hero-main">
+          <div class="inst-hero-id">
+            <div class="serial"><span class="pre">SN&nbsp;/&nbsp;</span>7Q9KX38</div>
+            <span class="pill pill-success"><span class="status-dot active"></span>Active record</span>
+          </div>
+          <div>
+            <div class="inst-hero-parent">
+              <div class="crumb-mini">
+                <span>Electronics</span><span class="sep">›</span><span>Servers</span><span class="sep">›</span><span class="mono-small">ITEM-ELE-0901</span>
+              </div>
+              Dell PowerEdge R760 · 2× Xeon Gold 6438Y
+            </div>
+          </div>
+          <div class="inst-hero-attrs">
+            <div class="inst-hero-attr">
+              <div class="lbl">Item code</div>
+              <div class="val mono">ITEM-ELE-0901</div>
+            </div>
+            <div class="inst-hero-attr">
+              <div class="lbl">Model number</div>
+              <div class="val">PE-R760-G6438Y</div>
+            </div>
+            <div class="inst-hero-attr">
+              <div class="lbl">Category</div>
+              <div class="val">Servers</div>
+            </div>
+            <div class="inst-hero-attr">
+              <div class="lbl">Tracking</div>
+              <div class="val">Serial · per-unit</div>
+            </div>
+          </div>
+        </div>
+        <div class="inst-hero-aside">
+          <div class="qr-card" aria-label="QR code SN-7Q9KX38">
+            <!-- Decorative QR placeholder -->
+            <svg class="qr-svg" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges" aria-hidden="true">
+              <rect width="21" height="21" fill="white"/>
+              <g fill="#0E1116">
+                <!-- finder TL -->
+                <rect x="0" y="0" width="7" height="1"/><rect x="0" y="6" width="7" height="1"/><rect x="0" y="0" width="1" height="7"/><rect x="6" y="0" width="1" height="7"/><rect x="2" y="2" width="3" height="3"/>
+                <!-- finder TR -->
+                <rect x="14" y="0" width="7" height="1"/><rect x="14" y="6" width="7" height="1"/><rect x="14" y="0" width="1" height="7"/><rect x="20" y="0" width="1" height="7"/><rect x="16" y="2" width="3" height="3"/>
+                <!-- finder BL -->
+                <rect x="0" y="14" width="7" height="1"/><rect x="0" y="20" width="7" height="1"/><rect x="0" y="14" width="1" height="7"/><rect x="6" y="14" width="1" height="7"/><rect x="2" y="16" width="3" height="3"/>
+                <!-- timing -->
+                <rect x="8" y="6" width="1" height="1"/><rect x="10" y="6" width="1" height="1"/><rect x="12" y="6" width="1" height="1"/>
+                <rect x="6" y="8" width="1" height="1"/><rect x="6" y="10" width="1" height="1"/><rect x="6" y="12" width="1" height="1"/>
+                <!-- random data dots -->
+                <rect x="8" y="0" width="1" height="1"/><rect x="10" y="1" width="1" height="1"/><rect x="11" y="2" width="1" height="1"/><rect x="9" y="3" width="1" height="1"/><rect x="12" y="4" width="1" height="1"/>
+                <rect x="8" y="8" width="2" height="2"/><rect x="11" y="8" width="1" height="1"/><rect x="13" y="8" width="1" height="1"/>
+                <rect x="8" y="11" width="1" height="2"/><rect x="10" y="11" width="2" height="1"/><rect x="12" y="12" width="1" height="1"/><rect x="14" y="11" width="1" height="2"/>
+                <rect x="16" y="8" width="1" height="1"/><rect x="18" y="9" width="1" height="1"/><rect x="20" y="8" width="1" height="2"/>
+                <rect x="15" y="11" width="1" height="1"/><rect x="17" y="12" width="2" height="1"/><rect x="20" y="13" width="1" height="1"/>
+                <rect x="8" y="14" width="1" height="1"/><rect x="9" y="16" width="1" height="2"/><rect x="11" y="15" width="1" height="1"/><rect x="13" y="14" width="1" height="1"/>
+                <rect x="11" y="18" width="2" height="1"/><rect x="13" y="20" width="1" height="1"/><rect x="14" y="17" width="1" height="2"/><rect x="16" y="15" width="1" height="1"/>
+                <rect x="17" y="17" width="2" height="2"/><rect x="20" y="20" width="1" height="1"/>
+                <rect x="3" y="8" width="1" height="1"/><rect x="1" y="9" width="2" height="1"/><rect x="4" y="10" width="1" height="2"/><rect x="2" y="12" width="1" height="1"/>
+              </g>
+            </svg>
+          </div>
+          <div class="qr-side">
+            <div>
+              <div class="qr-label">QR code</div>
+              <div class="qr-code-text">QR-7Q9KX38-ELE0901</div>
+            </div>
+            <div class="qr-actions">
+              <button class="btn btn-xs">Download</button>
+              <button class="btn btn-xs btn-ghost icon-only" title="Copy code">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Custody chain -->
+      <div class="custody" style="margin-bottom:16px">
+        <div class="custody-cell">
+          <div class="cstep"><span class="cnum">1</span>Parent item</div>
+          <div class="cname">Dell PowerEdge R760</div>
+          <div class="csub"><span class="mono">ITEM-ELE-0901</span> · Servers</div>
+          <span class="carrow"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+        </div>
+        <div class="custody-cell">
+          <div class="cstep"><span class="cnum">2</span>Authority store</div>
+          <div class="cname">Central Store</div>
+          <div class="csub">CEN-MAIN · Building B</div>
+          <div class="csub mono" style="font-size:10.5px">CST-001</div>
+          <span class="carrow"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+        </div>
+        <div class="custody-cell">
+          <div class="cstep"><span class="cnum">3</span>Current location</div>
+          <div class="cname">Server Room A · Rack R-04</div>
+          <div class="csub">IT-Block <span style="color:var(--muted-2)">›</span> Floor 2 <span style="color:var(--muted-2)">›</span> Server Room A</div>
+          <div class="csub mono" style="font-size:10.5px">LOC-IT-SRV-A-R04</div>
+          <span class="carrow"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+        </div>
+        <div class="custody-cell is-current">
+          <div class="cstep"><span class="cnum">4</span>Allocated to · current</div>
+          <div class="cname">IT Services Department</div>
+          <div class="csub">Department-level allocation</div>
+          <div class="cperson"><span class="av">NA</span>In-charge: Eng. Naveed Ahsan</div>
+        </div>
+      </div>
+
+      <!-- Two-column layout -->
+      <div class="detail-grid">
+        <!-- MAIN -->
+        <div class="detail-main">
+
+          <!-- Identity card -->
+          <div class="card">
+            <div class="card-head">
+              <h3>Identity &amp; specifications</h3>
+              <div class="head-meta">
+                <span>inherited from <span class="mono-small">ITEM-ELE-0901</span></span>
+              </div>
+            </div>
+            <div class="specs-grid">
+              <div class="specs-image">
+                <div class="specs-image-ph">
+                  <span class="lbl">Asset photo · drop here</span>
+                </div>
+              </div>
+              <div class="specs-body">
+                <div class="kv-grid">
+                  <div class="kv">
+                    <div class="kv-label">Serial number</div>
+                    <div class="kv-value mono">SN-7Q9KX38</div>
+                  </div>
+                  <div class="kv">
+                    <div class="kv-label">QR code</div>
+                    <div class="kv-value mono">QR-7Q9KX38-ELE0901</div>
+                  </div>
+                  <div class="kv">
+                    <div class="kv-label">Item name</div>
+                    <div class="kv-value">Dell PowerEdge R760</div>
+                  </div>
+                  <div class="kv">
+                    <div class="kv-label">Item code</div>
+                    <div class="kv-value mono">ITEM-ELE-0901</div>
+                  </div>
+
+                  <div class="kv">
+                    <div class="kv-label">Category</div>
+                    <div class="kv-value">Servers</div>
+                    <div class="kv-sub">Electronics &gt; Servers</div>
+                  </div>
+                  <div class="kv">
+                    <div class="kv-label">Model number</div>
+                    <div class="kv-value">PE-R760-G6438Y</div>
+                  </div>
+                  <div class="kv">
+                    <div class="kv-label">Tracking type</div>
+                    <div class="kv-value">Serial-tracked</div>
+                    <div class="kv-sub">one record per physical unit</div>
+                  </div>
+                  <div class="kv">
+                    <div class="kv-label">Active record</div>
+                    <div class="kv-value">
+                      <span class="pill pill-success"><span class="status-dot active"></span>Active</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Inspection ref banner -->
+          <a class="card insp-ref" href="#" onclick="document.querySelector('.ds-btn[data-target=ins]').click();return false;" style="display:flex;align-items:center;gap:14px;padding:14px 18px;text-decoration:none;color:inherit;border-color:var(--hairline)">
+            <span style="width:36px;height:36px;border-radius:8px;background:color-mix(in oklch,var(--success) 14%,transparent);display:inline-flex;align-items:center;justify-content:center;color:var(--success);flex-shrink:0">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 7-7"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+            </span>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13.5px;font-weight:600;color:var(--ink);letter-spacing:-0.005em">Accepted via INS-2026-0117</div>
+              <div style="font-size:12px;color:var(--muted);margin-top:2px">Stage 1 acceptance · 25 Apr 2026 · by Dr. Imran Qureshi</div>
+            </div>
+            <span style="display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;color:var(--primary);font-weight:600;text-transform:uppercase;letter-spacing:0.08em">
+              View certificate
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+            </span>
+          </a>
+
+        </div>
+
+        <!-- ASIDE -->
+        <div class="detail-aside">
+
+          <!-- Quick actions / record state -->
+          <div class="card">
+            <div class="card-head"><h3>Record state</h3></div>
+            <div class="card-body card-body-tight">
+              <div class="kv" style="margin-bottom:10px">
+                <div class="kv-label">Created</div>
+                <div class="kv-value">24 Apr 2026 · 10:18</div>
+                <div class="kv-sub">by Imran Qureshi</div>
+              </div>
+              <div class="kv" style="margin-bottom:10px">
+                <div class="kv-label">Last updated</div>
+                <div class="kv-value">26 Apr 2026 · 09:42</div>
+                <div class="kv-sub">allocation change</div>
+              </div>
+              <div class="kv" style="margin-bottom:10px">
+                <div class="kv-label">Active flag</div>
+                <div class="kv-value">
+                  <span class="pill pill-success"><span class="status-dot active"></span>Active</span>
+                </div>
+                <div class="kv-sub">disable to retire from service</div>
+              </div>
+              <hr class="h-rule" />
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <button class="btn btn-sm" style="justify-content:flex-start">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
+                  Re-allocate
+                </button>
+                <button class="btn btn-sm" style="justify-content:flex-start">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+                  Transfer location
+                </button>
+                <button class="btn btn-sm" style="justify-content:flex-start">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                  Update in-charge
+                </button>
+                <button class="btn btn-sm btn-danger-ghost" style="justify-content:flex-start">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M4.93 4.93l14.14 14.14"/></svg>
+                  Retire / disable
+                </button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+  (function(){
+    const pages = {
+      stock: { el: document.getElementById("page-stock"), list: "Stock Entries", current: "SE-2026-00184", nav: document.getElementById("nav-stock") },
+      ins:   { el: document.getElementById("page-ins"),   list: "Inspections",   current: "INS-2026-0117", nav: document.getElementById("nav-ins") },
+      inst:  { el: document.getElementById("page-inst"),  list: "Items › PowerEdge R760 › Instances", current: "SN-7Q9KX38", nav: null },
+    };
+    const crumbList = document.getElementById("crumb-list");
+    const crumbCurr = document.getElementById("crumb-current");
+
+    function show(target) {
+      Object.entries(pages).forEach(([k, p]) => {
+        if (p.el) p.el.style.display = (k === target) ? "" : "none";
+        if (p.nav) p.nav.classList.toggle("active", k === target);
+      });
+      document.querySelectorAll(".ds-btn").forEach(b => {
+        b.setAttribute("data-active", b.dataset.target === target ? "true" : "false");
+      });
+      const p = pages[target];
+      if (p) {
+        crumbList.textContent = p.list;
+        crumbCurr.textContent = p.current;
+      }
+    }
+    document.querySelectorAll(".ds-btn").forEach(b => b.addEventListener("click", () => show(b.dataset.target)));
+    Object.entries(pages).forEach(([k, p]) => {
+      if (p.nav) p.nav.addEventListener("click", e => { e.preventDefault(); show(k); });
+    });
+    show("inst");
+  })();
+</script>
+</body>
+</html>

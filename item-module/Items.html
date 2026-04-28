@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>NED AMS — Items</title>
+<link rel="stylesheet" href="globals.css" />
+<link rel="stylesheet" href="detail.css" />
+<link rel="stylesheet" href="items.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<!-- Notes for the user, hidden in normal use, shown via a small ribbon at top -->
+<div id="design-note">
+  <div class="dn-inner">
+    <span class="dn-tag">Redesign</span>
+    <span class="dn-text">Items module — list + unified detail. Replaces 4 nested pages with one. Try clicking an item, expanding a location, and using the search.</span>
+    <button class="dn-x" onclick="document.getElementById('design-note').remove()" aria-label="Dismiss">×</button>
+  </div>
+</div>
+
+<div class="app-frame">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="sb-brand">
+      <div class="sb-brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style="padding:3px">
+          <circle cx="16" cy="16" r="13" fill="none" stroke="#2A2F3A" stroke-width="1.4"/>
+          <circle cx="16" cy="16" r="9" fill="none" stroke="#2A2F3A" stroke-width="0.8"/>
+          <text x="16" y="19.5" font-family="Instrument Serif, serif" font-size="10" text-anchor="middle" fill="#0E1116" font-weight="500">NED</text>
+        </svg>
+      </div>
+      <div class="sb-brand-copy">
+        <div class="sb-brand-title">NED University</div>
+        <div class="sb-brand-sub">Asset Management</div>
+      </div>
+    </div>
+
+    <nav class="sb-nav">
+      <div class="sb-group">
+        <div class="sb-group-label">Overview</div>
+        <a class="sb-item" href="#"><span class="sb-rail"></span><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-8 9 8M5 10v10h14V10"/></svg></span><span class="sb-label">Dashboard</span></a>
+      </div>
+      <div class="sb-group">
+        <div class="sb-group-label">Inventory</div>
+        <a class="sb-item" href="#"><span class="sb-rail"></span><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.5-7-12a7 7 0 1114 0c0 5.5-7 12-7 12z"/><circle cx="12" cy="9" r="2.5"/></svg></span><span class="sb-label">Locations</span></a>
+        <a class="sb-item" href="#"><span class="sb-rail"></span><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 13.5l-7 7a1.5 1.5 0 01-2.12 0L3 12.12V3h9.12l8.38 8.38a1.5 1.5 0 010 2.12z"/><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor"/></svg></span><span class="sb-label">Categories</span></a>
+        <a class="sb-item active" href="#"><span class="sb-rail"></span><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg></span><span class="sb-label">Items</span></a>
+      </div>
+      <div class="sb-group">
+        <div class="sb-group-label">Operations</div>
+        <a class="sb-item" href="#"><span class="sb-rail"></span><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6M9 13h6M9 17h4"/></svg></span><span class="sb-label">Stock Entries</span></a>
+        <a class="sb-item" href="#"><span class="sb-rail"></span><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 7-7"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span><span class="sb-label">Inspections</span></a>
+        <a class="sb-item" href="#"><span class="sb-rail"></span><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg></span><span class="sb-label">Stock Registers</span></a>
+      </div>
+      <div class="sb-group">
+        <div class="sb-group-label">Administration</div>
+        <a class="sb-item" href="#"><span class="sb-rail"></span><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="7" r="2.6"/><path d="M21 19c0-2.7-1.8-5-4.5-5"/></svg></span><span class="sb-label">User Management</span></a>
+        <a class="sb-item" href="#"><span class="sb-rail"></span><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="3"/><path d="M8 9h8M8 13h5"/></svg></span><span class="sb-label">Roles</span></a>
+        <a class="sb-item" href="#"><span class="sb-rail"></span><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg></span><span class="sb-label">Audit Log</span></a>
+      </div>
+    </nav>
+    <div class="sb-footer">
+      <a class="sb-item" href="#"><span class="sb-rail"></span><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg></span><span class="sb-label">Sign Out</span></a>
+      <div class="sb-ver"><span class="mono" style="font-size:10px">v4.1.0</span></div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN COL ============ -->
+  <div class="main-col">
+
+    <!-- TOPBAR -->
+    <div class="topbar">
+      <div class="topbar-inner">
+        <div class="tb-breadcrumb" id="breadcrumb">
+          <span style="display:flex;align-items:center;gap:8px"><span class="tb-crumb">Inventory</span></span>
+          <span style="display:flex;align-items:center;gap:8px"><span class="tb-sep">›</span><span class="tb-crumb current" id="crumb-current">Items</span></span>
+        </div>
+        <div class="tb-actions">
+          <div class="tb-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input placeholder="Search anything… ⌘K" />
+          </div>
+          <div class="tb-divider"></div>
+          <button class="btn btn-ghost btn-icon" title="Notifications">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+          </button>
+          <div class="tb-divider"></div>
+          <div class="tb-user">
+            <div class="tb-avatar">SR</div>
+            <div class="tb-user-text">
+              <div class="tb-user-name">Saad Rizvi</div>
+              <div class="tb-user-role">Inventory Officer</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ ITEMS SHELL ============ -->
+    <div class="items-shell" id="items-shell" data-density="balanced" data-layout="split">
+
+      <!-- ====== LIST PANE ====== -->
+      <section class="items-list" id="items-list" data-screen-label="Items list">
+
+        <header class="il-head">
+          <div class="il-title-row">
+            <div>
+              <div class="eyebrow">Inventory</div>
+              <h1 class="il-title">Items</h1>
+            </div>
+            <div class="il-actions">
+              <button class="btn btn-ghost btn-sm" title="Import">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5M12 3v12"/></svg>
+                Import
+              </button>
+              <button class="btn btn-primary btn-sm">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                New item
+              </button>
+            </div>
+          </div>
+
+          <!-- summary strip -->
+          <div class="il-summary">
+            <div class="ils-stat">
+              <div class="ils-num">1,284</div>
+              <div class="ils-lbl">Items</div>
+            </div>
+            <div class="ils-sep"></div>
+            <div class="ils-stat">
+              <div class="ils-num">8,460</div>
+              <div class="ils-lbl">Total stock</div>
+            </div>
+            <div class="ils-sep"></div>
+            <div class="ils-stat">
+              <div class="ils-num ils-warn">23</div>
+              <div class="ils-lbl">Low stock</div>
+            </div>
+            <div class="ils-sep"></div>
+            <div class="ils-stat">
+              <div class="ils-num ils-danger">7</div>
+              <div class="ils-lbl">Expiring &lt;30d</div>
+            </div>
+          </div>
+
+          <!-- toolbar -->
+          <div class="il-toolbar">
+            <div class="il-search">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              <input id="list-search" placeholder="Filter items by name, code, category…" />
+              <span class="kbd">/</span>
+            </div>
+            <div class="il-filters">
+              <button class="filter-pill" data-filter="all" data-active="true">All <span class="fp-count">1284</span></button>
+              <button class="filter-pill" data-filter="quantity">Quantity <span class="fp-count">812</span></button>
+              <button class="filter-pill" data-filter="individual">Individual <span class="fp-count">347</span></button>
+              <button class="filter-pill" data-filter="perishable">Perishable <span class="fp-count">125</span></button>
+              <div class="il-vsep"></div>
+              <button class="filter-pill warn" data-filter="low">Low stock <span class="fp-count">23</span></button>
+              <button class="filter-pill danger" data-filter="expiring">Expiring <span class="fp-count">7</span></button>
+            </div>
+          </div>
+        </header>
+
+        <!-- list body -->
+        <div class="il-body" id="il-body">
+          <!-- rendered via JS -->
+        </div>
+      </section>
+
+      <!-- ====== DETAIL PANE ====== -->
+      <section class="items-detail" id="items-detail" data-screen-label="Item detail">
+        <!-- rendered via JS when an item is selected -->
+      </section>
+
+    </div><!-- /items-shell -->
+
+  </div>
+</div>
+
+<!-- ====== SLIDE-IN PANEL (instances / batches / sublocation) ====== -->
+<div class="slide-panel-backdrop" id="panel-backdrop" onclick="closePanel()"></div>
+<aside class="slide-panel" id="slide-panel" aria-hidden="true">
+  <!-- rendered via JS -->
+</aside>
+
+<!-- ====== LOCATE COMMAND PALETTE ====== -->
+<div class="locate-backdrop" id="locate-backdrop" onclick="closeLocate()"></div>
+<div class="locate-panel" id="locate-panel" aria-hidden="true">
+  <!-- rendered via JS -->
+</div>
+
+<!-- Data and app -->
+<script src="items-data.js"></script>
+<script src="items-app.js"></script>
+
+<!-- React + Babel for tweaks panel -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<div id="tweaks-root"></div>
+<script type="text/babel" src="items-tweaks.jsx"></script>
+
+</body>
+</html>
