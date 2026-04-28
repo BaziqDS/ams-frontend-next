@@ -15,7 +15,11 @@ jobs:
     steps:
       - name: Stop frontend service
         run: |
-          nssm stop AMSFrontend 2>$null
+          try {
+          nssm stop AMSFrontend
+        } catch {
+          Write-Host "Service not running, continuing..."
+        }
           Start-Sleep -Seconds 3
 
       - name: Checkout code
