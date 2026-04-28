@@ -1,4 +1,4 @@
-export type TrackingType = "INDIVIDUAL" | "BATCH" | string | null | undefined;
+export type TrackingType = "INDIVIDUAL" | "QUANTITY" | string | null | undefined;
 
 export interface ItemRecord {
   id: number;
@@ -48,6 +48,7 @@ export interface ItemDistributionAllocation {
   quantity: number;
   allocatedAt: string | null;
   stockEntryIds: number[];
+  locationId: number | null;
 }
 
 export interface ItemDistributionUnit {
@@ -74,6 +75,7 @@ export interface ItemDistributionDetailRow {
   allocatedQuantity: number | null;
   updatedAt: string | null;
   stockEntryIds: number[];
+  locationId: number | null;
 }
 
 export type ItemStatusTone = "success" | "warning" | "neutral" | "disabled" | "danger";
@@ -89,6 +91,8 @@ export function toNumber(value: number | string | null | undefined) {
 
 export function formatItemLabel(value: string | null | undefined, fallback = "-") {
   if (!value) return fallback;
+  if (value === "INDIVIDUAL") return "Individual Tracking";
+  if (value === "QUANTITY") return "Quantity Based Tracking";
   return value.replace(/[_-]+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
@@ -105,6 +109,10 @@ export function formatItemDate(value: string | null | undefined, fallback = "-")
 
 export function canShowInstances(trackingType: TrackingType) {
   return trackingType === "INDIVIDUAL";
+}
+
+export function canShowBatches(trackingType: TrackingType, categoryType?: string | null) {
+  return trackingType === "QUANTITY" && categoryType === "PERISHABLE";
 }
 
 export function findDistributionUnit(units: ItemDistributionUnit[], unitId: string | number | null | undefined) {
@@ -128,6 +136,7 @@ export function flattenDistributionDetails(unit: ItemDistributionUnit | null | u
     allocatedQuantity: store.allocatedTotal,
     updatedAt: store.lastUpdated,
     stockEntryIds: [],
+    locationId: store.locationId,
   }));
 
   const allocationRows: ItemDistributionDetailRow[] = unit.allocations.map(allocation => ({
@@ -142,6 +151,7 @@ export function flattenDistributionDetails(unit: ItemDistributionUnit | null | u
     allocatedQuantity: allocation.quantity,
     updatedAt: allocation.allocatedAt,
     stockEntryIds: allocation.stockEntryIds ?? [],
+    locationId: allocation.targetType === "LOCATION" ? allocation.targetLocationId : null,
   }));
 
   return [...storeRows, ...allocationRows];

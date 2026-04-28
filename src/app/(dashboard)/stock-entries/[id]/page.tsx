@@ -251,124 +251,47 @@ function uniqueRefs(values: Array<string | null>) {
 
 function HeroStrip({ entry }: { entry: StockEntryRecord }) {
   const summary = typeSummary(entry);
-  const lineCount = entry.items.length;
-  const sentCount = entry.items.reduce((sum, item) => sum + item.quantity, 0);
   const isPersonTarget = Boolean(entry.issued_to_name);
 
   return (
-    <div className="table-card" style={{ overflow: "hidden" }}>
-      {/* Gradient hero */}
-      <div style={{
-        background: "linear-gradient(160deg, color-mix(in oklch, var(--primary) 9%, white) 0%, color-mix(in oklch, var(--primary) 2%, white) 100%)",
-        padding: "24px 28px 22px",
-        position: "relative",
-      }}>
-        {/* Status pill — absolute top-right */}
-        <div style={{ position: "absolute", top: 16, right: 20 }}>
-          <StatusPill status={entry.status} />
+    <section className="detail-card stock-movement-card">
+      <header className="detail-card-head stock-movement-head">
+        <div>
+          <div className="eyebrow">{summary.eyebrow}</div>
+          <h2>{summary.title}</h2>
+        </div>
+      </header>
+      <div className="stock-movement-body">
+        <div className="stock-movement-flow">
+          <div className="stock-movement-node">
+            <span className="stock-movement-icon">
+              <Ic d="M3 21h18M5 21V7l8-4 6 3v15" size={15} />
+            </span>
+            <span className="stock-movement-copy">
+              <span className="eyebrow">{summary.sourceLabel}</span>
+              <strong>{entry.from_location_name ?? "System / Inspection"}</strong>
+            </span>
+          </div>
+
+          <div className="stock-movement-mid" aria-label={`${formatLabel(entry.entry_type)} movement`}>
+            <span>{formatLabel(entry.entry_type)}</span>
+            <Ic d="M5 12h14M13 5l7 7-7 7" size={16} />
+          </div>
+
+          <div className="stock-movement-node stock-movement-node-target">
+            <span className="stock-movement-icon">
+              <Ic d={isPersonTarget ? "M20 21a8 8 0 10-16 0M12 11a4 4 0 100-8 4 4 0 000 8" : "M12 21s7-4.4 7-11a7 7 0 10-14 0c0 6.6 7 11 7 11z"} size={15} />
+            </span>
+            <span className="stock-movement-copy">
+              <span className="eyebrow">{summary.targetLabel}</span>
+              <strong>{entryTarget(entry)}</strong>
+            </span>
+          </div>
         </div>
 
-        {/* Movement row */}
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "1fr auto 1fr",
-          alignItems: "center",
-          gap: 20,
-          maxWidth: "calc(100% - 110px)",
-        }}>
-          {/* Source */}
-          <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
-            <div style={{
-              width: 44, height: 44, flexShrink: 0,
-              borderRadius: "var(--radius-md)",
-              background: "var(--primary)",
-              color: "var(--primary-ink)",
-              display: "grid", placeItems: "center",
-              boxShadow: "0 2px 10px color-mix(in oklch, var(--primary) 32%, transparent)",
-            }}>
-              <Ic d="M3 21h18M5 21V7l8-4 6 3v15" size={18} />
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <div className="eyebrow" style={{ marginBottom: 4 }}>{summary.sourceLabel}</div>
-              <div style={{
-                fontSize: 16,
-                fontWeight: 600,
-                color: "var(--ink)",
-                letterSpacing: "-0.02em",
-                lineHeight: 1.25,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}>
-                {entry.from_location_name ?? "System / Inspection"}
-              </div>
-            </div>
-          </div>
-
-          {/* Arrow divider */}
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 7, padding: "0 4px" }}>
-            <span className="chip" style={{ fontSize: 11, letterSpacing: "0.02em" }}>{formatLabel(entry.entry_type)}</span>
-            <div style={{ color: "color-mix(in oklch, var(--primary) 55%, transparent)", display: "flex", alignItems: "center" }}>
-              <Ic d="M5 12h14M13 5l7 7-7 7" size={20} />
-            </div>
-          </div>
-
-          {/* Target — right-aligned, icon on right */}
-          <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0, flexDirection: "row-reverse" }}>
-            <div style={{
-              width: 44, height: 44, flexShrink: 0,
-              borderRadius: "var(--radius-md)",
-              background: "color-mix(in oklch, var(--primary) 12%, white)",
-              color: "var(--primary)",
-              display: "grid", placeItems: "center",
-            }}>
-              <Ic d={isPersonTarget ? "M20 21a8 8 0 10-16 0M12 11a4 4 0 100-8 4 4 0 000 8" : "M12 21s7-4.4 7-11a7 7 0 10-14 0c0 6.6 7 11 7 11z"} size={18} />
-            </div>
-            <div style={{ minWidth: 0, textAlign: "right" }}>
-              <div className="eyebrow" style={{ marginBottom: 4 }}>{summary.targetLabel}</div>
-              <div style={{
-                fontSize: 16,
-                fontWeight: 600,
-                color: "var(--ink)",
-                letterSpacing: "-0.02em",
-                lineHeight: 1.25,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}>
-                {entryTarget(entry)}
-              </div>
-            </div>
-          </div>
-        </div>
+        <div className="detail-muted-row stock-movement-note">{summary.stripNote}</div>
       </div>
-
-      {/* Meta footer strip */}
-      <div style={{
-        borderTop: "1px solid var(--hairline)",
-        padding: "9px 24px",
-        display: "flex",
-        flexWrap: "wrap",
-        alignItems: "center",
-        gap: 20,
-        background: "var(--card)",
-        fontSize: 12,
-        color: "var(--muted)",
-      }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-          <Ic d="M12 22a10 10 0 100-20 10 10 0 000 20zM12 6v6l4 2" size={13} />
-          {formatDate(entry.entry_date)}
-        </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-          <Ic d="M20 21a8 8 0 10-16 0M12 11a4 4 0 100-8 4 4 0 000 8" size={13} />
-          {entry.created_by_name ?? "Unknown"}
-        </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--font-mono)" }}>
-          <Ic d="M4 6h16M4 12h12M4 18h8" size={13} />
-          {lineCount} lines · {sentCount} units
-        </span>
-      </div>
-    </div>
+    </section>
   );
 }
 
@@ -444,7 +367,7 @@ function NotesPanel({ entry }: { entry: StockEntryRecord }) {
 }
 
 function trackingLabel(item: StockEntryItemRecord) {
-  return item.instances.length > 0 ? "Individual" : "Batch";
+  return item.instances.length > 0 ? "Individual" : "Quantity";
 }
 
 function LineDetails({ entry, item, line, instanceMap }: { entry: StockEntryRecord; item: StockEntryItemRecord; line: LineResolution; instanceMap: Map<number, StockEntryItemInstance> }) {
@@ -741,18 +664,22 @@ export default function StockEntryDetailPage() {
     <div>
       <Topbar breadcrumb={["Operations", "Stock Entries", entry?.entry_number ?? "Detail"]} />
       <div className="page">
-        <div className="page-head">
+        <Link className="detail-page-back" href="/stock-entries">
+          <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
+          Back to Stock Entries
+        </Link>
+
+        <div className="page-head-detail stock-entry-detail-head">
           <div className="page-title-group">
             <div className="eyebrow">Stock Entry Detail</div>
             <h1>{entry?.entry_number ?? "Stock Entry"}</h1>
             <div className="page-sub">{summary ? `${summary.title}. Audit, linked movement, and line-level stock information are shown below.` : "Operational stock movement record."}</div>
-          </div>
-          <div className="page-head-actions">
-            {entry && <StatusPill status={entry.status} />}
-            <Link className="btn btn-sm btn-ghost" href="/stock-entries">
-              <Ic d="M15 18l-6-6 6-6" size={14} />
-              Stock Entries
-            </Link>
+            {entry && (
+              <div className="page-id-row">
+                <span className="doc-no">{formatLabel(entry.entry_type)}</span>
+                <StatusPill status={entry.status} />
+              </div>
+            )}
           </div>
         </div>
 

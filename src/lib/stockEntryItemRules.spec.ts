@@ -17,9 +17,9 @@ import type { StockAllocationRecord } from "./stockEntryLocationRules";
 
 const items: StockEntryStockItem[] = [
   { id: 1, name: "Table", code: "ITM-TBL", is_active: true, tracking_type: "INDIVIDUAL" },
-  { id: 2, name: "Paper", code: "ITM-PPR", is_active: true, tracking_type: "BATCH" },
+  { id: 2, name: "Paper", code: "ITM-PPR", is_active: true, tracking_type: "QUANTITY" },
   { id: 3, name: "Processor", code: "ITM-CPU", is_active: true, tracking_type: "INDIVIDUAL" },
-  { id: 4, name: "Retired Chair", code: "ITM-OLD", is_active: false, tracking_type: "BATCH" },
+  { id: 4, name: "Retired Chair", code: "ITM-OLD", is_active: false, tracking_type: "QUANTITY" },
 ];
 
 const batches: StockEntryItemBatch[] = [
@@ -45,11 +45,11 @@ const allocations: StockAllocationRecord[] = [
 ];
 
 const instances: StockEntryItemInstance[] = [
-  { id: 1001, item: 1, batch: null, current_location: 11, status: "AVAILABLE", serial_number: "TBL-001", stock_entry_ids: [] },
-  { id: 1002, item: 1, batch: null, current_location: 11, status: "AVAILABLE", serial_number: "TBL-002", stock_entry_ids: [] },
-  { id: 1003, item: 1, batch: null, current_location: 11, status: "ALLOCATED", serial_number: "TBL-003", stock_entry_ids: [101] },
-  { id: 1004, item: 1, batch: null, current_location: 11, status: "ALLOCATED", serial_number: "TBL-004", stock_entry_ids: [101] },
-  { id: 1005, item: 3, batch: null, current_location: 21, status: "AVAILABLE", serial_number: "CPU-001", stock_entry_ids: [] },
+  { id: 1001, item: 1, current_location: 11, status: "AVAILABLE", serial_number: "TBL-001", stock_entry_ids: [] },
+  { id: 1002, item: 1, current_location: 11, status: "AVAILABLE", serial_number: "TBL-002", stock_entry_ids: [] },
+  { id: 1003, item: 1, current_location: 11, status: "ALLOCATED", serial_number: "TBL-003", stock_entry_ids: [101] },
+  { id: 1004, item: 1, current_location: 11, status: "ALLOCATED", serial_number: "TBL-004", stock_entry_ids: [101] },
+  { id: 1005, item: 3, current_location: 21, status: "AVAILABLE", serial_number: "CPU-001", stock_entry_ids: [] },
 ];
 
 describe("stock entry item filtering rules", () => {

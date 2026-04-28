@@ -20,6 +20,7 @@ interface ItemRecord {
   name: string;
   code: string;
   category_display?: string | null;
+  category_type?: string | null;
   tracking_type?: string | null;
   is_active: boolean;
 }
@@ -432,6 +433,10 @@ function isIndividualTracking(item: ItemRecord | undefined) {
   return item?.tracking_type === "INDIVIDUAL";
 }
 
+function isConsumableQuantityItem(item: ItemRecord | undefined) {
+  return item?.tracking_type === "QUANTITY" && item?.category_type === "CONSUMABLE";
+}
+
 function blankItem(): StockEntryFormItem {
   return { item: "", batch: "", quantity: "1", instances: [], stock_register: "", page_number: "" };
 }
@@ -571,12 +576,6 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
       String(register.store) === selectedSourceStoreId
   );
 
-  const commonInstanceBatch = (instanceIds: string[], options: StockEntryItemInstance[]) => {
-    const selected = options.filter(instance => instanceIds.includes(String(instance.id)));
-    const batchIds = Array.from(new Set(selected.map(instance => instance.batch).filter((batch): batch is number => batch != null)));
-    return batchIds.length === 1 ? String(batchIds[0]) : "";
-  };
-
   const update = <K extends keyof StockEntryFormState>(key: K, value: StockEntryFormState[K]) => {
     setForm(prev => {
       if (key === "entry_type") {
@@ -652,7 +651,8 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
         }
       } else {
         const batchOptions = getBatchOptions(row);
-        if (batchOptions.length > 0 && !row.batch) {
+        const requiresExplicitBatch = !(form.entry_type === "ISSUE" && isConsumableQuantityItem(selectedItem));
+        if (requiresExplicitBatch && batchOptions.length > 0 && !row.batch) {
           nextErrors[`items.${index}.batch`] = "Choose the batch.";
         }
         const limit = getQuantityLimit(row);
@@ -820,6 +820,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
                 const rowQuantityLimit = isIndividualTracking(selectedItem) ? rowInstanceOptions.length : getQuantityLimit(row);
                 const itemDisabled = !itemContextReady;
                 const individual = isIndividualTracking(selectedItem);
+                const autoAssignConsumableBatch = form.entry_type === "ISSUE" && isConsumableQuantityItem(selectedItem);
                 const duplicate = row.item && selectedItemIds.has(row.item) && form.items.filter(item => item.item === row.item).length > 1;
                 return (
                   <div key={index} style={{ border: "1px solid var(--hairline)", borderRadius: "var(--radius)", padding: 12, background: "var(--surface-2)" }}>
@@ -851,7 +852,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
                             onChange={values => updateRow(index, {
                               instances: values,
                               quantity: String(Math.max(1, values.length)),
-                              batch: commonInstanceBatch(values, rowInstanceOptions),
+                              batch: "",
                             })}
                             placeholder={row.item ? "Select instances" : "Select item first"}
                             searchPlaceholder="Search instance number..."
@@ -860,21 +861,35 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
                           />
                         </Field>
                       ) : (
-                        <Field label="Batch" error={errors[`items.${index}.batch`]} hint={selectedItem?.tracking_type ? `Tracking: ${formatLabel(selectedItem.tracking_type)}` : undefined}>
-                          <SearchableSelect
-                            value={row.batch}
-                            options={rowBatchOptions.map(batch => ({
-                              value: String(batch.id),
-                              label: batch.batch_number,
-                              meta: selectedItem?.code,
-                            }))}
-                            onChange={value => updateRow(index, { batch: value })}
-                            placeholder={row.item ? "Select batch" : "Select item first"}
-                            searchPlaceholder="Search batches..."
-                            emptyLabel="No available batches for this item"
-                            disabled={!row.item || rowBatchOptions.length === 0}
-                          />
-                        </Field>
+                        autoAssignConsumableBatch ? (
+                          <Field
+                            label="Batch"
+                            hint={row.item ? "Assigned automatically from source stock to preserve inspection batch traceability." : "Select a consumable item first."}
+                          >
+                            <input
+                              className="input"
+                              value={row.item ? "Assigned automatically" : "Select item first"}
+                              readOnly
+                              disabled
+                            />
+                          </Field>
+                        ) : (
+                          <Field label="Batch" error={errors[`items.${index}.batch`]} hint={selectedItem?.tracking_type ? `Tracking: ${formatLabel(selectedItem.tracking_type)}` : undefined}>
+                            <SearchableSelect
+                              value={row.batch}
+                              options={rowBatchOptions.map(batch => ({
+                                value: String(batch.id),
+                                label: batch.batch_number,
+                                meta: selectedItem?.code,
+                              }))}
+                              onChange={value => updateRow(index, { batch: value })}
+                              placeholder={row.item ? "Select batch" : "Select item first"}
+                              searchPlaceholder="Search batches..."
+                              emptyLabel="No available batches for this item"
+                              disabled={!row.item || rowBatchOptions.length === 0}
+                            />
+                          </Field>
+                        )
                       )}
                       <Field label={individual ? "Quantity / Auto Select" : "Quantity"} required error={errors[`items.${index}.quantity`]} hint={row.item ? `Limit: ${rowQuantityLimit}` : undefined}>
                         <input
@@ -891,7 +906,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
                               updateRow(index, {
                                 quantity: value,
                                 instances: selectedInstances,
-                                batch: commonInstanceBatch(selectedInstances, rowInstanceOptions),
+                                batch: "",
                               });
                               return;
                             }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canResumeInspectionEditor,
+  getCreateInspectionSubmitLabel,
   getInspectionAuditEntries,
   getInspectionRegisterCoverage,
   getInspectionRegisterRefs,
@@ -18,6 +19,12 @@ describe("inspection UI helpers", () => {
 
   it("skips stock details for root-level departments", () => {
     expect(requiresDepartmentalStockStage({ department_hierarchy_level: 0 })).toBe(false);
+  });
+
+  it("labels root-level create submission as central register", () => {
+    expect(getCreateInspectionSubmitLabel(0)).toBe("Submit to Central Register");
+    expect(getCreateInspectionSubmitLabel(2)).toBe("Submit to Stock Details");
+    expect(getCreateInspectionSubmitLabel(null)).toBe("Submit to Stock Details");
   });
 
   it("builds the departmental workflow in order and marks the current step", () => {
@@ -117,7 +124,7 @@ describe("inspection UI helpers", () => {
         key: "COMPLETED",
         state: "upcoming",
         ownerLabel: "Pending finalization",
-        activityAt: null,
+        activityAt: "2026-04-26T15:20:00Z",
       },
     ]);
   });
@@ -305,13 +312,17 @@ describe("inspection UI helpers", () => {
       initiated_by_name: "admin",
       initiated_by: 1,
       stock_filled_by: 9,
+      stock_filled_by_name: "admin",
       stock_filled_at: "2026-04-26T12:00:00Z",
       central_store_filled_by: null,
+      central_store_filled_by_name: null,
       central_store_filled_at: null,
       finance_reviewed_by: null,
+      finance_reviewed_by_name: null,
       finance_reviewed_at: null,
       finance_check_date: null,
       rejected_by: null,
+      rejected_by_name: null,
       rejected_at: null,
       rejection_reason: null,
       updated_at: "2026-04-26T12:30:00Z",
@@ -327,6 +338,37 @@ describe("inspection UI helpers", () => {
         tone: "default",
       },
     ]);
+  });
+
+  it("uses stage usernames in audit entries instead of numeric ids when available", () => {
+    const entries = getInspectionAuditEntries({
+      stage: "REJECTED",
+      department_hierarchy_level: 2,
+      created_at: "2026-04-26T10:28:00Z",
+      initiated_at: "2026-04-26T10:28:00Z",
+      initiated_by_name: "admin",
+      initiated_by: 1,
+      stock_filled_by: 9,
+      stock_filled_by_name: "admin",
+      stock_filled_at: "2026-04-26T12:00:00Z",
+      central_store_filled_by: 9,
+      central_store_filled_by_name: "admin",
+      central_store_filled_at: "2026-04-26T12:20:00Z",
+      finance_reviewed_by: 9,
+      finance_reviewed_by_name: "admin",
+      finance_reviewed_at: "2026-04-26T12:40:00Z",
+      finance_check_date: null,
+      rejected_by: 9,
+      rejected_by_name: "admin",
+      rejected_at: "2026-04-26T13:00:00Z",
+      rejection_reason: "Incorrect document",
+      updated_at: "2026-04-26T13:00:00Z",
+    });
+
+    expect(entries.find(entry => entry.key === "stock_details")?.actor).toBe("admin");
+    expect(entries.find(entry => entry.key === "central_register")?.actor).toBe("admin");
+    expect(entries.find(entry => entry.key === "finance_review")?.actor).toBe("admin");
+    expect(entries.find(entry => entry.key === "rejected")?.actor).toBe("admin");
   });
 
 });

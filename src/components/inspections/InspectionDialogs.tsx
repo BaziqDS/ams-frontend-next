@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { apiFetch, type Page } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   API_BASE,
   formatInspectionDate,
+  getCreateInspectionSubmitLabel,
   type InspectionItemOption,
   type InspectionItemRecord,
   type InspectionLocationOption,
@@ -14,6 +16,12 @@ import {
   INSPECTION_STAGE_PILL,
   type InspectionStockRegisterOption,
 } from "@/lib/inspectionUi";
+import {
+  getAutoSelectedInspectionLocation,
+  getInspectionQuantityError,
+  getInspectionQuantityUpdateError,
+  getScopedInspectionLocations,
+} from "@/lib/inspectionStageForms";
 
 export const InspectionIcon = ({ d, size = 16 }: { d: React.ReactNode | string; size?: number }) => (
   <svg
@@ -102,6 +110,7 @@ function blankItem(): InspectionItemRecord {
     central_register_no: "",
     central_register_page_no: "",
     batch_number: "",
+    manufactured_date: "",
     expiry_date: "",
   };
 }
@@ -121,6 +130,7 @@ export function InspectionModal({
   onClose: () => void;
   onSave: () => void | Promise<void>;
 }) {
+  const { user } = useAuth();
   const [date, setDate] = useState("");
   const [contractNo, setContractNo] = useState("");
   const [contractDate, setContractDate] = useState("");
@@ -146,11 +156,18 @@ export function InspectionModal({
   const [refsLoading, setRefsLoading] = useState(true);
 
   const [touched, setTouched] = useState(false);
+  const [quantityInputErrors, setQuantityInputErrors] = useState<Record<number, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [previewFile, setPreviewFile] = useState<{ url: string; type: "image" | "pdf" | "other"; name: string } | null>(null);
+  const rootScopedUser = Boolean(user?.is_superuser) || locations.some(location => user?.assigned_locations?.includes(location.id) && location.hierarchy_level === 0);
+  const locationScopeHint = rootScopedUser
+    ? "Root-level access can create certificates for any standalone location."
+    : locations.length === 1
+      ? "Your assigned standalone location was selected automatically."
+      : "Only your assigned standalone locations are available.";
 
   const openLocalPreview = (file: File) => {
     const isImage = file.type.startsWith("image/");
@@ -187,6 +204,9 @@ export function InspectionModal({
   const showFinanceSection = mode === "edit" && (isEditStage4 || stage === "COMPLETED" || stage === "REJECTED" || Boolean(inspection?.finance_check_date));
   const documentsSectionNumber = showFinanceSection ? 5 : 4;
   const auditSectionNumber = showFinanceSection ? 6 : 5;
+  const selectedDepartmentLevel = mode === "create"
+    ? locations.find(location => location.id === department)?.hierarchy_level ?? null
+    : inspection?.department_hierarchy_level ?? null;
 
   useEffect(() => {
     if (!open) return;
@@ -229,6 +249,7 @@ export function InspectionModal({
     }
     setFiles([]);
     setTouched(false);
+    setQuantityInputErrors({});
     setSubmitting(false);
     setSubmitError(null);
   }, [inspection, mode, open]);
@@ -245,13 +266,22 @@ export function InspectionModal({
         .then(data => (Array.isArray(data) ? data : data.results)),
     ])
       .then(([loadedLocations, loadedItems, loadedRegisters]) => {
-        setLocations(loadedLocations.filter(location => location.is_standalone));
+        const standaloneLocations = loadedLocations.filter(location => location.is_standalone);
+        const isRootUser = Boolean(user?.is_superuser) || loadedLocations.some(location => user?.assigned_locations?.includes(location.id) && location.hierarchy_level === 0);
+        const scopedLocations = mode === "create"
+          ? getScopedInspectionLocations(loadedLocations, user?.assigned_locations, isRootUser)
+          : standaloneLocations;
+        setLocations(scopedLocations);
+        if (mode === "create") {
+          const nextDepartment = getAutoSelectedInspectionLocation(scopedLocations);
+          setDepartment(nextDepartment);
+        }
         setItemOptions(loadedItems);
         setStockRegisters(loadedRegisters);
       })
       .catch(() => {})
       .finally(() => setRefsLoading(false));
-  }, [open]);
+  }, [mode, open, user?.assigned_locations, user?.is_superuser]);
 
   useEffect(() => {
     if (!open) return;
@@ -264,6 +294,39 @@ export function InspectionModal({
 
   const updateItem = (idx: number, patch: Partial<InspectionItemRecord>) => {
     setItems(prev => prev.map((item, index) => (index === idx ? { ...item, ...patch } : item)));
+  };
+  const setQuantityInputError = (idx: number, error: string | null) => {
+    setQuantityInputErrors(prev => {
+      const next = { ...prev };
+      if (error) next[idx] = error;
+      else delete next[idx];
+      return next;
+    });
+  };
+  const updateItemQuantity = (
+    idx: number,
+    field: "tendered_quantity" | "accepted_quantity" | "rejected_quantity",
+    rawValue: string,
+  ) => {
+    const nextValue = Number(rawValue);
+    if (!Number.isFinite(nextValue)) return;
+
+    const item = items[idx];
+    if (!item) return;
+
+    const error = getInspectionQuantityUpdateError(item, { [field]: nextValue });
+    if (error) {
+      setQuantityInputError(idx, error);
+      return;
+    }
+
+    setQuantityInputError(idx, null);
+    updateItem(idx, { [field]: nextValue });
+  };
+  const updateItemDescription = (idx: number, value: string, target: HTMLTextAreaElement) => {
+    updateItem(idx, { item_description: value });
+    target.style.height = "auto";
+    target.style.height = `${target.scrollHeight}px`;
   };
 
   const addItem = () => setItems(prev => [...prev, blankItem()]);
@@ -283,7 +346,9 @@ export function InspectionModal({
     if (items.length === 0) errors.items = "At least one item is required";
     items.forEach((item, index) => {
       if (!item.item_description.trim()) errors[`item_${index}_desc`] = "Required";
-      if (item.tendered_quantity < 1) errors[`item_${index}_qty`] = "Min 1";
+      const quantityError = getInspectionQuantityError(item);
+      if (quantityError) errors[`item_${index}_qty`] = quantityError;
+      if (Number(item.rejected_quantity || 0) > 0 && !item.remarks?.trim()) errors[`item_${index}_reject_reason`] = "Enter rejection reason.";
     });
   }
 
@@ -330,7 +395,7 @@ export function InspectionModal({
     return payload;
   };
 
-  const submit = async () => {
+  const submit = async (saveAsDraft = false) => {
     setTouched(true);
     setSubmitError(null);
     if (Object.keys(errors).length > 0 && canEditBasic) return;
@@ -355,6 +420,7 @@ export function InspectionModal({
           date_of_inspection: dateOfInspection || null,
           consignee_name: consigneeName || null,
           consignee_designation: consigneeDesignation || null,
+          is_initiated: mode === "create" && !saveAsDraft,
           items: items.map(item => ({
             ...(item.id ? { id: item.id } : {}),
             item: item.item || null,
@@ -488,7 +554,7 @@ export function InspectionModal({
                 <Field label="Indent Number" required={canEditBasic} error={touched ? errors.indent_no : undefined}>
                   <input value={indentNo} onChange={event => setIndentNo(event.target.value)} placeholder="Indent no." disabled={!canEditBasic} />
                 </Field>
-                <Field label="Department" required={canEditBasic} error={touched ? errors.department : undefined}>
+                <Field label="Department" required={canEditBasic} error={touched ? errors.department : undefined} hint={!touched || !errors.department ? locationScopeHint : undefined}>
                   <select value={department} onChange={event => setDepartment(event.target.value ? Number(event.target.value) : "")} disabled={!canEditBasic || refsLoading}>
                     <option value="">Select department…</option>
                     {locations.map(location => (
@@ -530,11 +596,11 @@ export function InspectionModal({
                   <thead>
                     <tr>
                       <th style={{ width: 36 }}>#</th>
-                      <th>Description</th>
-                      <th style={{ width: 80 }}>Tendered</th>
-                      <th style={{ width: 80 }}>Accepted</th>
-                      <th style={{ width: 80 }}>Rejected</th>
-                      <th style={{ width: 100 }}>Unit Price</th>
+                      <th className="inspection-item-description-head">Description</th>
+                      <th style={{ width: 84 }}>Tendered</th>
+                      <th style={{ width: 84 }}>Accepted</th>
+                      <th style={{ width: 84 }}>Rejected</th>
+                      <th style={{ width: 150 }}>Unit Price</th>
                       {showStockColumns && (
                         <>
                           <th>Stock Register</th>
@@ -546,70 +612,99 @@ export function InspectionModal({
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map((item, index) => (
-                      <tr key={item.id ?? `new-${index}`}>
-                        <td className="mono" style={{ color: "var(--muted)", fontSize: 12 }}>{index + 1}</td>
-                        <td>
-                          <input
-                            value={item.item_description}
-                            onChange={event => updateItem(index, { item_description: event.target.value })}
-                            placeholder="Item description"
-                            disabled={!canEditItems}
-                            style={{ minWidth: 180 }}
-                          />
-                          {touched && errors[`item_${index}_desc`] && <div className="field-error">{errors[`item_${index}_desc`]}</div>}
-                        </td>
-                        <td><input type="number" min={1} value={item.tendered_quantity} onChange={event => updateItem(index, { tendered_quantity: Number(event.target.value) })} disabled={!canEditItems} /></td>
-                        <td><input type="number" min={0} value={item.accepted_quantity} onChange={event => updateItem(index, { accepted_quantity: Number(event.target.value) })} disabled={!canEditItems && !canEditStage2 && !canEditStage3 && !canEditStage4} /></td>
-                        <td><input type="number" min={0} value={item.rejected_quantity} onChange={event => updateItem(index, { rejected_quantity: Number(event.target.value) })} disabled={!canEditItems && !canEditStage2 && !canEditStage3 && !canEditStage4} /></td>
-                        <td><input type="number" step="0.01" value={item.unit_price} onChange={event => updateItem(index, { unit_price: event.target.value })} disabled={!canEditItems} /></td>
-                        {showStockColumns && (
-                          <td>
-                            <select value={item.stock_register ?? ""} onChange={event => updateItem(index, { stock_register: event.target.value ? Number(event.target.value) : null })} disabled={!canEditStage2 && !canEditStage3 && !canEditStage4}>
-                              <option value="">—</option>
-                              {stockRegisters.map(register => (
-                                <option key={register.id} value={register.id}>
-                                  {register.register_number}
-                                </option>
-                              ))}
-                            </select>
-                            <input value={item.stock_register_page_no} onChange={event => updateItem(index, { stock_register_page_no: event.target.value })} placeholder="Page #" disabled={!canEditStage2 && !canEditStage3 && !canEditStage4} style={{ marginTop: 4 }} />
-                          </td>
-                        )}
-                        {showCentralColumns && (
-                          <td>
-                            <select value={item.central_register ?? ""} onChange={event => updateItem(index, { central_register: event.target.value ? Number(event.target.value) : null })} disabled={!canEditStage3 && !canEditStage4}>
-                              <option value="">—</option>
-                              {stockRegisters.map(register => (
-                                <option key={register.id} value={register.id}>
-                                  {register.register_number}
-                                </option>
-                              ))}
-                            </select>
-                            <input value={item.central_register_page_no} onChange={event => updateItem(index, { central_register_page_no: event.target.value })} placeholder="Page #" disabled={!canEditStage3 && !canEditStage4} style={{ marginTop: 4 }} />
-                          </td>
-                        )}
-                        {showCentralColumns && (
-                          <td>
-                            <select value={item.item ?? ""} onChange={event => updateItem(index, { item: event.target.value ? Number(event.target.value) : null })} disabled={!canEditStage3 && !canEditStage4}>
-                              <option value="">—</option>
-                              {itemOptions.map(option => (
-                                <option key={option.id} value={option.id}>
-                                  {option.code} — {option.name}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-                        )}
-                        {canEditItems && (
-                          <td>
-                            <button type="button" className="btn btn-xs btn-danger-ghost" onClick={() => removeItem(index)} disabled={items.length <= 1} title="Remove item">
-                              <InspectionIcon d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12h6l1-12" size={12} />
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
+                    {items.map((item, index) => {
+                      const visibleColumnCount =
+                        6 + (showStockColumns ? 1 : 0) + (showCentralColumns ? 2 : 0) + (canEditItems ? 1 : 0);
+                      const canEditRejectionReason = canEditItems || canEditStage2 || canEditStage3 || canEditStage4;
+                      const showRejectionReason = Number(item.rejected_quantity || 0) > 0;
+                      const quantityError = quantityInputErrors[index] || (touched ? errors[`item_${index}_qty`] : "");
+
+                      return (
+                        <Fragment key={item.id ?? `new-${index}`}>
+                          <tr>
+                            <td className="mono" style={{ color: "var(--muted)", fontSize: 12 }}>{index + 1}</td>
+                            <td className="inspection-item-description-cell">
+                              <textarea
+                                className="inspection-item-description-input"
+                                rows={1}
+                                value={item.item_description}
+                                onChange={event => updateItemDescription(index, event.target.value, event.currentTarget)}
+                                placeholder="Item description"
+                                disabled={!canEditItems}
+                              />
+                              {touched && errors[`item_${index}_desc`] && <div className="field-error">{errors[`item_${index}_desc`]}</div>}
+                            </td>
+                            <td><input type="number" min={1} value={item.tendered_quantity} onChange={event => updateItemQuantity(index, "tendered_quantity", event.target.value)} disabled={!canEditItems} /></td>
+                            <td><input type="number" min={0} value={item.accepted_quantity} onChange={event => updateItemQuantity(index, "accepted_quantity", event.target.value)} disabled={!canEditRejectionReason} /></td>
+                            <td>
+                              <input type="number" min={0} value={item.rejected_quantity} onChange={event => updateItemQuantity(index, "rejected_quantity", event.target.value)} disabled={!canEditRejectionReason} />
+                              {quantityError ? <div className="field-error">{quantityError}</div> : null}
+                            </td>
+                            <td><input className="inspection-unit-price-input" type="number" step="0.01" value={item.unit_price} onChange={event => updateItem(index, { unit_price: event.target.value })} disabled={!canEditItems} /></td>
+                            {showStockColumns && (
+                              <td>
+                                <select value={item.stock_register ?? ""} onChange={event => updateItem(index, { stock_register: event.target.value ? Number(event.target.value) : null })} disabled={!canEditStage2 && !canEditStage3 && !canEditStage4}>
+                                  <option value="">—</option>
+                                  {stockRegisters.map(register => (
+                                    <option key={register.id} value={register.id}>
+                                      {register.register_number}
+                                    </option>
+                                  ))}
+                                </select>
+                                <input value={item.stock_register_page_no} onChange={event => updateItem(index, { stock_register_page_no: event.target.value })} placeholder="Page #" disabled={!canEditStage2 && !canEditStage3 && !canEditStage4} style={{ marginTop: 4 }} />
+                              </td>
+                            )}
+                            {showCentralColumns && (
+                              <td>
+                                <select value={item.central_register ?? ""} onChange={event => updateItem(index, { central_register: event.target.value ? Number(event.target.value) : null })} disabled={!canEditStage3 && !canEditStage4}>
+                                  <option value="">—</option>
+                                  {stockRegisters.map(register => (
+                                    <option key={register.id} value={register.id}>
+                                      {register.register_number}
+                                    </option>
+                                  ))}
+                                </select>
+                                <input value={item.central_register_page_no} onChange={event => updateItem(index, { central_register_page_no: event.target.value })} placeholder="Page #" disabled={!canEditStage3 && !canEditStage4} style={{ marginTop: 4 }} />
+                              </td>
+                            )}
+                            {showCentralColumns && (
+                              <td>
+                                <select value={item.item ?? ""} onChange={event => updateItem(index, { item: event.target.value ? Number(event.target.value) : null })} disabled={!canEditStage3 && !canEditStage4}>
+                                  <option value="">—</option>
+                                  {itemOptions.map(option => (
+                                    <option key={option.id} value={option.id}>
+                                      {option.code} — {option.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                            )}
+                            {canEditItems && (
+                              <td>
+                                <button type="button" className="btn btn-xs btn-danger-ghost" onClick={() => removeItem(index)} disabled={items.length <= 1} title="Remove item">
+                                  <InspectionIcon d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12h6l1-12" size={12} />
+                                </button>
+                              </td>
+                            )}
+                          </tr>
+                          {showRejectionReason ? (
+                            <tr className="inspection-rejection-row">
+                              <td colSpan={visibleColumnCount}>
+                                <div className="inspection-rejection-reason">
+                                  <input
+                                    value={item.remarks || ""}
+                                    onChange={event => updateItem(index, { remarks: event.target.value })}
+                                    placeholder="Reason for rejected quantity"
+                                    disabled={!canEditRejectionReason}
+                                  />
+                                  {touched && errors[`item_${index}_reject_reason`] ? <div className="field-error">{errors[`item_${index}_reject_reason`]}</div> : null}
+                                </div>
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -692,28 +787,28 @@ export function InspectionModal({
                   {inspection.stock_filled_by && (
                     <div className="audit-entry">
                       <span className="audit-label">Stock filled by</span>
-                      <span className="mono">User #{inspection.stock_filled_by}</span>
+                      <span className="mono">{inspection.stock_filled_by_name || `User #${inspection.stock_filled_by}`}</span>
                       <span className="audit-date">{formatInspectionDate(inspection.stock_filled_at)}</span>
                     </div>
                   )}
                   {inspection.central_store_filled_by && (
                     <div className="audit-entry">
                       <span className="audit-label">Central register by</span>
-                      <span className="mono">User #{inspection.central_store_filled_by}</span>
+                      <span className="mono">{inspection.central_store_filled_by_name || `User #${inspection.central_store_filled_by}`}</span>
                       <span className="audit-date">{formatInspectionDate(inspection.central_store_filled_at)}</span>
                     </div>
                   )}
                   {inspection.finance_reviewed_by && (
                     <div className="audit-entry">
                       <span className="audit-label">Finance reviewed by</span>
-                      <span className="mono">User #{inspection.finance_reviewed_by}</span>
+                      <span className="mono">{inspection.finance_reviewed_by_name || `User #${inspection.finance_reviewed_by}`}</span>
                       <span className="audit-date">{formatInspectionDate(inspection.finance_reviewed_at)}</span>
                     </div>
                   )}
                   {inspection.rejected_by && (
                     <div className="audit-entry audit-rejected">
                       <span className="audit-label">Rejected by</span>
-                      <span className="mono">User #{inspection.rejected_by}</span>
+                      <span className="mono">{inspection.rejected_by_name || `User #${inspection.rejected_by}`}</span>
                       <span className="audit-date">{formatInspectionDate(inspection.rejected_at)}</span>
                       {inspection.rejection_reason && <div className="audit-reason">{inspection.rejection_reason}</div>}
                     </div>
@@ -737,12 +832,17 @@ export function InspectionModal({
             </div>
             <div className="modal-foot-actions">
               <button type="button" className="btn btn-md" onClick={onClose}>Cancel</button>
+              {!isReadOnly && mode === "create" && (
+                <button type="button" className="btn btn-md" onClick={() => submit(true)} disabled={submitting || refsLoading}>
+                  {submitting ? "Saving…" : "Save as Draft"}
+                </button>
+              )}
               {!isReadOnly && (
-                <button type="button" className="btn btn-md btn-primary" onClick={submit} disabled={submitting || refsLoading}>
+                <button type="button" className="btn btn-md btn-primary" onClick={() => submit(false)} disabled={submitting || refsLoading}>
                   {submitting
                     ? "Saving…"
                     : mode === "create"
-                      ? "Create Certificate"
+                      ? getCreateInspectionSubmitLabel(selectedDepartmentLevel)
                       : canEditStage4
                         ? "Save Finance Review"
                         : "Save Changes"}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canShowInstances,
+  canShowBatches,
   findDistributionUnit,
   flattenDistributionDetails,
   isLowStock,
@@ -66,8 +67,14 @@ const units: ItemDistributionUnit[] = [
 describe("item UI helpers", () => {
   it("only exposes instance browsing for individually tracked items", () => {
     expect(canShowInstances("INDIVIDUAL")).toBe(true);
-    expect(canShowInstances("BATCH")).toBe(false);
+    expect(canShowInstances("QUANTITY")).toBe(false);
     expect(canShowInstances(null)).toBe(false);
+  });
+
+  it("only exposes batch browsing for perishable quantity-tracked items", () => {
+    expect(canShowBatches("QUANTITY", "PERISHABLE")).toBe(true);
+    expect(canShowBatches("QUANTITY", "CONSUMABLE")).toBe(false);
+    expect(canShowBatches("INDIVIDUAL", "FIXED_ASSET")).toBe(false);
   });
 
   it("finds a standalone distribution unit by route param", () => {
@@ -79,7 +86,7 @@ describe("item UI helpers", () => {
     expect(flattenDistributionDetails(units[0])).toEqual([
       expect.objectContaining({ kind: "store", name: "CSIT Main Store", quantity: 3 }),
       expect.objectContaining({ kind: "person", name: "Dr. A. Khan", quantity: 2 }),
-      expect.objectContaining({ kind: "location", name: "CIS Lab B", quantity: 2 }),
+      expect.objectContaining({ kind: "location", name: "CIS Lab B", quantity: 2, locationId: 102 }),
     ]);
   });
 

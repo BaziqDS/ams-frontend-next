@@ -26,7 +26,6 @@ export interface StockEntryStockRecord {
 export interface StockEntryItemInstance {
   id: number;
   item: number;
-  batch: number | null;
   current_location: number;
   status: string;
   serial_number?: string | null;

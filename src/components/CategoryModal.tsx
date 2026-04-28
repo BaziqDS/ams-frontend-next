@@ -304,7 +304,7 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
                       <select value={form.tracking_type} onChange={e => set({ tracking_type: e.target.value })} onBlur={() => setTouched(prev => new Set(prev).add("tracking_type"))} disabled={trackingTypeLocked}>
                         <option value="">Select tracking type</option>
                         <option value="INDIVIDUAL">Individual Tracking (Serial/QR)</option>
-                        <option value="BATCH">Batch Tracking (FIFO/Expiry)</option>
+                        <option value="QUANTITY">Quantity Based Tracking</option>
                       </select>
                     </Field>
                   )}

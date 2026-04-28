@@ -17,6 +17,8 @@ export interface InspectionItemRecord {
   item: number | null;
   item_name?: string;
   item_code?: string;
+  item_category_type?: string | null;
+  item_tracking_type?: string | null;
   item_description: string;
   item_specifications: string;
   tendered_quantity: number;
@@ -34,6 +36,7 @@ export interface InspectionItemRecord {
   central_register_no: string;
   central_register_page_no: string;
   batch_number: string;
+  manufactured_date: string;
   expiry_date: string;
 }
 
@@ -109,11 +112,16 @@ export interface InspectionItemOption {
   id: number;
   name: string;
   code: string;
+  category_type?: string | null;
+  tracking_type?: string | null;
 }
 
 export interface InspectionStockRegisterOption {
   id: number;
   register_number: string;
+  register_type?: string;
+  store?: number;
+  store_name?: string;
   location_name?: string;
 }
 
@@ -193,6 +201,12 @@ export function requiresDepartmentalStockStage(
   inspection: Pick<InspectionRecord, "department_hierarchy_level">,
 ) {
   return inspection.department_hierarchy_level !== 0;
+}
+
+export function getCreateInspectionSubmitLabel(departmentHierarchyLevel: number | null | undefined) {
+  return departmentHierarchyLevel === 0
+    ? "Submit to Central Register"
+    : "Submit to Stock Details";
 }
 
 export function getInspectionWorkflowSteps(
@@ -444,13 +458,17 @@ export function getInspectionAuditEntries(
     | "initiated_by_name"
     | "initiated_by"
     | "stock_filled_by"
+    | "stock_filled_by_name"
     | "stock_filled_at"
     | "central_store_filled_by"
+    | "central_store_filled_by_name"
     | "central_store_filled_at"
     | "finance_reviewed_by"
+    | "finance_reviewed_by_name"
     | "finance_reviewed_at"
     | "finance_check_date"
     | "rejected_by"
+    | "rejected_by_name"
     | "rejected_at"
     | "rejection_reason"
     | "updated_at"
@@ -473,7 +491,7 @@ export function getInspectionAuditEntries(
     entries.push({
       key: "stock_details",
       label: "Stock Details",
-      actor: getAuditActor(null, inspection.stock_filled_by),
+      actor: getAuditActor(inspection.stock_filled_by_name, inspection.stock_filled_by),
       when: inspection.stock_filled_at,
       note: "Department register details",
       tone: inspection.stock_filled_at ? "default" : "pending",
@@ -483,7 +501,7 @@ export function getInspectionAuditEntries(
   entries.push({
     key: "central_register",
     label: "Central Register",
-    actor: getAuditActor(null, inspection.central_store_filled_by),
+    actor: getAuditActor(inspection.central_store_filled_by_name, inspection.central_store_filled_by),
     when: inspection.central_store_filled_at,
     note: "Central register mapping",
     tone: inspection.central_store_filled_at ? "default" : "pending",
@@ -492,7 +510,7 @@ export function getInspectionAuditEntries(
   entries.push({
     key: "finance_review",
     label: "Finance Review",
-    actor: getAuditActor(null, inspection.finance_reviewed_by),
+    actor: getAuditActor(inspection.finance_reviewed_by_name, inspection.finance_reviewed_by),
     when: inspection.finance_reviewed_at,
     note: inspection.finance_check_date
       ? `Finance check date ${formatInspectionDate(inspection.finance_check_date)}`
@@ -504,7 +522,7 @@ export function getInspectionAuditEntries(
     entries.push({
       key: "rejected",
       label: "Rejected",
-      actor: getAuditActor(null, inspection.rejected_by),
+      actor: getAuditActor(inspection.rejected_by_name, inspection.rejected_by),
       when: inspection.rejected_at,
       note: inspection.rejection_reason || "No rejection reason recorded",
       tone: "danger",

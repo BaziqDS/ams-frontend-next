@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
@@ -14,12 +13,7 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { useCapabilities } from "@/contexts/CapabilitiesContext";
 import {
   API_BASE,
-  canResumeInspectionEditor,
-  formatInspectionDate,
   formatInspectionDateShort,
-  getInspectionStageEditorLabel,
-  getInspectionTotals,
-  getInspectionWorkflowSteps,
   type InspectionRecord,
   type InspectionStage,
   INSPECTION_STAGE_LABELS,
@@ -48,32 +42,11 @@ function DensityToggle({
   );
 }
 
-function InspectionWorkflowCaption({ inspection }: { inspection: InspectionRecord }) {
-  const steps = getInspectionWorkflowSteps(inspection);
-  const currentStep = steps.find(step => step.state === "current" || step.state === "rejected");
-
-  if (inspection.stage === "REJECTED") {
-    return (
-      <div className="login-cell-sub" style={{ color: "var(--danger)" }}>
-        Rejected at {currentStep?.label ?? "Draft"}
-      </div>
-    );
-  }
-
-  if (!currentStep) {
-    return <div className="login-cell-sub">Workflow locked</div>;
-  }
-
-  return <div className="login-cell-sub">Current: {currentStep.label}</div>;
-}
-
 function InspectionRowActions({
   inspection,
   canManage,
   canFull,
-  hasStage,
   busy,
-  onEdit,
   onReject,
   onDelete,
   onViewPdf,
@@ -81,9 +54,7 @@ function InspectionRowActions({
   inspection: InspectionRecord;
   canManage: boolean;
   canFull: boolean;
-  hasStage: (stage: string) => boolean;
   busy: boolean;
-  onEdit: () => void;
   onReject: () => void;
   onDelete: () => void;
   onViewPdf: () => void;
@@ -92,9 +63,6 @@ function InspectionRowActions({
   const [openUp, setOpenUp] = useState(false);
   const moreRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const editLabel = getInspectionStageEditorLabel(inspection.stage);
-  const canEdit = Boolean(editLabel) && canResumeInspectionEditor(inspection, canManage, hasStage);
-  const canReject = canManage && !["COMPLETED", "REJECTED", "DRAFT"].includes(inspection.stage);
   const canDelete = canFull && inspection.stage === "DRAFT";
 
   const closeMenu = useCallback(() => {
@@ -138,17 +106,7 @@ function InspectionRowActions({
   }, [open, updateMenuDirection]);
 
   return (
-    <div className="row-actions">
-      <Link href={`/inspections/${inspection.id}`} className="btn btn-xs btn-ghost row-action">
-        <InspectionIcon d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" size={13} />
-        <span className="ra-label">View</span>
-      </Link>
-      {canEdit && (
-        <button type="button" className="btn btn-xs btn-ghost row-action" onClick={onEdit} disabled={busy} style={busy ? busyActionStyle : undefined}>
-          <InspectionIcon d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" size={13} />
-          <span className="ra-label">Resume</span>
-        </button>
-      )}
+    <div className="row-actions" onClick={event => event.stopPropagation()}>
       <div className="row-action-more" ref={moreRef}>
         <button type="button" className="btn btn-xs btn-ghost" onClick={() => setOpen(prev => !prev)} disabled={busy} style={busy ? busyActionStyle : undefined}>
           <InspectionIcon d={<><circle cx="12" cy="5" r="1" fill="currentColor" /><circle cx="12" cy="12" r="1" fill="currentColor" /><circle cx="12" cy="19" r="1" fill="currentColor" /></>} size={14} />
@@ -158,7 +116,7 @@ function InspectionRowActions({
             <button type="button" className="row-menu-item" onClick={() => { closeMenu(); onViewPdf(); }}>
               Open PDF
             </button>
-            {canReject ? (
+            {canManage && !["COMPLETED", "REJECTED", "DRAFT"].includes(inspection.stage) ? (
               <button type="button" className="row-menu-item danger" onClick={() => { closeMenu(); onReject(); }} disabled={busy}>
                 Reject certificate
               </button>
@@ -187,9 +145,7 @@ function InspectionRow({
   inspection,
   canManage,
   canFull,
-  hasStage,
   busy,
-  onEdit,
   onReject,
   onDelete,
   onViewPdf,
@@ -197,57 +153,43 @@ function InspectionRow({
   inspection: InspectionRecord;
   canManage: boolean;
   canFull: boolean;
-  hasStage: (stage: string) => boolean;
   busy: boolean;
-  onEdit: () => void;
   onReject: () => void;
   onDelete: () => void;
   onViewPdf: () => void;
 }) {
-  const totals = getInspectionTotals(inspection);
-  const workflow = getInspectionWorkflowSteps(inspection);
-  const completeSteps = workflow.filter(step => step.state === "complete" || (step.state === "current" && step.key === "COMPLETED")).length;
+  const router = useRouter();
 
   return (
-    <tr style={busy ? { opacity: 0.55, pointerEvents: "none" } : undefined}>
+    <tr
+      className="clickable-table-row"
+      onClick={() => router.push(`/inspections/${inspection.id}`)}
+      style={busy ? { opacity: 0.55, pointerEvents: "none" } : undefined}
+    >
       <td className="col-user">
         <div className="user-cell">
           <div className="avatar" style={{ width: 34, height: 34, fontSize: 11, background: "linear-gradient(135deg, color-mix(in oklch, var(--primary) 80%, white), var(--primary))" }}>
             IC
           </div>
           <div>
-            <Link href={`/inspections/${inspection.id}`} className="user-name" style={{ textDecoration: "none", color: "inherit" }}>
-              {inspection.contract_no}
-            </Link>
-            <div className="user-username mono">
-              {formatInspectionDateShort(inspection.contract_date)} · {inspection.indent_no || "No indent"}
-            </div>
+            <div className="user-name">{inspection.contract_no}</div>
           </div>
         </div>
       </td>
       <td>
-        <div style={{ display: "grid", gap: 3 }}>
-          <div style={{ color: "var(--ink)", fontWeight: 550 }}>{inspection.contractor_name}</div>
-          <div className="login-cell-sub">Indenter: {inspection.indenter}</div>
-        </div>
+        <div className="user-name mono">{inspection.indent_no || "—"}</div>
       </td>
       <td>
-        <div style={{ display: "grid", gap: 6 }}>
-          <span className="chip">{inspection.department_name}</span>
-          <div className="login-cell-sub">{inspection.delivery_type === "FULL" ? "Full delivery" : "Part delivery"}</div>
+        <div className="user-name">{inspection.contractor_name || "—"}</div>
+      </td>
+      <td className="inspection-table-location-cell">
+        <div className="inspection-table-centered-cell">
+          <div className="inspection-location-name">{inspection.department_name}</div>
         </div>
       </td>
-      <td>
-        <div style={{ display: "grid", gap: 3 }}>
-          <div className="mono">{totals.lines} lines · {totals.tendered} tendered</div>
-          <div className="login-cell-sub">Accepted {totals.accepted} · Rejected {totals.rejected}</div>
-        </div>
-      </td>
-      <td>
-        <div style={{ display: "grid", gap: 6 }}>
+      <td className="inspection-table-status-cell">
+        <div className="inspection-table-centered-cell">
           <InspectionStagePill stage={inspection.stage} />
-          <InspectionWorkflowCaption inspection={inspection} />
-          <div className="login-cell-sub mono">{completeSteps} / {workflow.length} gates cleared</div>
         </div>
       </td>
       <td className="col-login">
@@ -256,14 +198,18 @@ function InspectionRow({
           <div className="login-cell-sub mono">{formatInspectionDateShort(inspection.created_at)}</div>
         </div>
       </td>
+      <td className="col-login">
+        <div className="login-cell">
+          <div>{relTime(inspection.updated_at)}</div>
+          <div className="login-cell-sub mono">{formatInspectionDateShort(inspection.updated_at)}</div>
+        </div>
+      </td>
       <td className="col-actions">
         <InspectionRowActions
           inspection={inspection}
           canManage={canManage}
           canFull={canFull}
-          hasStage={hasStage}
           busy={busy}
-          onEdit={onEdit}
           onReject={onReject}
           onDelete={onDelete}
           onViewPdf={onViewPdf}
@@ -358,7 +304,7 @@ export default function InspectionsPage() {
     return inspections.filter(inspection => {
       if (stageFilter !== "all" && inspection.stage !== stageFilter) return false;
       if (!query) return true;
-      const haystack = `${inspection.contract_no} ${inspection.contractor_name} ${inspection.indenter} ${inspection.department_name} ${inspection.indent_no}`.toLowerCase();
+      const haystack = `${inspection.contract_no} ${inspection.indent_no} ${inspection.contractor_name} ${inspection.department_name}`.toLowerCase();
       return haystack.includes(query);
     });
   }, [inspections, search, stageFilter]);
@@ -420,7 +366,7 @@ export default function InspectionsPage() {
           <div className="filter-bar-left">
             <div className="search-input">
               <InspectionIcon d={<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>} size={14} />
-              <input placeholder="Search by contract, contractor, indenter or indent…" value={search} onChange={event => setSearch(event.target.value)} />
+              <input placeholder="Search by contract, indent, contractor or location…" value={search} onChange={event => setSearch(event.target.value)} />
               {search && <button type="button" className="clear-search" onClick={() => setSearch("")}>×</button>}
             </div>
             <div className="chip-filter-group">
@@ -466,19 +412,20 @@ export default function InspectionsPage() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Certificate</th>
-                  <th>Contractor / Indenter</th>
-                  <th>Department</th>
-                  <th>Quantities</th>
-                  <th>Workflow</th>
+                  <th>Invoice / Contract No</th>
+                  <th>Indent Number</th>
+                  <th>Contractor</th>
+                  <th>Location</th>
+                  <th>Status</th>
                   <th>Created</th>
+                  <th>Updated at</th>
                   <th style={{ textAlign: "right" }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={7}>
+                    <td colSpan={8}>
                       <div style={{ padding: 32, textAlign: "center", color: "var(--muted)" }}>Loading inspections…</div>
                     </td>
                   </tr>
@@ -489,9 +436,7 @@ export default function InspectionsPage() {
                       inspection={inspection}
                       canManage={canManage}
                       canFull={canFull}
-                      hasStage={hasInspectionStage}
                       busy={busyId === inspection.id}
-                      onEdit={() => setEditingInspection(inspection)}
                       onReject={() => setRejectTarget(inspection)}
                       onDelete={() => handleDelete(inspection)}
                       onViewPdf={() => openPdf(inspection)}
@@ -499,7 +444,7 @@ export default function InspectionsPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={7}>
+                    <td colSpan={8}>
                       <div style={{ padding: 32, textAlign: "center", color: "var(--muted)" }}>No inspection certificates match the current filters.</div>
                     </td>
                   </tr>

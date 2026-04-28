@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Topbar } from "@/components/Topbar";
 import type { CategoryRecord } from "@/components/CategoryModal";
@@ -9,6 +9,7 @@ import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
 import { apiFetch, type Page } from "@/lib/api";
 import {
   canShowInstances,
+  canShowBatches,
   findDistributionUnit,
   flattenDistributionDetails,
   formatItemDate,
@@ -47,10 +48,11 @@ type ItemInstanceRecord = {
   item: number;
   item_name?: string | null;
   item_code?: string | null;
-  batch: number | null;
-  batch_number?: string | null;
+  item_category_name?: string | null;
+  item_model_number?: string | null;
   serial_number: string;
   qr_code?: string | null;
+  qr_code_image?: string | null;
   current_location: number | null;
   location_name?: string | null;
   location_code?: string | null;
@@ -59,6 +61,8 @@ type ItemInstanceRecord = {
   in_charge?: string | null;
   authority_store_name?: string | null;
   authority_store_code?: string | null;
+  inspection_certificate?: string | null;
+  inspection_certificate_id?: number | null;
   allocated_to?: string | null;
   allocated_to_type?: string | null;
   is_active: boolean;
@@ -66,6 +70,8 @@ type ItemInstanceRecord = {
   updated_at?: string | null;
   created_by_name?: string | null;
 };
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 type ItemBatchRecord = {
   id: number;
@@ -75,6 +81,10 @@ type ItemBatchRecord = {
   batch_number: string;
   manufactured_date?: string | null;
   expiry_date?: string | null;
+  quantity?: number | string | null;
+  available_quantity?: number | string | null;
+  in_transit_quantity?: number | string | null;
+  allocated_quantity?: number | string | null;
   is_active: boolean;
   created_at?: string | null;
   updated_at?: string | null;
@@ -83,6 +93,11 @@ type ItemBatchRecord = {
 
 function normalizeList<T>(data: Page<T> | T[]) {
   return Array.isArray(data) ? data : data.results;
+}
+
+function getMediaHref(file: string | null | undefined) {
+  if (!file) return null;
+  return file.startsWith("http") ? file : `${API_BASE}${file}`;
 }
 
 function Alert({ children, onDismiss, action }: { children: ReactNode; onDismiss?: () => void; action?: ReactNode }) {
@@ -137,6 +152,16 @@ function EmptyTableRow({ colSpan, message }: { colSpan: number; message: string 
         </div>
       </td>
     </tr>
+  );
+}
+
+function DetailKV({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
+  return (
+    <div className="detail-kv">
+      <div className="detail-kv-label">{label}</div>
+      <div className="detail-kv-value">{value || "-"}</div>
+      {sub ? <div className="detail-kv-sub">{sub}</div> : null}
+    </div>
   );
 }
 
@@ -203,7 +228,7 @@ function LowStockBadge({ item }: { item: Pick<ItemRecord, "is_low_stock" | "low_
   return <StatusPill tone="warning" label="Low Stock" />;
 }
 
-function ItemModal({
+export function ItemModal({
   open,
   mode,
   item,
@@ -216,7 +241,7 @@ function ItemModal({
   item: ItemRecord | null;
   categories: CategoryRecord[];
   onClose: () => void;
-  onSave: () => void | Promise<void>;
+  onSave: (savedItem: ItemRecord) => void | Promise<void>;
 }) {
   const isEdit = mode === "edit";
   const [form, setForm] = useState<ItemFormState>(() => itemForm(item));
@@ -273,12 +298,13 @@ function ItemModal({
 
     try {
       const body = JSON.stringify(itemPayload(form));
+      let savedItem: ItemRecord;
       if (isEdit && item) {
-        await apiFetch<ItemRecord>(`/api/inventory/items/${item.id}/`, { method: "PATCH", body });
+        savedItem = await apiFetch<ItemRecord>(`/api/inventory/items/${item.id}/`, { method: "PATCH", body });
       } else {
-        await apiFetch<ItemRecord>("/api/inventory/items/", { method: "POST", body });
+        savedItem = await apiFetch<ItemRecord>("/api/inventory/items/", { method: "POST", body });
       }
-      await onSave();
+      await onSave(savedItem);
       onClose();
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : (isEdit ? "Failed to update item." : "Failed to create item."));
@@ -397,16 +423,11 @@ function ItemActions({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const instanceVisible = canShowInstances(item.tracking_type);
   return (
     <div className="row-actions">
       <Link className="btn btn-xs btn-ghost row-action" href={`/items/${item.id}`} onClick={event => event.stopPropagation()} title="Open distribution">
         <Ic d="M9 18l6-6-6-6" size={13} />
         <span className="ra-label">Open</span>
-      </Link>
-      <Link className="btn btn-xs btn-ghost row-action" href={instanceVisible ? `/items/${item.id}/instances` : `/items/${item.id}/batches`} onClick={event => event.stopPropagation()} title={instanceVisible ? "View instances" : "View batches"}>
-        <Ic d={instanceVisible ? "M4 7h16M4 12h16M4 17h16" : "M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"} size={13} />
-        <span className="ra-label">{instanceVisible ? "Instances" : "Batches"}</span>
       </Link>
       {canEdit && (
         <button type="button" className="btn btn-xs btn-ghost row-action" onClick={event => { event.stopPropagation(); onEdit(); }} title="Edit item" disabled={pageBusy}>
@@ -444,8 +465,6 @@ function ItemCard({
   onDelete: () => void;
 }) {
   const tone = itemStatusTone(item);
-  const instanceVisible = canShowInstances(item.tracking_type);
-  const quickLink = instanceVisible ? `/items/${item.id}/instances` : `/items/${item.id}/batches`;
 
   return (
     <div className="user-card" onClick={onOpen} style={{ cursor: "pointer" }}>
@@ -472,9 +491,6 @@ function ItemCard({
         <div className="eyebrow">Tracking</div>
         <div className="group-cell">
           <span className="chip">{formatItemLabel(String(item.tracking_type ?? ""))}</span>
-          <Link className="btn btn-xs btn-ghost" href={instanceVisible ? `/items/${item.id}/instances` : `/items/${item.id}/batches`} onClick={event => event.stopPropagation()}>
-            {instanceVisible ? "Instances" : "Batches"}
-          </Link>
         </div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 12 }}>
@@ -498,9 +514,6 @@ function ItemCard({
           <button type="button" className="btn btn-xs btn-ghost row-action icon-only" onClick={event => { event.stopPropagation(); onOpen(); }} title="Open distribution" disabled={pageBusy}>
             <Ic d="M9 18l6-6-6-6" size={13} />
           </button>
-          <Link className="btn btn-xs btn-ghost row-action icon-only" href={quickLink} onClick={event => event.stopPropagation()} title={instanceVisible ? "View instances" : "View batches"}>
-            <Ic d={instanceVisible ? "M4 7h16M4 12h16M4 17h16" : "M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"} size={13} />
-          </Link>
           {canEdit && (
             <button type="button" className="btn btn-xs btn-ghost row-action icon-only" onClick={event => { event.stopPropagation(); onEdit(); }} title="Edit item" disabled={pageBusy}>
               <Ic d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" size={13} />
@@ -631,7 +644,7 @@ export function ItemListView() {
     setEditingItem(null);
   };
 
-  const handleSave = async () => {
+  const handleSave = async (_savedItem: ItemRecord) => {
     const refreshed = await loadItems({ showLoading: false });
     if (!refreshed) setActionError("Item saved, but the list could not be refreshed. Reload to resync the list.");
   };
@@ -881,14 +894,15 @@ function ItemPageActions({ item }: { item: ItemRecord | null }) {
         <Ic d="M15 18l-6-6 6-6" size={14} />
         Items
       </Link>
-      {canShowInstances(item.tracking_type) ? (
-        <Link className="btn btn-sm" href={`/items/${item.id}/instances`}>
-          <Ic d="M4 7h16M4 12h16M4 17h16" size={14} />
+      {canShowInstances(item.tracking_type) && (
+        <Link className="btn btn-sm btn-ghost" href={`/items/${item.id}/instances`}>
+          <Ic d="M8 7V3m8 4V3M4 11h16M6 5h12a2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V7a2 2 0 012-2z" size={14} />
           Instances
         </Link>
-      ) : (
-        <Link className="btn btn-sm" href={`/items/${item.id}/batches`}>
-          <Ic d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" size={14} />
+      )}
+      {canShowBatches(item.tracking_type, item.category_type) && (
+        <Link className="btn btn-sm btn-ghost" href={`/items/${item.id}/batches`}>
+          <Ic d="M20 7l-8 4-8-4m8 4v10m8-14l-8-4-8 4 8 4 8-4z" size={14} />
           Batches
         </Link>
       )}
@@ -1102,7 +1116,6 @@ export function ItemStandaloneDistributionView({ itemId, standaloneId }: { itemI
   const [density, setDensity] = useState<Density>("balanced");
   const [search, setSearch] = useState("");
   const [kindFilter, setKindFilter] = useState("all");
-  const [batchFilter, setBatchFilter] = useState("all");
 
   useEffect(() => {
     if (capsLoading) return;
@@ -1115,25 +1128,17 @@ export function ItemStandaloneDistributionView({ itemId, standaloneId }: { itemI
 
   const unit = useMemo(() => findDistributionUnit(units, standaloneId), [standaloneId, units]);
   const details = useMemo(() => flattenDistributionDetails(unit), [unit]);
-  const batchOptions = useMemo(() => {
-    const values = new Set<string>();
-    details.forEach(row => {
-      if (row.batchNumber) values.add(row.batchNumber);
-    });
-    return Array.from(values).sort();
-  }, [details]);
   const filteredDetails = useMemo(() => {
     const q = search.trim().toLowerCase();
     return details.filter(row => {
       if (q) {
-        const hay = [row.name, row.sourceStoreName ?? "", row.batchNumber ?? "", row.stockEntryIds.join(" ")].join(" ").toLowerCase();
+        const hay = [row.name, row.sourceStoreName ?? "", row.stockEntryIds.join(" ")].join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
       }
       if (kindFilter !== "all" && row.kind !== kindFilter) return false;
-      if (batchFilter !== "all" && row.batchNumber !== batchFilter) return false;
       return true;
     });
-  }, [batchFilter, details, kindFilter, search]);
+  }, [details, kindFilter, search]);
 
   return (
     <div data-density={density}>
@@ -1212,15 +1217,6 @@ export function ItemStandaloneDistributionView({ itemId, standaloneId }: { itemI
                 </select>
               </label>
             </div>
-            <div className="filter-select-group">
-              <div className="chip-filter-label">Batch</div>
-              <label className="filter-select-wrap">
-                <select value={batchFilter} onChange={e => setBatchFilter(e.target.value)} aria-label="Filter distribution detail by batch">
-                  <option value="all">All batches</option>
-                  {batchOptions.map(batch => <option key={batch} value={batch}>{batch}</option>)}
-                </select>
-              </label>
-            </div>
           </div>
           <div className="filter-bar-right">
             <DensityToggle density={density} setDensity={setDensity} />
@@ -1250,13 +1246,13 @@ export function ItemStandaloneDistributionView({ itemId, standaloneId }: { itemI
                     <th>Destination</th>
                     <th>Type</th>
                     <th>Source Store</th>
-                    <th>Batch</th>
                     <th>Quantity</th>
                     <th>Available</th>
                     <th>Allocated</th>
                     <th>In Transit</th>
                     <th>Last Activity</th>
                     <th>Stock Entries</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1279,7 +1275,6 @@ export function ItemStandaloneDistributionView({ itemId, standaloneId }: { itemI
                       </td>
                       <td><span className="chip">{detailKindLabel(row.kind)}</span></td>
                       <td>{row.sourceStoreName ? <span className="chip chip-loc">{row.sourceStoreName}</span> : <span className="muted-note">Current store row</span>}</td>
-                      <td className="mono">{row.batchNumber ?? "-"}</td>
                       <td className="mono">{formatQuantity(row.quantity)}</td>
                       <td className="mono">{row.availableQuantity == null ? "-" : formatQuantity(row.availableQuantity)}</td>
                       <td className="mono">{row.allocatedQuantity == null ? "-" : formatQuantity(row.allocatedQuantity)}</td>
@@ -1290,6 +1285,20 @@ export function ItemStandaloneDistributionView({ itemId, standaloneId }: { itemI
                         </div>
                       </td>
                       <td className="mono">{row.stockEntryIds.length ? row.stockEntryIds.join(", ") : "-"}</td>
+                      <td className="col-actions">
+                        {item && row.locationId && canShowInstances(item.tracking_type) && (
+                          <Link className="btn btn-xs btn-ghost row-action" href={`/items/${itemId}/instances?location=${row.locationId}`}>
+                            <Ic d="M4 7h16M4 12h16M4 17h16" size={13} />
+                            <span className="ra-label">Instances</span>
+                          </Link>
+                        )}
+                        {item && row.locationId && canShowBatches(item.tracking_type, item.category_type) && (
+                          <Link className="btn btn-xs btn-ghost row-action" href={`/items/${itemId}/batches?location=${row.locationId}`}>
+                            <Ic d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" size={13} />
+                            <span className="ra-label">Batches</span>
+                          </Link>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1307,7 +1316,7 @@ export function ItemStandaloneDistributionView({ itemId, standaloneId }: { itemI
   );
 }
 
-function useItemRelatedList<T>(itemId: string, path: string, fallback: string) {
+function useItemRelatedList<T>(itemId: string, path: string, fallback: string, extraQuery = "") {
   const [item, setItem] = useState<ItemRecord | null>(null);
   const [records, setRecords] = useState<T[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -1319,7 +1328,7 @@ function useItemRelatedList<T>(itemId: string, path: string, fallback: string) {
     try {
       const [itemData, listData] = await Promise.all([
         apiFetch<ItemRecord>(`/api/inventory/items/${itemId}/`),
-        apiFetch<Page<T> | T[]>(`${path}?item=${encodeURIComponent(itemId)}&page_size=500`),
+        apiFetch<Page<T> | T[]>(`${path}?item=${encodeURIComponent(itemId)}&page_size=500${extraQuery}`),
       ]);
       setItem(itemData);
       setRecords(normalizeList(listData));
@@ -1330,16 +1339,19 @@ function useItemRelatedList<T>(itemId: string, path: string, fallback: string) {
     } finally {
       if (showLoading) setIsLoading(false);
     }
-  }, [fallback, itemId, path]);
+  }, [extraQuery, fallback, itemId, path]);
 
   return { item, records, isLoading, fetchError, setFetchError, load };
 }
 
 export function ItemInstancesView({ itemId }: { itemId: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const locationId = searchParams.get("location");
   const { isLoading: capsLoading } = useCapabilities();
   const canViewItems = useCan("items");
-  const { item, records, isLoading, fetchError, setFetchError, load } = useItemRelatedList<ItemInstanceRecord>(itemId, "/api/inventory/item-instances/", "Failed to load item instances");
+  const extraQuery = locationId ? `&location=${encodeURIComponent(locationId)}` : "";
+  const { item, records, isLoading, fetchError, setFetchError, load } = useItemRelatedList<ItemInstanceRecord>(itemId, "/api/inventory/item-instances/", "Failed to load item instances", extraQuery);
   const [density, setDensity] = useState<Density>("balanced");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -1372,7 +1384,6 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
           record.full_location_path ?? "",
           record.allocated_to ?? "",
           record.in_charge ?? "",
-          record.batch_number ?? "",
           record.authority_store_name ?? "",
         ].join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
@@ -1405,17 +1416,13 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
               <Ic d="M15 18l-6-6 6-6" size={14} />
               Distribution
             </Link>
-            <Link className="btn btn-sm" href={`/items/${itemId}/batches`}>
-              <Ic d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" size={14} />
-              Batches
-            </Link>
           </div>
         </div>
 
         {!showInstances ? (
           <div className="table-card">
             <div style={{ padding: 24, color: "var(--text-2)", fontSize: 13 }}>
-              This item is batch tracked, so individual instances are not exposed. Use the batch list for physical stock groups.
+              This item is quantity tracked, so individual instances are not exposed.
             </div>
           </div>
         ) : (
@@ -1424,7 +1431,7 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
               <div className="filter-bar-left">
                 <div className="search-input">
                   <Ic d={<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>} size={14} />
-                  <input placeholder="Search serial, QR, location, assignee, batch, or authority store..." value={search} onChange={e => setSearch(e.target.value)} />
+                  <input placeholder="Search serial, QR, location, assignee, or authority store..." value={search} onChange={e => setSearch(e.target.value)} />
                   {search && <button type="button" className="clear-search" onClick={() => setSearch("")}>x</button>}
                 </div>
                 <div className="filter-select-group">
@@ -1462,12 +1469,12 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
                     <thead>
                       <tr>
                         <th>Instance</th>
+                        <th>QR</th>
                         <th>Status</th>
                         <th>Current Location</th>
                         <th>Allocated To</th>
                         <th>In Charge</th>
                         <th>Authority Store</th>
-                        <th>Batch</th>
                         <th>Active</th>
                       </tr>
                     </thead>
@@ -1475,7 +1482,7 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
                       {filteredRecords.length === 0 ? (
                         <EmptyTableRow colSpan={8} message="No item instances match the current filters." />
                       ) : filteredRecords.map(record => (
-                        <tr key={record.id}>
+                        <tr key={record.id} className="clickable-table-row" onClick={() => router.push(`/items/${itemId}/instances/${record.id}`)}>
                           <td className="col-user">
                             <div className="user-cell">
                               <div className="avatar" style={{ width: 32, height: 32, fontSize: 11, background: "linear-gradient(135deg, color-mix(in oklch, var(--primary) 82%, white), var(--primary))" }}>
@@ -1483,8 +1490,14 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
                               </div>
                               <div>
                                 <div className="user-name">{record.serial_number}</div>
-                                <div className="user-username mono">{record.qr_code ?? `#${record.id}`}</div>
+                                <div className="user-username mono">#{record.id}</div>
                               </div>
+                            </div>
+                          </td>
+                          <td>
+                            <div className="instance-qr-cell">
+                              {record.qr_code_image ? <img src={getMediaHref(record.qr_code_image) ?? undefined} alt="" /> : <span className="instance-qr-placeholder">QR</span>}
+                              <span className="mono">{record.qr_code ?? "-"}</span>
                             </div>
                           </td>
                           <td><span className="chip">{formatItemLabel(record.status)}</span></td>
@@ -1506,7 +1519,6 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
                               <div className="login-cell-sub mono">{record.authority_store_code ?? "-"}</div>
                             </div>
                           </td>
-                          <td className="mono">{record.batch_number ?? "-"}</td>
                           <td><StatusPill active={record.is_active} /></td>
                         </tr>
                       ))}
@@ -1526,6 +1538,137 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
   );
 }
 
+export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string; instanceId: string }) {
+  const router = useRouter();
+  const { isLoading: capsLoading } = useCapabilities();
+  const canViewItems = useCan("items");
+  const [item, setItem] = useState<ItemRecord | null>(null);
+  const [instance, setInstance] = useState<ItemInstanceRecord | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setIsLoading(true);
+    setFetchError(null);
+    try {
+      const [itemData, instanceData] = await Promise.all([
+        apiFetch<ItemRecord>(`/api/inventory/items/${itemId}/`),
+        apiFetch<ItemInstanceRecord>(`/api/inventory/item-instances/${instanceId}/`),
+      ]);
+      setItem(itemData);
+      setInstance(instanceData);
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : "Failed to load item instance");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [instanceId, itemId]);
+
+  useEffect(() => {
+    if (capsLoading) return;
+    if (!canViewItems) {
+      router.replace("/403");
+      return;
+    }
+    load();
+  }, [canViewItems, capsLoading, load, router]);
+
+  const qrHref = getMediaHref(instance?.qr_code_image);
+  const title = instance?.serial_number || instance?.qr_code || `Instance #${instanceId}`;
+
+  return (
+    <div>
+      <Topbar breadcrumb={["Inventory", "Items", item?.name ?? "Item", "Instances", title]} />
+      <div className="page">
+        <Link className="detail-page-back" href={`/items/${itemId}/instances`}>
+          <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
+          Back to Instances
+        </Link>
+
+        {fetchError && (
+          <Alert onDismiss={() => setFetchError(null)} action={<button type="button" className="btn btn-xs" onClick={() => load()}>Retry</button>}>
+            {fetchError}
+          </Alert>
+        )}
+
+        {isLoading ? (
+          <div className="detail-card detail-card-body">Loading item instance...</div>
+        ) : instance ? (
+          <>
+            <div className="page-head-detail item-instance-detail-head">
+              <div className="page-title-group">
+                <div className="eyebrow">Item Instance</div>
+                <h1>{title}</h1>
+                <div className="page-sub">{item ? `${item.name} / ${item.code}` : instance.item_name ?? "Tracked inventory instance"}</div>
+                <div className="page-id-row">
+                  <span className="doc-no">{instance.qr_code ?? `#${instance.id}`}</span>
+                  <span className="chip">{formatItemLabel(instance.status)}</span>
+                  <StatusPill active={instance.is_active} />
+                </div>
+              </div>
+              <div className="page-head-actions">
+                <Link className="btn btn-sm" href={`/items/${itemId}`}>
+                  <Ic d="M3 12h18M3 6h18M3 18h18" size={14} />
+                  Distribution
+                </Link>
+              </div>
+            </div>
+
+            <div className="item-instance-detail-grid">
+              <main className="detail-card">
+                <header className="detail-card-head">
+                  <div>
+                    <div className="eyebrow">Instance record</div>
+                    <h2>Identity, custody and current placement</h2>
+                  </div>
+                </header>
+                <div className="detail-card-body">
+                  <div className="detail-kv-grid">
+                    <DetailKV label="Serial number" value={instance.serial_number} />
+                    <DetailKV label="QR code" value={<span className="mono">{instance.qr_code ?? "-"}</span>} />
+                    <DetailKV label="Item" value={instance.item_name ?? item?.name} sub={instance.item_code ?? item?.code} />
+                    <DetailKV label="Category" value={instance.item_category_name} sub={instance.item_model_number ? `Model ${instance.item_model_number}` : undefined} />
+                    <DetailKV label="Current location" value={instance.location_name} sub={instance.full_location_path ?? instance.location_code} />
+                    <DetailKV label="Authority store" value={instance.authority_store_name} sub={instance.authority_store_code} />
+                    <DetailKV label="Allocated to" value={instance.allocated_to ?? "Not allocated"} sub={instance.allocated_to_type ? formatItemLabel(instance.allocated_to_type) : undefined} />
+                    <DetailKV label="In charge" value={instance.in_charge} />
+                    <DetailKV label="Inspection certificate" value={instance.inspection_certificate ?? "Not linked"} />
+                    <DetailKV label="Created by" value={instance.created_by_name} sub={formatItemDate(instance.created_at)} />
+                    <DetailKV label="Last updated" value={formatItemDate(instance.updated_at)} />
+                  </div>
+                </div>
+              </main>
+
+              <aside className="detail-card item-instance-qr-card">
+                <header className="detail-card-head">
+                  <div>
+                    <div className="eyebrow">QR asset</div>
+                    <h2>Scan code</h2>
+                  </div>
+                </header>
+                <div className="detail-card-body">
+                  {qrHref ? (
+                    <a href={qrHref} target="_blank" rel="noopener noreferrer" className="item-instance-qr-preview">
+                      <img src={qrHref} alt={`QR code for ${title}`} />
+                    </a>
+                  ) : (
+                    <div className="item-instance-qr-empty">No QR image available</div>
+                  )}
+                  <div className="detail-muted-row item-instance-qr-code">
+                    <span className="mono">{instance.qr_code ?? "-"}</span>
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </>
+        ) : (
+          <div className="detail-card detail-card-body">Item instance not found.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function isExpired(date: string | null | undefined) {
   if (!date) return false;
   const parsed = new Date(date);
@@ -1535,9 +1678,12 @@ function isExpired(date: string | null | undefined) {
 
 export function ItemBatchesView({ itemId }: { itemId: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const locationId = searchParams.get("location");
   const { isLoading: capsLoading } = useCapabilities();
   const canViewItems = useCan("items");
-  const { item, records, isLoading, fetchError, setFetchError, load } = useItemRelatedList<ItemBatchRecord>(itemId, "/api/inventory/item-batches/", "Failed to load item batches");
+  const extraQuery = locationId ? `&location=${encodeURIComponent(locationId)}` : "";
+  const { item, records, isLoading, fetchError, setFetchError, load } = useItemRelatedList<ItemBatchRecord>(itemId, "/api/inventory/item-batches/", "Failed to load item batches", extraQuery);
   const [density, setDensity] = useState<Density>("balanced");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -1586,12 +1732,6 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
               <Ic d="M15 18l-6-6 6-6" size={14} />
               Distribution
             </Link>
-            {item && canShowInstances(item.tracking_type) && (
-              <Link className="btn btn-sm" href={`/items/${itemId}/instances`}>
-                <Ic d="M4 7h16M4 12h16M4 17h16" size={14} />
-                Instances
-              </Link>
-            )}
           </div>
         </div>
 
@@ -1643,6 +1783,8 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
                 <thead>
                   <tr>
                     <th>Batch</th>
+                    <th>Quantity</th>
+                    <th>Available</th>
                     <th>Manufactured</th>
                     <th>Expiry</th>
                     <th>Expiry Status</th>
@@ -1653,7 +1795,7 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
                 </thead>
                 <tbody>
                   {filteredRecords.length === 0 ? (
-                    <EmptyTableRow colSpan={7} message="No item batches match the current filters." />
+                    <EmptyTableRow colSpan={9} message="No item batches match the current filters." />
                   ) : filteredRecords.map(record => (
                     <tr key={record.id}>
                       <td className="col-user">
@@ -1667,6 +1809,8 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
                           </div>
                         </div>
                       </td>
+                      <td>{formatQuantity(record.quantity)}</td>
+                      <td>{formatQuantity(record.available_quantity)}</td>
                       <td>{formatItemDate(record.manufactured_date)}</td>
                       <td>{formatItemDate(record.expiry_date)}</td>
                       <td>{isExpired(record.expiry_date) ? <StatusPill tone="warning" label="Expired" /> : <StatusPill tone="success" label="Valid" />}</td>
@@ -1680,7 +1824,7 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
             </div>
           )}
           <div className="table-card-foot">
-            <div className="eyebrow">Batches are stock group records used by batch-tracked inventory and FIFO flows</div>
+            <div className="eyebrow">Batches are stock group records for perishable quantity items</div>
             <div className="pager"><span className="mono pager-current">Item batches</span></div>
           </div>
         </div>
