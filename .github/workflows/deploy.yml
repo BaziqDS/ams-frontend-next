@@ -41,7 +41,26 @@ jobs:
 
       - name: Create environment file
         run: |
-          Set-Content -Path .env.local -Value "NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}"
+          $apiBase = "${{ secrets.NEXT_PUBLIC_API_URL }}".Trim()
+
+          if ([string]::IsNullOrWhiteSpace($apiBase)) {
+            Write-Host "ERROR: NEXT_PUBLIC_API_URL secret is empty."
+            exit 1
+          }
+
+          try {
+            $uri = [uri]$apiBase
+          } catch {
+            Write-Host "ERROR: NEXT_PUBLIC_API_URL must be a valid absolute URL."
+            exit 1
+          }
+
+          if ($uri.Host -in @('localhost', '127.0.0.1', '::1')) {
+            Write-Host "ERROR: NEXT_PUBLIC_API_URL cannot point to localhost for a production deployment."
+            exit 1
+          }
+
+          Set-Content -Path .env.local -Value "NEXT_PUBLIC_API_URL=$apiBase"
 
       - name: Build
         run: npm run build
