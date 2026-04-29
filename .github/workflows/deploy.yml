@@ -103,7 +103,7 @@ jobs:
             }
 
             if ($frontend) {
-              Write-Host "AMSFrontend state on attempt $attempt: $($frontend.Status)"
+              Write-Host "AMSFrontend state on attempt ${attempt}: $($frontend.Status)"
             } else {
               Write-Host "AMSFrontend service not found on attempt $attempt."
             }
@@ -141,13 +141,13 @@ jobs:
           for ($attempt = 1; $attempt -le 12; $attempt++) {
             $frontend = Get-Service -Name AMSFrontend -ErrorAction SilentlyContinue
             if (-not $frontend) {
-              Write-Host "Frontend verification attempt $attempt: AMSFrontend service does not exist yet."
+              Write-Host "Frontend verification attempt ${attempt}: AMSFrontend service does not exist yet."
               Start-Sleep -Seconds 5
               continue
             }
 
             if ($frontend.Status -ne "Running") {
-              Write-Host "Frontend verification attempt $attempt: service status is $($frontend.Status)."
+              Write-Host "Frontend verification attempt ${attempt}: service status is $($frontend.Status)."
               Start-Sleep -Seconds 5
               continue
             }
