@@ -1,9 +1,11 @@
-"use client";
+import { redirect } from "next/navigation";
+import { buildItemsWorkspaceHref } from "@/lib/itemsWorkspaceState";
 
-import { useParams } from "next/navigation";
-import { ItemStandaloneDistributionView } from "@/components/ItemModuleViews";
-
-export default function ItemStandaloneDistributionPage() {
-  const params = useParams<{ id: string; standaloneId: string }>();
-  return <ItemStandaloneDistributionView itemId={params.id} standaloneId={params.standaloneId} />;
+export default async function ItemStandaloneDistributionPage({
+  params,
+}: {
+  params: Promise<{ id: string; standaloneId: string }>;
+}) {
+  const { id, standaloneId } = await params;
+  redirect(buildItemsWorkspaceHref({ itemId: id, tab: "distribution", locationId: standaloneId }));
 }

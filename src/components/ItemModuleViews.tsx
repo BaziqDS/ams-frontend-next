@@ -2,11 +2,18 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { Topbar } from "@/components/Topbar";
 import type { CategoryRecord } from "@/components/CategoryModal";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
 import { apiFetch, type Page } from "@/lib/api";
+import {
+  buildItemsWorkspaceHref,
+  normalizeItemsWorkspaceState,
+  parseItemsWorkspaceSearch,
+  type ItemsWorkspaceState,
+  type ItemsWorkspaceTab,
+} from "@/lib/itemsWorkspaceState";
 import {
   canShowInstances,
   canShowBatches,
@@ -18,17 +25,142 @@ import {
   isLowStock,
   itemStatusTone,
   toNumber,
+  type ItemDistributionAllocation,
   type ItemDistributionDetailRow,
+  type ItemDistributionStore,
   type ItemDistributionUnit,
   type ItemRecord,
   type ItemStatusTone,
 } from "@/lib/itemUi";
+import workspaceStyles from "./ItemWorkspace.module.css";
 
 const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden="true" focusable="false">
     {typeof d === "string" ? <path d={d} /> : d}
   </svg>
 );
+
+type WorkspaceFilterKey = "all" | "quantity" | "individual" | "perishable" | "low" | "out";
+
+type WorkspaceLocationPanelState = {
+  key: string;
+  unitId: number;
+  eyebrow: string;
+  title: string;
+  subtitle: string;
+  locationId: string | null;
+  quantity: number;
+  availableQuantity: number | null;
+  allocatedQuantity: number | null;
+  inTransitQuantity: number | null;
+  stores: ItemDistributionStore[];
+  allocations: ItemDistributionAllocation[];
+};
+
+function workspaceTrackingIcon(trackingType: string | null | undefined) {
+  if (trackingType === "INDIVIDUAL") {
+    return <Ic d={<><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="M3.3 7 12 12l8.7-5M12 22V12" /></>} size={14} />;
+  }
+  if (trackingType === "QUANTITY") {
+    return <Ic d={<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><path d="M14 2v6h6" /></>} size={14} />;
+  }
+  return <Ic d={<><path d="M9 2v6L4 20a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2L15 8V2" /><path d="M8 2h8M7 14h10" /></>} size={14} />;
+}
+
+function workspaceLocationIcon(kind: "unit" | "store" | "person" | "location" | "repair") {
+  if (kind === "unit") {
+    return <Ic d={<><rect x="4" y="2" width="16" height="20" rx="1" /><path d="M9 6h6M9 10h6M9 14h6M9 18h2" /></>} size={14} />;
+  }
+  if (kind === "store") {
+    return <Ic d={<><rect x="3" y="6" width="18" height="4" /><rect x="3" y="14" width="18" height="4" /></>} size={14} />;
+  }
+  if (kind === "person") {
+    return <Ic d={<><circle cx="12" cy="8" r="4" /><path d="M4 22c0-4.4 3.6-8 8-8s8 3.6 8 8" /></>} size={14} />;
+  }
+  if (kind === "repair") {
+    return <Ic d="M14.7 6.3a4 4 0 0 1 5.4 5.4l-9.4 9.4-3.4 1.2 1.2-3.4 9.4-9.4-3.2-3.2" size={14} />;
+  }
+  return <Ic d={<><path d="M12 21s-7-6.5-7-12a7 7 0 1 1 14 0c0 5.5-7 12-7 12Z" /><circle cx="12" cy="9" r="2.5" /></>} size={14} />;
+}
+
+function workspaceTrackingTone(trackingType: string | null | undefined) {
+  if (trackingType === "INDIVIDUAL") return "individual";
+  if (trackingType === "QUANTITY") return "quantity";
+  return "perishable";
+}
+
+function workspaceLastUpdate(item: Pick<ItemRecord, "updated_at" | "created_at">) {
+  return formatItemDate(item.updated_at ?? item.created_at, "Unknown");
+}
+
+function buildUnitPanelState(item: ItemRecord, unit: ItemDistributionUnit): WorkspaceLocationPanelState {
+  return {
+    key: `unit-${unit.id}`,
+    unitId: unit.id,
+    eyebrow: "Standalone location",
+    title: unit.name,
+    subtitle: `${unit.code} · ${formatQuantity(unit.totalQuantity)} ${item.acct_unit ?? "unit"} of ${item.name}`,
+    locationId: String(unit.id),
+    quantity: unit.totalQuantity,
+    availableQuantity: unit.availableQuantity,
+    allocatedQuantity: unit.allocatedQuantity,
+    inTransitQuantity: unit.inTransitQuantity,
+    stores: unit.stores,
+    allocations: unit.allocations,
+  };
+}
+
+function buildStorePanelState(item: ItemRecord, unit: ItemDistributionUnit, store: ItemDistributionStore): WorkspaceLocationPanelState {
+  return {
+    key: `store-${store.id}`,
+    unitId: unit.id,
+    eyebrow: store.isStore ? "Store row" : "Location row",
+    title: store.locationName,
+    subtitle: `${unit.name} · ${store.batchNumber ? `Batch ${store.batchNumber} · ` : ""}${formatQuantity(store.quantity)} ${item.acct_unit ?? "unit"}`,
+    locationId: String(store.locationId),
+    quantity: store.quantity,
+    availableQuantity: store.availableQuantity,
+    allocatedQuantity: store.allocatedTotal,
+    inTransitQuantity: store.inTransitQuantity,
+    stores: [],
+    allocations: unit.allocations.filter(allocation => allocation.sourceStoreId === store.id),
+  };
+}
+
+function buildAllocationPanelState(item: ItemRecord, unit: ItemDistributionUnit, allocation: ItemDistributionAllocation): WorkspaceLocationPanelState {
+  return {
+    key: `allocation-${allocation.id}`,
+    unitId: unit.id,
+    eyebrow: allocation.targetType === "PERSON" ? "Allocated to person" : "Allocated to location",
+    title: allocation.targetName,
+    subtitle: `${allocation.sourceStoreName} · ${formatQuantity(allocation.quantity)} ${item.acct_unit ?? "unit"} of ${item.name}`,
+    locationId: allocation.locationId != null ? String(allocation.locationId) : null,
+    quantity: allocation.quantity,
+    availableQuantity: null,
+    allocatedQuantity: allocation.quantity,
+    inTransitQuantity: null,
+    stores: [],
+    allocations: [],
+  };
+}
+
+function buildCategoryPath(categoryId: number | string | null | undefined, categories: CategoryRecord[], fallback?: string | null) {
+  const parsed = Number(categoryId);
+  if (!Number.isFinite(parsed) || !categories.length) return fallback ?? null;
+
+  const byId = new Map(categories.map(category => [category.id, category]));
+  const parts: string[] = [];
+  let current = byId.get(parsed) ?? null;
+  const seen = new Set<number>();
+
+  while (current && !seen.has(current.id)) {
+    parts.unshift(current.name);
+    seen.add(current.id);
+    current = current.parent_category != null ? byId.get(current.parent_category) ?? null : null;
+  }
+
+  return parts.length ? parts.join(" / ") : fallback ?? null;
+}
 
 type Density = "compact" | "balanced" | "comfortable";
 
@@ -132,6 +264,8 @@ function StatusPill({ active, tone, label }: { active?: boolean; tone?: ItemStat
   const resolvedTone = tone ?? (active ? "success" : "disabled");
   const className = resolvedTone === "success"
     ? "pill pill-success"
+    : resolvedTone === "warning"
+      ? "pill pill-warning"
     : resolvedTone === "danger"
       ? "pill pill-danger"
       : "pill pill-neutral";
@@ -532,6 +666,7 @@ function ItemCard({
 
 export function ItemListView() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { isLoading: capsLoading } = useCapabilities();
   const canViewItems = useCan("items");
   const canManageItems = useCan("items", "manage");
@@ -542,14 +677,17 @@ export function ItemListView() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("all");
-  const [trackingFilter, setTrackingFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [density, setDensity] = useState<Density>("balanced");
-  const [mode, setMode] = useState<"table" | "grid">("table");
+  const [filterKey, setFilterKey] = useState<WorkspaceFilterKey>("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ItemRecord | null>(null);
   const [busyAction, setBusyAction] = useState<{ kind: "delete"; itemId: number } | null>(null);
+  const [workspaceRevision, setWorkspaceRevision] = useState(0);
+  const workspaceState = useMemo(
+    () => parseItemsWorkspaceSearch(new URLSearchParams(searchParams.toString())),
+    [searchParams],
+  );
+  const selectedItemId = workspaceState.itemId;
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(workspaceState.locationId);
 
   const leafCategories = useMemo(
     () => categories.filter(category => category.parent_category !== null && category.is_active),
@@ -586,6 +724,16 @@ export function ItemListView() {
     loadItems();
   }, [canViewItems, capsLoading, loadItems, router]);
 
+  useEffect(() => {
+    setSelectedLocationId(workspaceState.locationId ?? null);
+  }, [selectedItemId]);
+
+  useEffect(() => {
+    if (workspaceState.locationId) {
+      setSelectedLocationId(workspaceState.locationId);
+    }
+  }, [workspaceState.locationId]);
+
   const filteredItems = useMemo(() => {
     const q = search.trim().toLowerCase();
     return items.filter(item => {
@@ -602,32 +750,24 @@ export function ItemListView() {
         ].join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
       }
-      if (categoryFilter !== "all" && item.category_display !== categoryFilter) return false;
-      if (trackingFilter !== "all" && item.tracking_type !== trackingFilter) return false;
-      if (statusFilter === "active" && !item.is_active) return false;
-      if (statusFilter === "disabled" && item.is_active) return false;
-      if (statusFilter === "available" && toNumber(item.available_quantity) <= 0) return false;
-      if (statusFilter === "out" && (toNumber(item.total_quantity) <= 0 || toNumber(item.available_quantity) > 0)) return false;
-      if (statusFilter === "low" && !isLowStock(item)) return false;
+      if (filterKey === "quantity" && item.tracking_type !== "QUANTITY") return false;
+      if (filterKey === "individual" && item.tracking_type !== "INDIVIDUAL") return false;
+      if (filterKey === "perishable" && !canShowBatches(item.tracking_type, item.category_type)) return false;
+      if (filterKey === "low" && !isLowStock(item)) return false;
+      if (filterKey === "out" && toNumber(item.total_quantity) > 0) return false;
       return true;
     });
-  }, [categoryFilter, items, search, statusFilter, trackingFilter]);
+  }, [filterKey, items, search]);
 
-  const categoryOptions = useMemo(() => {
-    const values = new Set<string>();
-    items.forEach(item => {
-      if (item.category_display) values.add(item.category_display);
-    });
-    return Array.from(values).sort();
-  }, [items]);
-
-  const trackingOptions = useMemo(() => {
-    const values = new Set<string>();
-    items.forEach(item => {
-      if (item.tracking_type) values.add(String(item.tracking_type));
-    });
-    return Array.from(values).sort();
-  }, [items]);
+  const listSummary = useMemo(() => ({
+    totalItems: items.length,
+    totalStock: items.reduce((sum, item) => sum + toNumber(item.total_quantity), 0),
+    lowStock: items.filter(item => isLowStock(item)).length,
+    outOfStock: items.filter(item => toNumber(item.total_quantity) <= 0).length,
+    quantity: items.filter(item => item.tracking_type === "QUANTITY").length,
+    individual: items.filter(item => item.tracking_type === "INDIVIDUAL").length,
+    perishable: items.filter(item => canShowBatches(item.tracking_type, item.category_type)).length,
+  }), [items]);
 
   const openCreateModal = () => {
     setEditingItem(null);
@@ -647,6 +787,7 @@ export function ItemListView() {
   const handleSave = async (_savedItem: ItemRecord) => {
     const refreshed = await loadItems({ showLoading: false });
     if (!refreshed) setActionError("Item saved, but the list could not be refreshed. Reload to resync the list.");
+    setWorkspaceRevision(current => current + 1);
   };
 
   const handleDelete = async (item: ItemRecord) => {
@@ -659,6 +800,10 @@ export function ItemListView() {
     try {
       await apiFetch(`/api/inventory/items/${item.id}/`, { method: "DELETE" });
       setItems(prev => prev.filter(record => record.id !== item.id));
+      if (selectedItemId === String(item.id)) {
+        router.replace("/items", { scroll: false });
+        setSelectedLocationId(null);
+      }
       const refreshed = await loadItems({ showLoading: false });
       if (!refreshed) setActionError("Item deleted, but the list could not be refreshed. The row was removed locally; reload to resync.");
     } catch (err) {
@@ -670,9 +815,31 @@ export function ItemListView() {
 
   const pageBusy = busyAction !== null;
   const deleteBusyItemId = busyAction?.kind === "delete" ? busyAction.itemId : null;
+  const setWorkspace = useCallback((next: {
+    itemId?: string | null;
+    tab?: ItemsWorkspaceTab;
+    locationId?: string | null;
+  }) => {
+    const nextItemId = next.itemId !== undefined ? next.itemId : selectedItemId;
+    const nextTab = next.tab ?? workspaceState.tab;
+    const nextLocationId = next.locationId !== undefined ? next.locationId : selectedLocationId;
 
+    if (!nextItemId) {
+      router.replace("/items", { scroll: false });
+      return;
+    }
+
+    router.replace(
+      buildItemsWorkspaceHref({
+        itemId: nextItemId,
+        tab: nextTab,
+        locationId: nextTab === "distribution" ? nextLocationId : null,
+      }),
+      { scroll: false },
+    );
+  }, [router, selectedItemId, selectedLocationId, workspaceState.tab]);
   return (
-    <div data-density={density}>
+    <div>
       <ItemModal
         open={modalOpen}
         mode={editingItem ? "edit" : "create"}
@@ -682,203 +849,1552 @@ export function ItemListView() {
         onSave={handleSave}
       />
       <Topbar breadcrumb={["Inventory", "Items"]} />
-      <div className="page">
-        {fetchError && (
-          <Alert
-            onDismiss={() => setFetchError(null)}
-            action={<button type="button" className="btn btn-xs" onClick={() => loadItems()}>Retry</button>}
-          >
-            {fetchError}
-          </Alert>
-        )}
-        {actionError && <Alert onDismiss={() => setActionError(null)}>{actionError}</Alert>}
-
-        <div className="page-head">
-          <div className="page-title-group">
-            <div className="eyebrow">Inventory</div>
-            <h1>Items</h1>
-            <div className="page-sub">Browse item records and open each item to inspect stock distribution by standalone location.</div>
-          </div>
+      {(fetchError || actionError) && (
+        <div className="page" style={{ paddingTop: 16, paddingBottom: 0 }}>
+          {fetchError && (
+            <Alert
+              onDismiss={() => setFetchError(null)}
+              action={<button type="button" className="btn btn-xs" onClick={() => loadItems()}>Retry</button>}
+            >
+              {fetchError}
+            </Alert>
+          )}
+          {actionError && <Alert onDismiss={() => setActionError(null)}>{actionError}</Alert>}
         </div>
+      )}
+      <div
+        className={`${workspaceStyles.workspaceShell} ${selectedItemId ? workspaceStyles.workspaceShellMobileDetail : ""}`}
+        data-density="compact"
+        data-layout="split"
+      >
+          <section className={workspaceStyles.listPane}>
+            <header className={workspaceStyles.listHead}>
+              <div className={workspaceStyles.listTitleRow}>
+                <div>
+                  <div className="eyebrow">Inventory</div>
+                  <h1 className={workspaceStyles.listTitle}>Items</h1>
+                </div>
+                <div className={workspaceStyles.listActions}>
+                  <button type="button" className="btn btn-ghost btn-sm">
+                    <Ic d={<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M17 8l-5-5-5 5M12 3v12" /></>} size={14} />
+                    Import
+                  </button>
+                  {canManageItems ? (
+                    <button type="button" className="btn btn-primary btn-sm" onClick={openCreateModal} disabled={pageBusy}>
+                      <Ic d="M12 5v14M5 12h14" size={14} />
+                      New item
+                    </button>
+                  ) : null}
+                </div>
+              </div>
 
-        <div className="filter-bar">
-          <div className="filter-bar-left">
-            <div className="search-input">
-              <Ic d={<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>} size={14} />
-              <input placeholder="Search by item, code, category, unit, or specification..." value={search} onChange={e => setSearch(e.target.value)} />
-              {search && <button type="button" className="clear-search" onClick={() => setSearch("")}>x</button>}
-            </div>
+              <div className={workspaceStyles.listSummary}>
+                <div className={workspaceStyles.listStat}>
+                  <div className={workspaceStyles.listStatValue}>{formatQuantity(listSummary.totalItems)}</div>
+                  <div className={workspaceStyles.listStatLabel}>Items</div>
+                </div>
+                <div className={workspaceStyles.listStatSep} />
+                <div className={workspaceStyles.listStat}>
+                  <div className={workspaceStyles.listStatValue}>{formatQuantity(listSummary.totalStock)}</div>
+                  <div className={workspaceStyles.listStatLabel}>Total stock</div>
+                </div>
+                <div className={workspaceStyles.listStatSep} />
+                <div className={workspaceStyles.listStat}>
+                  <div className={`${workspaceStyles.listStatValue} ${workspaceStyles.listStatWarn}`}>{formatQuantity(listSummary.lowStock)}</div>
+                  <div className={workspaceStyles.listStatLabel}>Low stock</div>
+                </div>
+                <div className={workspaceStyles.listStatSep} />
+                <div className={workspaceStyles.listStat}>
+                  <div className={`${workspaceStyles.listStatValue} ${workspaceStyles.listStatDanger}`}>{formatQuantity(listSummary.outOfStock)}</div>
+                  <div className={workspaceStyles.listStatLabel}>No stock</div>
+                </div>
+              </div>
 
-            <div className="filter-select-group">
-              <div className="chip-filter-label">Category</div>
-              <label className="filter-select-wrap">
-                <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} aria-label="Filter items by category">
-                  <option value="all">All categories</option>
-                  {categoryOptions.map(category => <option key={category} value={category}>{category}</option>)}
-                </select>
-              </label>
-            </div>
+              <div className={workspaceStyles.listToolbar}>
+                <div className={workspaceStyles.listSearch}>
+                  <Ic d={<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>} size={14} />
+                  <input
+                    placeholder="Filter items by name, code, category..."
+                    value={search}
+                    onChange={event => setSearch(event.target.value)}
+                    aria-label="Filter items"
+                  />
+                  {search ? (
+                    <button type="button" className={workspaceStyles.listSearchClear} onClick={() => setSearch("")}>
+                      <Ic d="M18 6 6 18M6 6l12 12" size={12} />
+                    </button>
+                  ) : (
+                    <span className={workspaceStyles.listSearchKbd}>/</span>
+                  )}
+                </div>
 
-            <div className="filter-select-group">
-              <div className="chip-filter-label">Tracking</div>
-              <label className="filter-select-wrap">
-                <select value={trackingFilter} onChange={e => setTrackingFilter(e.target.value)} aria-label="Filter items by tracking type">
-                  <option value="all">All tracking</option>
-                  {trackingOptions.map(tracking => <option key={tracking} value={tracking}>{formatItemLabel(tracking)}</option>)}
-                </select>
-              </label>
-            </div>
+                <div className={workspaceStyles.listFilters}>
+                  {([
+                    { key: "all", label: "All", count: listSummary.totalItems, tone: undefined as "warn" | "danger" | undefined },
+                    { key: "quantity", label: "Quantity", count: listSummary.quantity, tone: undefined },
+                    { key: "individual", label: "Individual", count: listSummary.individual, tone: undefined },
+                    { key: "perishable", label: "Perishable", count: listSummary.perishable, tone: undefined },
+                  ]).map(option => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      className={`${workspaceStyles.filterPill} ${filterKey === option.key ? workspaceStyles.filterPillActive : ""}`}
+                      onClick={() => setFilterKey(option.key as WorkspaceFilterKey)}
+                    >
+                      {option.label}
+                      <span className={workspaceStyles.filterPillCount}>{formatQuantity(option.count)}</span>
+                    </button>
+                  ))}
+                  <span className={workspaceStyles.listFiltersSep} aria-hidden="true" />
+                  {([
+                    { key: "low", label: "Low stock", count: listSummary.lowStock, tone: "warn" as const },
+                    { key: "out", label: "No stock", count: listSummary.outOfStock, tone: "danger" as const },
+                  ]).map(option => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      className={`${workspaceStyles.filterPill} ${filterKey === option.key ? workspaceStyles.filterPillActive : ""} ${option.tone === "warn" ? workspaceStyles.filterPillWarn : ""} ${option.tone === "danger" ? workspaceStyles.filterPillDanger : ""}`}
+                      onClick={() => setFilterKey(option.key as WorkspaceFilterKey)}
+                    >
+                      {option.label}
+                      <span className={workspaceStyles.filterPillCount}>{formatQuantity(option.count)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </header>
 
-            <div className="filter-select-group">
-              <div className="chip-filter-label">Status</div>
-              <label className="filter-select-wrap">
-                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} aria-label="Filter items by status">
-                  <option value="all">All statuses</option>
-                  <option value="available">Available</option>
-                  <option value="low">Low stock</option>
-                  <option value="out">No stock</option>
-                  <option value="active">Active</option>
-                  <option value="disabled">Disabled</option>
-                </select>
-              </label>
+            <div className={workspaceStyles.listBody}>
+              {isLoading ? (
+                <div className={workspaceStyles.listEmpty}>Loading items...</div>
+              ) : (
+                filteredItems.length > 0 ? (
+                  <div className={workspaceStyles.listRows}>
+                    {filteredItems.map(item => (
+                      <WorkspaceItemRow
+                        key={item.id}
+                        item={item}
+                        categoryPath={buildCategoryPath(item.category, categories, item.category_display)}
+                        selected={selectedItemId === String(item.id)}
+                        canEdit={canManageItems}
+                        canDelete={canDeleteItems}
+                        pageBusy={pageBusy}
+                        deleteBusy={deleteBusyItemId === item.id}
+                        onSelect={() => {
+                          setSelectedLocationId(null);
+                          setWorkspace({ itemId: String(item.id), tab: "distribution", locationId: null });
+                        }}
+                        onEdit={() => openEditModal(item)}
+                        onDelete={() => handleDelete(item)}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className={workspaceStyles.listEmpty}>
+                    No items match the current filters.
+                  </div>
+                )
+              )}
             </div>
-          </div>
+          </section>
 
-          <div className="filter-bar-right">
-            <DensityToggle density={density} setDensity={setDensity} />
-            <div className="seg" title="View mode">
-              <button type="button" className={"seg-btn icon-only" + (mode === "table" ? " active" : "")} onClick={() => setMode("table")} title="Table">
-                <Ic d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" size={14} />
-              </button>
-              <button type="button" className={"seg-btn icon-only" + (mode === "grid" ? " active" : "")} onClick={() => setMode("grid")} title="Grid">
-                <Ic d={<><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></>} size={14} />
-              </button>
-            </div>
-            {canManageItems && (
-              <button type="button" className="btn btn-sm btn-primary" onClick={openCreateModal} disabled={pageBusy}>
-                <Ic d="M12 5v14M5 12h14" size={14} />
-                Add Item
-              </button>
+          <section className={workspaceStyles.detailPane}>
+            {selectedItemId ? (
+              <WorkspaceSelectedItemPane
+                itemId={selectedItemId}
+                categories={categories}
+                activeTab={workspaceState.tab}
+                selectedLocationId={selectedLocationId}
+                canManageItems={canManageItems}
+                refreshToken={workspaceRevision}
+                onBackToList={() => {
+                  setSelectedLocationId(null);
+                  router.replace("/items", { scroll: false });
+                }}
+                onEditItem={item => openEditModal(item)}
+                onSelectLocation={locationId => {
+                  setSelectedLocationId(locationId);
+                  setWorkspace({ itemId: selectedItemId, tab: "distribution", locationId });
+                }}
+                onClearSelectedLocation={() => {
+                  setSelectedLocationId(null);
+                  setWorkspace({ itemId: selectedItemId, tab: "distribution", locationId: null });
+                }}
+                onSelectTab={tab => setWorkspace({ itemId: selectedItemId, tab })}
+                onNormalizeState={nextState => {
+                  if (nextState.locationId !== undefined) {
+                    setSelectedLocationId(nextState.locationId);
+                  }
+                  setWorkspace(nextState);
+                }}
+              />
+            ) : (
+              <WorkspaceEmptyState />
             )}
-          </div>
-        </div>
+          </section>
+      </div>
+    </div>
+  );
+}
 
-        {mode === "table" ? (
-        <div className="table-card">
-          <div className="table-card-head">
-            <div className="table-card-head-left">
-              <div className="eyebrow">Items list</div>
-              <div className="table-count">
-                <span className="mono">{filteredItems.length}</span>
-                <span>of</span>
-                <span className="mono">{items.length}</span>
-                <span>items</span>
+function WorkspaceItemRow({
+  item,
+  categoryPath,
+  selected,
+  canEdit,
+  canDelete,
+  pageBusy,
+  deleteBusy,
+  onSelect,
+  onEdit,
+  onDelete,
+}: {
+  item: ItemRecord;
+  categoryPath: string | null;
+  selected: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+  pageBusy: boolean;
+  deleteBusy: boolean;
+  onSelect: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const totalQuantity = toNumber(item.total_quantity);
+  const standaloneLocationCount = toNumber(item.standalone_location_count);
+  const rowBadges = [
+    isLowStock(item) ? <span key="low" className={`${workspaceStyles.itemRowFlag} ${workspaceStyles.itemRowFlagLow}`}>LOW</span> : null,
+    totalQuantity <= 0 ? <span key="out" className={`${workspaceStyles.itemRowFlag} ${workspaceStyles.itemRowFlagDanger}`}>OUT</span> : null,
+  ].filter(Boolean);
+
+  const handleRowKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onSelect();
+    }
+  };
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      className={`${workspaceStyles.itemRow} ${selected ? workspaceStyles.itemRowSelected : ""}`}
+      onClick={onSelect}
+      onKeyDown={handleRowKeyDown}
+      data-tracking={workspaceTrackingTone(item.tracking_type)}
+    >
+      <span className={workspaceStyles.itemRowAvatar}>
+        {workspaceTrackingIcon(item.tracking_type)}
+      </span>
+      <span className={workspaceStyles.itemRowMain}>
+        <span className={workspaceStyles.itemRowTitle}>{item.name}</span>
+        <span className={workspaceStyles.itemRowMeta}>
+          <span className="mono">{item.code}</span>
+          <span className={workspaceStyles.itemRowMetaSep}>·</span>
+          <span>{categoryPath ?? item.category_display ?? "Uncategorized"}</span>
+          <span className={workspaceStyles.itemRowMetaSep}>·</span>
+          <span>{standaloneLocationCount} {standaloneLocationCount === 1 ? "location" : "locations"}</span>
+        </span>
+      </span>
+      <span className={workspaceStyles.itemRowSide}>
+        <span className={workspaceStyles.itemRowQuantity}>
+          {formatQuantity(item.total_quantity)}
+          <span className={workspaceStyles.itemRowUnit}>{item.acct_unit ?? "unit"}</span>
+        </span>
+        {rowBadges.length ? <span className={workspaceStyles.itemRowFlags}>{rowBadges}</span> : null}
+        <span className={workspaceStyles.itemRowActions}>
+          {canEdit ? (
+            <button
+              type="button"
+              className="btn btn-xs btn-ghost row-action icon-only"
+              onClick={event => {
+                event.stopPropagation();
+                onEdit();
+              }}
+              title="Edit item"
+              disabled={pageBusy}
+            >
+              <Ic d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" size={13} />
+            </button>
+          ) : null}
+          {canDelete ? (
+            <button
+              type="button"
+              className="btn btn-xs btn-danger-ghost row-action icon-only"
+              onClick={event => {
+                event.stopPropagation();
+                onDelete();
+              }}
+              title={deleteBusy ? "Deleting item" : "Delete item"}
+              disabled={pageBusy}
+            >
+              <Ic d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12h6l1-12" size={13} />
+            </button>
+          ) : null}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function WorkspaceEmptyState() {
+  return (
+    <div className={workspaceStyles.emptyState}>
+      <div className={workspaceStyles.emptyBadge}>Item workspace</div>
+      <h2 className={workspaceStyles.emptyTitle}>Select an item from the left</h2>
+      <p className={workspaceStyles.emptyCopy}>
+        Distribution, instances, and batches will open here in one continuous workspace instead of sending you through nested item routes.
+      </p>
+    </div>
+  );
+}
+
+function WorkspaceTabButton({
+  active,
+  count,
+  children,
+  onClick,
+}: {
+  active: boolean;
+  count?: number;
+  children: ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`${workspaceStyles.tabButton} ${active ? workspaceStyles.tabButtonActive : ""}`}
+      onClick={onClick}
+    >
+      <span>{children}</span>
+      {typeof count === "number" ? <span className={workspaceStyles.tabCount}>{count}</span> : null}
+    </button>
+  );
+}
+
+function WorkspaceMetric({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: ReactNode;
+  sub?: ReactNode;
+}) {
+  return (
+    <div className={workspaceStyles.metricCard}>
+      <div className={workspaceStyles.metricLabel}>{label}</div>
+      <div className={workspaceStyles.metricValue}>{value}</div>
+      {sub ? <div className={workspaceStyles.metricSub}>{sub}</div> : null}
+    </div>
+  );
+}
+
+type LocateRow =
+  | { kind: "location"; key: string; name: string; code: string; path: string; qty: number; unit: string; jump: { unitId: number; storeId?: number } }
+  | { kind: "person"; key: string; name: string; tag: string; path: string; jump: { unitId: number; storeId?: number } }
+  | { kind: "store"; key: string; name: string; code: string; path: string; qty: number; unit: string; jump: { unitId: number; storeId: number } };
+
+function WorkspaceLocatePalette({
+  open,
+  onClose,
+  item,
+  units,
+  onJump,
+}: {
+  open: boolean;
+  onClose: () => void;
+  item: ItemRecord;
+  units: ItemDistributionUnit[];
+  onJump: (target: { unitId: number; storeId?: number }) => void;
+}) {
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    if (open) setQuery("");
+  }, [open]);
+
+  const allRows = useMemo<LocateRow[]>(() => {
+    const acctUnit = item.acct_unit ?? "unit";
+    const out: LocateRow[] = [];
+    units.forEach(unit => {
+      out.push({
+        kind: "location",
+        key: `unit-${unit.id}`,
+        name: unit.name,
+        code: unit.code,
+        path: unit.name,
+        qty: toNumber(unit.totalQuantity),
+        unit: acctUnit,
+        jump: { unitId: unit.id },
+      });
+      unit.stores.forEach(store => {
+        out.push({
+          kind: "store",
+          key: `store-${store.id}`,
+          name: store.locationName,
+          code: store.batchNumber ? `Batch ${store.batchNumber}` : "",
+          path: `${unit.name} › ${store.locationName}`,
+          qty: toNumber(store.quantity),
+          unit: acctUnit,
+          jump: { unitId: unit.id, storeId: store.id },
+        });
+      });
+      unit.allocations.forEach(allocation => {
+        if (allocation.targetType === "PERSON") {
+          out.push({
+            kind: "person",
+            key: `alloc-${allocation.id}`,
+            name: allocation.targetName,
+            tag: allocation.batchNumber ? `Batch ${allocation.batchNumber}` : `${formatQuantity(allocation.quantity)} ${acctUnit}`,
+            path: `${unit.name} › ${allocation.sourceStoreName}`,
+            jump: { unitId: unit.id, storeId: allocation.sourceStoreId },
+          });
+        }
+      });
+    });
+    return out;
+  }, [item.acct_unit, units]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return allRows;
+    return allRows.filter(row => {
+      const hay = (
+        row.name +
+        " " +
+        ("code" in row ? row.code : "") +
+        " " +
+        row.path +
+        " " +
+        ("tag" in row ? row.tag : "")
+      ).toLowerCase();
+      return hay.includes(q);
+    });
+  }, [allRows, query]);
+
+  const grouped = useMemo(() => {
+    const locations = filtered.filter(r => r.kind === "location") as Extract<LocateRow, { kind: "location" }>[];
+    const stores = filtered.filter(r => r.kind === "store") as Extract<LocateRow, { kind: "store" }>[];
+    const persons = filtered.filter(r => r.kind === "person") as Extract<LocateRow, { kind: "person" }>[];
+    return { locations, stores, persons };
+  }, [filtered]);
+
+  if (!open) return null;
+
+  const itemShortName = item.name.split("—")[0].trim();
+
+  return (
+    <>
+      <button type="button" className={workspaceStyles.locateBackdrop} onClick={onClose} aria-label="Close locate" />
+      <div className={workspaceStyles.locatePanel} role="dialog" aria-label="Locate within item">
+        <div className={workspaceStyles.locateSearch}>
+          <Ic d={<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>} size={14} />
+          <input
+            autoFocus
+            value={query}
+            onChange={event => setQuery(event.target.value)}
+            placeholder={`Find a location, store row or person within ${itemShortName}…`}
+            onKeyDown={event => {
+              if (event.key === "Escape") onClose();
+              if (event.key === "Enter" && filtered.length) {
+                onJump(filtered[0].jump);
+                onClose();
+              }
+            }}
+          />
+          <span className={workspaceStyles.locateSearchEsc}>esc</span>
+        </div>
+        <div className={workspaceStyles.locateResults}>
+          {filtered.length === 0 ? (
+            <div className={workspaceStyles.locateEmpty}>No matches</div>
+          ) : (
+            <>
+              {grouped.locations.length > 0 && (
+                <>
+                  <div className={workspaceStyles.locateSectionH}>Locations · {grouped.locations.length}</div>
+                  {grouped.locations.slice(0, 10).map(row => (
+                    <button
+                      key={row.key}
+                      type="button"
+                      className={workspaceStyles.locateRow}
+                      onClick={() => { onJump(row.jump); onClose(); }}
+                    >
+                      <span className={workspaceStyles.locateRowIcon}>
+                        <Ic d={<><path d="M12 21s-7-6.5-7-12a7 7 0 1 1 14 0c0 5.5-7 12-7 12Z" /><circle cx="12" cy="9" r="2.5" /></>} size={14} />
+                      </span>
+                      <span className={workspaceStyles.locateRowText}>
+                        <span className={workspaceStyles.locateRowName}>{row.name}</span>
+                        <span className={workspaceStyles.locateRowPath}>{row.code ? `${row.code} · ` : ""}{row.path}</span>
+                      </span>
+                      <span className={workspaceStyles.locateRowQty}>{formatQuantity(row.qty)} {row.unit}</span>
+                    </button>
+                  ))}
+                </>
+              )}
+              {grouped.stores.length > 0 && (
+                <>
+                  <div className={workspaceStyles.locateSectionH}>Store rows · {grouped.stores.length}</div>
+                  {grouped.stores.slice(0, 10).map(row => (
+                    <button
+                      key={row.key}
+                      type="button"
+                      className={workspaceStyles.locateRow}
+                      onClick={() => { onJump(row.jump); onClose(); }}
+                    >
+                      <span className={workspaceStyles.locateRowIcon}>
+                        <Ic d={<><rect x="3" y="6" width="18" height="4" /><rect x="3" y="14" width="18" height="4" /></>} size={14} />
+                      </span>
+                      <span className={workspaceStyles.locateRowText}>
+                        <span className={workspaceStyles.locateRowName}>{row.name}</span>
+                        <span className={workspaceStyles.locateRowPath}>{row.code ? `${row.code} · ` : ""}{row.path}</span>
+                      </span>
+                      <span className={workspaceStyles.locateRowQty}>{formatQuantity(row.qty)} {row.unit}</span>
+                    </button>
+                  ))}
+                </>
+              )}
+              {grouped.persons.length > 0 && (
+                <>
+                  <div className={workspaceStyles.locateSectionH}>Allocated to persons · {grouped.persons.length}</div>
+                  {grouped.persons.slice(0, 10).map(row => (
+                    <button
+                      key={row.key}
+                      type="button"
+                      className={workspaceStyles.locateRow}
+                      onClick={() => { onJump(row.jump); onClose(); }}
+                    >
+                      <span className={workspaceStyles.locateRowIcon}>
+                        <Ic d={<><circle cx="12" cy="8" r="4" /><path d="M4 22c0-4.4 3.6-8 8-8s8 3.6 8 8" /></>} size={14} />
+                      </span>
+                      <span className={workspaceStyles.locateRowText}>
+                        <span className={workspaceStyles.locateRowName}>{row.name}</span>
+                        <span className={workspaceStyles.locateRowPath}>{row.tag} · {row.path}</span>
+                      </span>
+                      <span className={workspaceStyles.locateRowQty}>allocated</span>
+                    </button>
+                  ))}
+                </>
+              )}
+            </>
+          )}
+        </div>
+        <div className={workspaceStyles.locateFoot}>
+          <div className={workspaceStyles.locateKeys}>
+            <span><span className={workspaceStyles.locateKbd}>⏎</span> jump to</span>
+            <span><span className={workspaceStyles.locateKbd}>esc</span> close</span>
+          </div>
+          <div>{filtered.length} results</div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function WorkspaceSelectedItemPane({
+  itemId,
+  categories,
+  activeTab,
+  selectedLocationId,
+  canManageItems,
+  refreshToken,
+  onBackToList,
+  onEditItem,
+  onSelectLocation,
+  onClearSelectedLocation,
+  onSelectTab,
+  onNormalizeState,
+}: {
+  itemId: string;
+  categories: CategoryRecord[];
+  activeTab: ItemsWorkspaceTab;
+  selectedLocationId: string | null;
+  canManageItems: boolean;
+  refreshToken: number;
+  onBackToList: () => void;
+  onEditItem: (item: ItemRecord) => void;
+  onSelectLocation: (locationId: string | null) => void;
+  onClearSelectedLocation: () => void;
+  onSelectTab: (tab: ItemsWorkspaceTab) => void;
+  onNormalizeState: (state: ItemsWorkspaceState) => void;
+}) {
+  const router = useRouter();
+  const { item, units, isLoading, fetchError, setFetchError, load } = useItemDistribution(itemId);
+  const [locateOpen, setLocateOpen] = useState(false);
+  const [jumpTarget, setJumpTarget] = useState<{ unitId: number; storeId?: number; nonce: number } | null>(null);
+
+  useEffect(() => {
+    load();
+  }, [load, refreshToken]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        if (item) {
+          event.preventDefault();
+          setLocateOpen(true);
+        }
+        return;
+      }
+      if (event.key === "Escape") {
+        setLocateOpen(current => (current ? false : current));
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [item]);
+
+  useEffect(() => {
+    if (!item) return;
+
+    const normalized = normalizeItemsWorkspaceState(
+      {
+        itemId,
+        tab: activeTab,
+        locationId: selectedLocationId,
+      },
+      {
+        canShowInstances: canShowInstances(item.tracking_type),
+        canShowBatches: canShowBatches(item.tracking_type, item.category_type),
+      },
+    );
+
+    if (
+      normalized.tab !== activeTab ||
+      normalized.locationId !== selectedLocationId
+    ) {
+      onNormalizeState(normalized);
+    }
+  }, [activeTab, item, itemId, onNormalizeState, selectedLocationId]);
+
+  const totalQuantity = toNumber(item?.total_quantity);
+  const availableQuantity = toNumber(item?.available_quantity);
+  const inTransitQuantity = toNumber(item?.in_transit_quantity);
+  const issuedQuantity = Math.max(totalQuantity - availableQuantity - inTransitQuantity, 0);
+  const lowStockThreshold = toNumber(item?.low_stock_threshold);
+  const categoryPath = item ? buildCategoryPath(item.category, categories, item.category_display) : null;
+  const instanceCount = item && canShowInstances(item.tracking_type) ? totalQuantity : undefined;
+  const batchCount = item && canShowBatches(item.tracking_type, item.category_type) ? undefined : undefined;
+
+  if (isLoading && !item) {
+    return (
+      <div className={workspaceStyles.detailEmptyState}>
+        <div className={workspaceStyles.detailEmptyCopy}>Loading item workspace...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={workspaceStyles.detailStack}>
+      {fetchError ? (
+        <Alert onDismiss={() => setFetchError(null)} action={<button type="button" className="btn btn-xs" onClick={() => load()}>Retry</button>}>
+          {fetchError}
+        </Alert>
+      ) : null}
+
+      {item ? (
+        <>
+          <div className={workspaceStyles.mobileBackRow}>
+            <button type="button" className={workspaceStyles.mobileBackButton} onClick={onBackToList}>
+              <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
+              Back to items
+            </button>
+          </div>
+
+          <div className={workspaceStyles.detailHeader}>
+            <div className={workspaceStyles.detailHeaderMain}>
+              <div className="eyebrow">{(categoryPath ?? item.category_display ?? "Inventory item").toUpperCase()}</div>
+              <h2 className={workspaceStyles.detailTitle}>{item.name}</h2>
+              <div className={workspaceStyles.detailIdentityRow}>
+                <span className={workspaceStyles.detailCodeChip}>{item.code}</span>
+                <span className={workspaceStyles.detailTrackingPill} data-t={workspaceTrackingTone(item.tracking_type)}>
+                  <span className={workspaceStyles.detailTrackingDot} />
+                  {item.tracking_type === "INDIVIDUAL" ? "Individual tracking" : item.tracking_type === "QUANTITY" ? "Quantity tracking" : "Perishable batches"}
+                </span>
+              </div>
+              <div className={workspaceStyles.detailMeta}>
+                <span>Last movement <strong>{workspaceLastUpdate(item)}</strong></span>
+                {item.created_by_name ? (
+                  <>
+                    <span className={workspaceStyles.detailSubSep}>·</span>
+                    <span>{item.created_by_name}</span>
+                  </>
+                ) : null}
               </div>
             </div>
+            <div className={workspaceStyles.detailHeaderActions}>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => onSelectTab("instances")}>
+                <Ic d={<><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><path d="M14 14h3v3M21 14v7M14 21h3" /></>} size={14} />
+                QR labels
+              </button>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => window.print()}>
+                <Ic d={<><path d="M6 9V2h12v7" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 14h12v8H6z" /></>} size={14} />
+                Print card
+              </button>
+              {canManageItems ? (
+                <button type="button" className="btn btn-sm" onClick={() => onEditItem(item)}>
+                  <Ic d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.1 2.1 0 113 3L12 15l-4 1 1-4 9.5-9.5Z" size={14} />
+                  Edit item
+                </button>
+              ) : null}
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => router.push(`/stock-entries?item=${itemId}`)}>
+                <Ic d="M5 12h14M12 5l7 7-7 7" size={14} />
+                New entry
+              </button>
+            </div>
           </div>
 
-          {isLoading ? (
-            <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", borderTop: "1px solid var(--hairline)" }}>Loading items...</div>
-          ) : (
-            <div className="h-scroll">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Item</th>
-                    <th>Category</th>
-                    <th>Tracking</th>
-                    <th>Total</th>
-                    <th>Available</th>
-                    <th>In Transit</th>
-                    <th>Status</th>
-                    <th>Alert</th>
-                    <th>Updated</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredItems.length === 0 ? (
-                    <EmptyTableRow colSpan={10} message="No items match the current filters." />
-                  ) : filteredItems.map(item => {
-                    const tone = itemStatusTone(item);
-                    return (
-                      <tr key={item.id} onClick={() => router.push(`/items/${item.id}`)} style={{ cursor: "pointer" }}>
-                        <td className="col-user">
-                          <div className="user-cell">
-                            <div className="avatar" style={{ width: 32, height: 32, fontSize: 11, background: "linear-gradient(135deg, color-mix(in oklch, var(--primary) 82%, white), var(--primary))" }}>
-                              {(item.name || "IT").split(" ").map(n => n[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "IT"}
-                            </div>
-                            <div>
-                              <div className="user-name">{item.name}</div>
-                              <div className="user-username mono">{item.code}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td>
-                          <div className="group-cell">
-                            <span className="chip">{item.category_display ?? "Uncategorized"}</span>
-                            {item.category_type && <span className="muted-note mono">{formatItemLabel(item.category_type)}</span>}
-                          </div>
-                        </td>
-                        <td><span className="chip">{formatItemLabel(String(item.tracking_type ?? ""))}</span></td>
-                        <td className="mono">{formatQuantity(item.total_quantity)}</td>
-                        <td className="mono">{formatQuantity(item.available_quantity)}</td>
-                        <td className="mono">{formatQuantity(item.in_transit_quantity)}</td>
-                        <td><StatusPill tone={tone} label={tone === "danger" ? "Out of Stock" : "In Stock"} /></td>
-                        <td>{isLowStock(item) ? <LowStockBadge item={item} /> : <span className="muted-note">-</span>}</td>
-                        <td className="col-login">
-                          <div className="login-cell">
-                            <div>{formatItemDate(item.updated_at, "Unknown")}</div>
-                            <div className="login-cell-sub mono">{item.acct_unit ?? "unit"}</div>
-                          </div>
-                        </td>
-                        <td className="col-actions">
-                          <ItemActions
-                            item={item}
-                            canEdit={canManageItems}
-                            canDelete={canDeleteItems}
-                            pageBusy={pageBusy}
-                            deleteBusy={deleteBusyItemId === item.id}
-                            onEdit={() => openEditModal(item)}
-                            onDelete={() => handleDelete(item)}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <div className={workspaceStyles.metricGrid}>
+            {(() => {
+              const unit = item.acct_unit ?? "unit";
+              const lowFlag = isLowStock(item);
+              if (canShowInstances(item.tracking_type)) {
+                return (
+                  <>
+                    <WorkspaceMetric
+                      label="Total units"
+                      value={<>{formatQuantity(totalQuantity)}<span className={workspaceStyles.metricUnit}>{unit}</span></>}
+                      sub={`across ${units.length} locations`}
+                    />
+                    <WorkspaceMetric
+                      label="Deployed"
+                      value={<>{formatQuantity(issuedQuantity)}</>}
+                      sub="in active use"
+                    />
+                    <WorkspaceMetric
+                      label="Idle / Stock"
+                      value={<span className={lowFlag ? workspaceStyles.metricValueWarn : undefined}>{formatQuantity(availableQuantity)}</span>}
+                      sub={`in stores · min ${lowStockThreshold > 0 ? formatQuantity(lowStockThreshold) : "—"}`}
+                    />
+                    <WorkspaceMetric
+                      label="In transit"
+                      value={<span className={inTransitQuantity > 0 ? workspaceStyles.metricValueWarn : undefined}>{formatQuantity(inTransitQuantity)}</span>}
+                      sub={inTransitQuantity > 0 ? "moving between stores" : "all settled"}
+                    />
+                  </>
+                );
+              }
+              if (canShowBatches(item.tracking_type, item.category_type)) {
+                return (
+                  <>
+                    <WorkspaceMetric
+                      label="Total stock"
+                      value={<>{formatQuantity(totalQuantity)}<span className={workspaceStyles.metricUnit}>{unit}</span></>}
+                      sub={`across ${units.length} locations`}
+                    />
+                    <WorkspaceMetric
+                      label="Available"
+                      value={<>{formatQuantity(availableQuantity)}<span className={workspaceStyles.metricUnit}>{unit}</span></>}
+                      sub="usable stock in current scope"
+                    />
+                    <WorkspaceMetric
+                      label="Allocated"
+                      value={<>{formatQuantity(Math.max(totalQuantity - availableQuantity - inTransitQuantity, 0))}<span className={workspaceStyles.metricUnit}>{unit}</span></>}
+                      sub="committed downstream"
+                    />
+                    <WorkspaceMetric
+                      label="In transit"
+                      value={<span className={inTransitQuantity > 0 ? workspaceStyles.metricValueWarn : undefined}>{formatQuantity(inTransitQuantity)}<span className={workspaceStyles.metricUnit}>{unit}</span></span>}
+                      sub={inTransitQuantity > 0 ? "moving between stores" : "all settled"}
+                    />
+                  </>
+                );
+              }
+              return (
+                <>
+                  <WorkspaceMetric
+                    label="Total stock"
+                    value={<>{formatQuantity(totalQuantity)}<span className={workspaceStyles.metricUnit}>{unit}</span></>}
+                    sub={`across ${units.length} locations`}
+                  />
+                  <WorkspaceMetric
+                    label="Min stock"
+                    value={lowStockThreshold > 0 ? <>{formatQuantity(lowStockThreshold)}<span className={workspaceStyles.metricUnit}>{unit}</span></> : "—"}
+                    sub="re-order threshold"
+                  />
+                  <WorkspaceMetric
+                    label="Available"
+                    value={<span className={lowFlag ? workspaceStyles.metricValueWarn : undefined}>{formatQuantity(availableQuantity)}<span className={workspaceStyles.metricUnit}>{unit}</span></span>}
+                    sub={lowFlag ? "below re-order line" : "usable stock"}
+                  />
+                  <WorkspaceMetric
+                    label="In transit"
+                    value={<>{formatQuantity(inTransitQuantity)}<span className={workspaceStyles.metricUnit}>{unit}</span></>}
+                    sub={inTransitQuantity > 0 ? "moving between stores" : "all settled"}
+                  />
+                </>
+              );
+            })()}
+          </div>
 
-          <div className="table-card-foot">
-            <div className="eyebrow">Showing {filteredItems.length} rows</div>
-            <div className="pager">
-              <span className="mono pager-current">Permission-scoped totals</span>
+          <div className={workspaceStyles.tabBar}>
+            <WorkspaceTabButton active={activeTab === "distribution"} count={units.length} onClick={() => onSelectTab("distribution")}>
+              Distribution
+            </WorkspaceTabButton>
+            {canShowInstances(item.tracking_type) ? (
+              <WorkspaceTabButton active={activeTab === "instances"} count={instanceCount} onClick={() => onSelectTab("instances")}>
+                Instances
+              </WorkspaceTabButton>
+            ) : null}
+            {canShowBatches(item.tracking_type, item.category_type) ? (
+              <WorkspaceTabButton active={activeTab === "batches"} count={batchCount} onClick={() => onSelectTab("batches")}>
+                Batches
+              </WorkspaceTabButton>
+            ) : null}
+            <WorkspaceTabButton active={activeTab === "info"} onClick={() => onSelectTab("info")}>
+              Item info
+            </WorkspaceTabButton>
+            <WorkspaceTabButton active={activeTab === "activity"} onClick={() => onSelectTab("activity")}>
+              Activity
+            </WorkspaceTabButton>
+          </div>
+
+          {activeTab === "distribution" ? (
+            <WorkspaceDistributionTab
+              item={item}
+              units={units}
+              isLoading={isLoading}
+              selectedLocationId={selectedLocationId}
+              onSelectLocation={onSelectLocation}
+              onClearSelectedLocation={onClearSelectedLocation}
+              onSelectTab={onSelectTab}
+              onOpenLocate={() => setLocateOpen(true)}
+              jumpTarget={jumpTarget}
+              onJumpTargetHandled={() => setJumpTarget(null)}
+            />
+          ) : activeTab === "instances" ? (
+            <WorkspaceInstancesTab
+              itemId={itemId}
+              selectedLocationId={selectedLocationId}
+              onClearSelectedLocation={onClearSelectedLocation}
+            />
+          ) : activeTab === "info" ? (
+            <WorkspaceInfoTab item={item} units={units} />
+          ) : activeTab === "activity" ? (
+            <WorkspaceActivityTab item={item} />
+          ) : (
+            <WorkspaceBatchesTab
+              itemId={itemId}
+              selectedLocationId={selectedLocationId}
+              onClearSelectedLocation={onClearSelectedLocation}
+            />
+          )}
+        </>
+      ) : (
+        <div className={workspaceStyles.detailEmptyState}>
+          <div className={workspaceStyles.detailEmptyCopy}>This item is no longer available in your current permission scope.</div>
+        </div>
+      )}
+      {item ? (
+        <WorkspaceLocatePalette
+          open={locateOpen}
+          onClose={() => setLocateOpen(false)}
+          item={item}
+          units={units}
+          onJump={target => {
+            if (activeTab !== "distribution") onSelectTab("distribution");
+            setJumpTarget({ ...target, nonce: Date.now() });
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function WorkspaceDistributionTab({
+  item,
+  units,
+  isLoading,
+  selectedLocationId,
+  onSelectLocation,
+  onClearSelectedLocation,
+  onSelectTab,
+  onOpenLocate,
+  jumpTarget,
+  onJumpTargetHandled,
+}: {
+  item: ItemRecord;
+  units: ItemDistributionUnit[];
+  isLoading: boolean;
+  selectedLocationId: string | null;
+  onSelectLocation: (locationId: string | null) => void;
+  onClearSelectedLocation: () => void;
+  onSelectTab: (tab: ItemsWorkspaceTab) => void;
+  onOpenLocate: () => void;
+  jumpTarget: { unitId: number; storeId?: number; nonce: number } | null;
+  onJumpTargetHandled: () => void;
+}) {
+  const [openNodes, setOpenNodes] = useState<Set<string>>(() => new Set());
+  const [panel, setPanel] = useState<WorkspaceLocationPanelState | null>(null);
+
+  const filteredUnits = units;
+
+  useEffect(() => {
+    if (!jumpTarget) return;
+    const unitKey = `unit-${jumpTarget.unitId}`;
+    setOpenNodes(prev => {
+      const next = new Set(prev);
+      next.add(unitKey);
+      if (jumpTarget.storeId != null) next.add(`store-${jumpTarget.storeId}`);
+      return next;
+    });
+    const targetSelector = jumpTarget.storeId != null
+      ? `[data-tree-id="store-${jumpTarget.storeId}"]`
+      : `[data-tree-id="unit-${jumpTarget.unitId}"]`;
+    const handle = window.setTimeout(() => {
+      const el = document.querySelector(targetSelector) as HTMLElement | null;
+      if (el) {
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+        el.classList.add(workspaceStyles.treeRowFlash);
+        window.setTimeout(() => el.classList.remove(workspaceStyles.treeRowFlash), 1300);
+      }
+      onJumpTargetHandled();
+    }, 60);
+    return () => window.clearTimeout(handle);
+  }, [jumpTarget, onJumpTargetHandled]);
+
+  const maxQuantity = useMemo(
+    () => Math.max(1, ...filteredUnits.map(unit => toNumber(unit.totalQuantity))),
+    [filteredUnits],
+  );
+  const panelUnit = useMemo(
+    () => panel ? units.find(unit => unit.id === panel.unitId) ?? null : null,
+    [panel, units],
+  );
+
+  const toggleNode = useCallback((key: string) => {
+    setOpenNodes(current => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const inspectPanel = useCallback((nextPanel: WorkspaceLocationPanelState) => {
+    setPanel(nextPanel);
+    if (nextPanel.locationId) {
+      onSelectLocation(nextPanel.locationId);
+    }
+  }, [onSelectLocation]);
+
+  const closePanel = useCallback(() => {
+    setPanel(null);
+  }, []);
+
+  return (
+    <div className={workspaceStyles.tabStack}>
+      <button
+        type="button"
+        className={workspaceStyles.locateBar}
+        onClick={onOpenLocate}
+        aria-label="Locate within this item"
+      >
+        <Ic d={<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>} size={14} />
+        <span style={{ flex: 1, fontSize: 13, color: "var(--muted)" }}>
+          Locate within {item.name.split("—")[0].trim()} — search by department, store row, or person…
+        </span>
+        <span className={workspaceStyles.locateBarKbd}>⌘K</span>
+      </button>
+
+      <div className={workspaceStyles.treeSectionHead}>
+        <h3>Distribution by location</h3>
+        <div className={workspaceStyles.treeSectionMeta}>{filteredUnits.length} locations · expand to see allocations</div>
+      </div>
+
+      {isLoading ? (
+        <div className={workspaceStyles.listEmpty}>Loading distribution...</div>
+      ) : filteredUnits.length === 0 ? (
+        <div className={workspaceStyles.listEmpty}>No standalone distribution matches the current filters.</div>
+      ) : (
+        <div className={workspaceStyles.treeList}>
+          {filteredUnits.map(unit => {
+            const unitKey = `unit-${unit.id}`;
+            const unitOpen = openNodes.has(unitKey);
+            const linkedAllocationIds = new Set<number>();
+            const availableTone = selectedLocationId === String(unit.id) ? workspaceStyles.treeRowSelected : "";
+
+            return (
+              <div key={unit.id} className={workspaceStyles.treeWrap} data-depth={0} data-open={unitOpen ? "true" : "false"}>
+                <div className={`${workspaceStyles.treeRow} ${availableTone}`} data-open={unitOpen ? "true" : "false"} data-tree-id={`unit-${unit.id}`}>
+                  <button type="button" className={workspaceStyles.treeCaret} onClick={() => toggleNode(unitKey)} aria-label={unitOpen ? "Collapse location" : "Expand location"}>
+                    <Ic d="M9 6l6 6-6 6" size={14} />
+                  </button>
+                  <button type="button" className={workspaceStyles.treeMain} onClick={() => toggleNode(unitKey)}>
+                    <span className={workspaceStyles.treeIcon}>{workspaceLocationIcon("unit")}</span>
+                    <span className={workspaceStyles.treeText}>
+                      <span className={workspaceStyles.treeName}>
+                        {unit.name}
+                        <span className={workspaceStyles.treeCode}>{unit.code}</span>
+                      </span>
+                      <span className={workspaceStyles.treeSub}>
+                        {unit.availableQuantity > 0 ? <span className={workspaceStyles.treeMiniPill}>{formatQuantity(unit.availableQuantity)} in stock</span> : null}
+                        {unit.allocatedQuantity > 0 ? <span className={`${workspaceStyles.treeMiniPill} ${workspaceStyles.treeMiniPillAllocated}`}>{formatQuantity(unit.allocatedQuantity)} allocated</span> : null}
+                        {unit.inTransitQuantity > 0 ? <span className={`${workspaceStyles.treeMiniPill} ${workspaceStyles.treeMiniPillDeployed}`}>{formatQuantity(unit.inTransitQuantity)} in transit</span> : null}
+                      </span>
+                    </span>
+                  </button>
+                  <div className={workspaceStyles.treeRight}>
+                    <div className={workspaceStyles.treeBar}>
+                      <span className={workspaceStyles.treeBarFill} style={{ width: `${Math.min(100, (toNumber(unit.totalQuantity) / maxQuantity) * 100)}%` }} />
+                    </div>
+                    <div className={workspaceStyles.treeQty}>
+                      {formatQuantity(unit.totalQuantity)}
+                      <span className={workspaceStyles.treeQtyUnit}>{item.acct_unit ?? "unit"}</span>
+                    </div>
+                    <button type="button" className={workspaceStyles.treeJump} onClick={() => inspectPanel(buildUnitPanelState(item, unit))} aria-label="Inspect location">
+                      <Ic d="M9 18l6-6-6-6" size={13} />
+                    </button>
+                  </div>
+                </div>
+
+                {unitOpen ? (
+                  <div className={workspaceStyles.treeChildren}>
+                    {unit.stores.map(store => {
+                      const storeKey = `store-${store.id}`;
+                      const storeOpen = openNodes.has(storeKey);
+                      const storeAllocations = unit.allocations.filter(allocation => allocation.sourceStoreId === store.id);
+                      storeAllocations.forEach(allocation => linkedAllocationIds.add(allocation.id));
+
+                      return (
+                        <div key={store.id} className={workspaceStyles.treeWrap} data-depth={1} data-open={storeOpen ? "true" : "false"}>
+                          <div className={`${workspaceStyles.treeRow} ${selectedLocationId === String(store.locationId) ? workspaceStyles.treeRowSelected : ""}`} data-open={storeOpen ? "true" : "false"} data-tree-id={`store-${store.id}`}>
+                            <button
+                              type="button"
+                              className={workspaceStyles.treeCaret}
+                              onClick={() => storeAllocations.length ? toggleNode(storeKey) : inspectPanel(buildStorePanelState(item, unit, store))}
+                              aria-label={storeOpen ? "Collapse store" : "Expand store"}
+                            >
+                              {storeAllocations.length ? <Ic d="M9 6l6 6-6 6" size={14} /> : null}
+                            </button>
+                            <button type="button" className={workspaceStyles.treeMain} onClick={() => storeAllocations.length ? toggleNode(storeKey) : inspectPanel(buildStorePanelState(item, unit, store))}>
+                              <span className={workspaceStyles.treeIcon}>{workspaceLocationIcon("store")}</span>
+                              <span className={workspaceStyles.treeText}>
+                                <span className={workspaceStyles.treeName}>
+                                  {store.locationName}
+                                  {store.batchNumber ? <span className={workspaceStyles.treeCode}>Batch {store.batchNumber}</span> : null}
+                                </span>
+                                <span className={workspaceStyles.treeSub}>
+                                  {store.availableQuantity > 0 ? <span className={workspaceStyles.treeMiniPill}>{formatQuantity(store.availableQuantity)} in stock</span> : null}
+                                  {store.allocatedTotal > 0 ? <span className={`${workspaceStyles.treeMiniPill} ${workspaceStyles.treeMiniPillAllocated}`}>{formatQuantity(store.allocatedTotal)} allocated</span> : null}
+                                  {store.inTransitQuantity > 0 ? <span className={`${workspaceStyles.treeMiniPill} ${workspaceStyles.treeMiniPillDeployed}`}>{formatQuantity(store.inTransitQuantity)} in transit</span> : null}
+                                </span>
+                              </span>
+                            </button>
+                            <div className={workspaceStyles.treeRight}>
+                              <div className={workspaceStyles.treeBar}>
+                                <span className={workspaceStyles.treeBarFill} style={{ width: `${Math.min(100, (toNumber(store.quantity) / maxQuantity) * 100)}%` }} />
+                              </div>
+                              <div className={workspaceStyles.treeQty}>
+                                {formatQuantity(store.quantity)}
+                                <span className={workspaceStyles.treeQtyUnit}>{item.acct_unit ?? "unit"}</span>
+                              </div>
+                              <button type="button" className={workspaceStyles.treeJump} onClick={() => inspectPanel(buildStorePanelState(item, unit, store))} aria-label="Inspect store">
+                                <Ic d="M9 18l6-6-6-6" size={13} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {storeOpen && storeAllocations.length ? (
+                            <div className={workspaceStyles.leafGroup}>
+                              {storeAllocations.map(allocation => (
+                                <button
+                                  key={allocation.id}
+                                  type="button"
+                                  className={workspaceStyles.leafRow}
+                                  onClick={() => inspectPanel(buildAllocationPanelState(item, unit, allocation))}
+                                >
+                                  <span className={workspaceStyles.leafTag}>{allocation.targetType === "PERSON" ? "PERSON" : "LOCATION"}</span>
+                                  <span className={workspaceStyles.leafMid}>
+                                    <span className={workspaceStyles.leafName}>{allocation.targetName}</span>
+                                    <span className={workspaceStyles.leafStatus}>allocated</span>
+                                    {allocation.batchNumber ? <span>batch {allocation.batchNumber}</span> : null}
+                                  </span>
+                                  <span className={workspaceStyles.leafRight}>
+                                    {formatQuantity(allocation.quantity)}
+                                    <span className={workspaceStyles.treeQtyUnit}>{item.acct_unit ?? "unit"}</span>
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+
+                    {unit.allocations.filter(allocation => !linkedAllocationIds.has(allocation.id)).length ? (
+                      <div className={workspaceStyles.leafGroup}>
+                        {unit.allocations.filter(allocation => !linkedAllocationIds.has(allocation.id)).map(allocation => (
+                          <button
+                            key={allocation.id}
+                            type="button"
+                            className={workspaceStyles.leafRow}
+                            onClick={() => inspectPanel(buildAllocationPanelState(item, unit, allocation))}
+                          >
+                            <span className={workspaceStyles.leafTag}>{allocation.targetType === "PERSON" ? "PERSON" : "LOCATION"}</span>
+                            <span className={workspaceStyles.leafMid}>
+                              <span className={workspaceStyles.leafName}>{allocation.targetName}</span>
+                              <span className={workspaceStyles.leafStatus}>allocated</span>
+                              <span>{allocation.sourceStoreName}</span>
+                            </span>
+                            <span className={workspaceStyles.leafRight}>
+                              {formatQuantity(allocation.quantity)}
+                              <span className={workspaceStyles.treeQtyUnit}>{item.acct_unit ?? "unit"}</span>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {panel ? (
+        <>
+          <button type="button" className={workspaceStyles.slidePanelBackdrop} onClick={closePanel} aria-label="Close location details" />
+          <aside className={`${workspaceStyles.slidePanel} ${workspaceStyles.slidePanelOpen}`} aria-hidden="false">
+            <div className={workspaceStyles.slidePanelHead}>
+              <div>
+                <div className="eyebrow">{panel.eyebrow}</div>
+                <h3 className={workspaceStyles.slidePanelTitle}>{panel.title}</h3>
+                <div className={workspaceStyles.slidePanelSub}>{panel.subtitle}</div>
+              </div>
+              <button type="button" className={workspaceStyles.slidePanelClose} onClick={closePanel} aria-label="Close panel">
+                <Ic d="M18 6 6 18M6 6l12 12" size={14} />
+              </button>
+            </div>
+
+            <div className={workspaceStyles.slidePanelBody}>
+              <div className={workspaceStyles.slidePanelMetrics}>
+                <WorkspaceMetric label="Total" value={<>{formatQuantity(panel.quantity)}<span className={workspaceStyles.metricUnit}>{item.acct_unit ?? "unit"}</span></>} />
+                <WorkspaceMetric label="Available" value={panel.availableQuantity == null ? "—" : <>{formatQuantity(panel.availableQuantity)}<span className={workspaceStyles.metricUnit}>{item.acct_unit ?? "unit"}</span></>} />
+                <WorkspaceMetric label="Allocated" value={panel.allocatedQuantity == null ? "—" : <>{formatQuantity(panel.allocatedQuantity)}<span className={workspaceStyles.metricUnit}>{item.acct_unit ?? "unit"}</span></>} />
+                <WorkspaceMetric label="In transit" value={panel.inTransitQuantity == null ? "—" : <>{formatQuantity(panel.inTransitQuantity)}<span className={workspaceStyles.metricUnit}>{item.acct_unit ?? "unit"}</span></>} />
+              </div>
+
+              {panel.stores.length ? (
+                <div className={workspaceStyles.panelSection}>
+                  <div className={workspaceStyles.panelSectionLabel}>Store rows · {panel.stores.length}</div>
+                  <div className={workspaceStyles.panelList}>
+                    {panel.stores.map(store => (
+                      <button
+                        key={store.id}
+                        type="button"
+                        className={workspaceStyles.panelRow}
+                        onClick={() => {
+                          if (panelUnit) inspectPanel(buildStorePanelState(item, panelUnit, store));
+                        }}
+                      >
+                        <span className={workspaceStyles.panelRowIcon}>{workspaceLocationIcon("store")}</span>
+                        <span className={workspaceStyles.panelRowText}>
+                          <span className={workspaceStyles.panelRowTitle}>{store.locationName}</span>
+                          <span className={workspaceStyles.panelRowMeta}>{store.batchNumber ? `Batch ${store.batchNumber} · ` : ""}{formatQuantity(store.quantity)} {item.acct_unit ?? "unit"}</span>
+                        </span>
+                        <span className={workspaceStyles.panelRowValue}>{formatQuantity(store.availableQuantity)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {panel.allocations.length ? (
+                <div className={workspaceStyles.panelSection}>
+                  <div className={workspaceStyles.panelSectionLabel}>Allocations · {panel.allocations.length}</div>
+                  <div className={workspaceStyles.panelList}>
+                    {panel.allocations.map(allocation => (
+                      <button
+                        key={allocation.id}
+                        type="button"
+                        className={workspaceStyles.panelRow}
+                        onClick={() => {
+                          if (panelUnit) inspectPanel(buildAllocationPanelState(item, panelUnit, allocation));
+                        }}
+                      >
+                        <span className={workspaceStyles.panelRowIcon}>{workspaceLocationIcon(allocation.targetType === "PERSON" ? "person" : "location")}</span>
+                        <span className={workspaceStyles.panelRowText}>
+                          <span className={workspaceStyles.panelRowTitle}>{allocation.targetName}</span>
+                          <span className={workspaceStyles.panelRowMeta}>{allocation.sourceStoreName} · {formatItemDate(allocation.allocatedAt, "Unknown")}</span>
+                        </span>
+                        <span className={workspaceStyles.panelRowValue}>{formatQuantity(allocation.quantity)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className={workspaceStyles.slidePanelActions}>
+                {canShowInstances(item.tracking_type) && panel.locationId ? (
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => onSelectTab("instances")}>
+                    Instances here
+                  </button>
+                ) : null}
+                {canShowBatches(item.tracking_type, item.category_type) && panel.locationId ? (
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => onSelectTab("batches")}>
+                    Batches here
+                  </button>
+                ) : null}
+                {panel.locationId ? (
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={onClearSelectedLocation}>
+                    Clear location filter
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </aside>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function WorkspaceInfoTab({
+  item,
+  units,
+}: {
+  item: ItemRecord;
+  units: ItemDistributionUnit[];
+}) {
+  return (
+    <div className={workspaceStyles.infoGrid}>
+      <div className={workspaceStyles.infoCard}>
+        <div className="eyebrow">Identity and specifications</div>
+        <div className={workspaceStyles.infoKvs}>
+          <DetailKV label="Item code" value={<span className="mono">{item.code}</span>} />
+          <DetailKV label="Category" value={item.category_display ?? "-"} />
+          <DetailKV label="Tracking" value={formatItemLabel(String(item.tracking_type ?? ""))} />
+          <DetailKV label="Accounting unit" value={item.acct_unit ?? "-"} />
+          <DetailKV label="Low-stock threshold" value={toNumber(item.low_stock_threshold) > 0 ? `${formatQuantity(item.low_stock_threshold)} ${item.acct_unit ?? "unit"}` : "—"} />
+          <DetailKV label="Standalone locations" value={<span className="mono">{units.length}</span>} />
+        </div>
+      </div>
+      <div className={workspaceStyles.infoCard}>
+        <div className="eyebrow">Description</div>
+        <div className={workspaceStyles.infoBodyText}>{item.description?.trim() || "No description has been added for this item yet."}</div>
+      </div>
+      <div className={workspaceStyles.infoCard}>
+        <div className="eyebrow">Specifications</div>
+        <div className={workspaceStyles.infoBodyText}>{item.specifications?.trim() || "No specifications have been added for this item yet."}</div>
+      </div>
+    </div>
+  );
+}
+
+function WorkspaceActivityTab({ item }: { item: ItemRecord }) {
+  const events = [
+    item.updated_at ? {
+      key: "updated",
+      label: "Record updated",
+      meta: formatItemDate(item.updated_at, "Unknown"),
+      note: item.created_by_name ? `Visible in the current permission scope · ${item.created_by_name}` : "Visible in the current permission scope",
+    } : null,
+    item.created_at ? {
+      key: "created",
+      label: "Record created",
+      meta: formatItemDate(item.created_at, "Unknown"),
+      note: item.created_by_name ? `Created by ${item.created_by_name}` : "Creation source not available",
+    } : null,
+  ].filter(Boolean) as Array<{ key: string; label: string; meta: string; note: string }>;
+
+  return (
+    <div className={workspaceStyles.activityCard}>
+      <div className={workspaceStyles.activityHead}>
+        <h3>Recent activity</h3>
+        <div className={workspaceStyles.activityHeadMeta}>latest known record events</div>
+      </div>
+      <div className={workspaceStyles.activityList}>
+        {events.length ? events.map(event => (
+          <div key={event.key} className={workspaceStyles.activityRow}>
+            <span className={workspaceStyles.activityIcon}>
+              <Ic d="M12 5v14M5 12h14" size={13} />
+            </span>
+            <span className={workspaceStyles.activityText}>
+              <strong>{event.label}</strong>
+              <span>{event.note}</span>
+            </span>
+            <span className={workspaceStyles.activityMeta}>{event.meta}</span>
+          </div>
+        )) : (
+          <div className={workspaceStyles.listEmpty}>No item activity is available for this record yet.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WorkspaceInstancesTab({
+  itemId,
+  selectedLocationId,
+  onClearSelectedLocation,
+}: {
+  itemId: string;
+  selectedLocationId: string | null;
+  onClearSelectedLocation: () => void;
+}) {
+  const router = useRouter();
+  const extraQuery = selectedLocationId ? `&location=${encodeURIComponent(selectedLocationId)}` : "";
+  const { records, isLoading, fetchError, setFetchError, load } = useItemRelatedList<ItemInstanceRecord>(itemId, "/api/inventory/item-instances/", "Failed to load item instances", extraQuery);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const statusOptions = useMemo(() => {
+    const values = new Set<string>();
+    records.forEach(record => {
+      if (record.status) values.add(record.status);
+    });
+    return Array.from(values).sort();
+  }, [records]);
+
+  const filteredRecords = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return records.filter(record => {
+      if (q) {
+        const hay = [
+          record.serial_number,
+          record.qr_code ?? "",
+          record.location_name ?? "",
+          record.full_location_path ?? "",
+          record.allocated_to ?? "",
+          record.in_charge ?? "",
+          record.authority_store_name ?? "",
+        ].join(" ").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (statusFilter !== "all" && record.status !== statusFilter) return false;
+      return true;
+    });
+  }, [records, search, statusFilter]);
+
+  return (
+    <div className={workspaceStyles.tabStack}>
+      {fetchError ? (
+        <Alert onDismiss={() => setFetchError(null)} action={<button type="button" className="btn btn-xs" onClick={() => load()}>Retry</button>}>
+          {fetchError}
+        </Alert>
+      ) : null}
+      {selectedLocationId ? (
+        <div className={workspaceStyles.scopeNotice}>
+          <span>Filtered to the location selected in Distribution.</span>
+          <button type="button" className="btn btn-xs btn-ghost" onClick={onClearSelectedLocation}>
+            All item instances
+          </button>
+        </div>
+      ) : null}
+      <div className={workspaceStyles.tabToolbar}>
+        <div className="search-input">
+          <Ic d={<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>} size={14} />
+          <input placeholder="Search instance code, serial, location, assignee, or authority store..." value={search} onChange={event => setSearch(event.target.value)} />
+          {search ? <button type="button" className="clear-search" onClick={() => setSearch("")}>x</button> : null}
+        </div>
+        <label className="filter-select-wrap">
+          <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)} aria-label="Filter item instances by status">
+            <option value="all">All statuses</option>
+            {statusOptions.map(status => <option key={status} value={status}>{formatItemLabel(status)}</option>)}
+          </select>
+        </label>
+      </div>
+      <div className="table-card">
+        <div className="table-card-head">
+          <div className="table-card-head-left">
+            <div className="eyebrow">Instance list</div>
+            <div className="table-count">
+              <span className="mono">{filteredRecords.length}</span>
+              <span>of</span>
+              <span className="mono">{records.length}</span>
+              <span>instances</span>
             </div>
           </div>
         </div>
-        ) : filteredItems.length > 0 ? (
-          <div className="users-grid">
-            {filteredItems.map(item => (
-              <ItemCard
-                key={item.id}
-                item={item}
-                canEdit={canManageItems}
-                canDelete={canDeleteItems}
-                pageBusy={pageBusy}
-                deleteBusy={deleteBusyItemId === item.id}
-                onOpen={() => router.push(`/items/${item.id}`)}
-                onEdit={() => openEditModal(item)}
-                onDelete={() => handleDelete(item)}
-              />
-            ))}
-          </div>
+        {isLoading ? (
+          <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", borderTop: "1px solid var(--hairline)" }}>Loading instances...</div>
         ) : (
-          <div className="table-card">
-            <div style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>
-              No items match the current filters.
+          <div className="h-scroll">
+            <table className="data-table instance-list-table">
+              <thead>
+                <tr>
+                  <th>Instance</th>
+                  <th>Serial number</th>
+                  <th>Status</th>
+                  <th>Current Location</th>
+                  <th>Allocated To</th>
+                  <th>In Charge</th>
+                  <th>Authority Store</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRecords.length === 0 ? (
+                  <EmptyTableRow colSpan={7} message="No item instances match the current filters." />
+                ) : filteredRecords.map(record => (
+                  <tr key={record.id} className="clickable-table-row" onClick={() => router.push(`/items/${itemId}/instances/${record.id}`)}>
+                    <td className="col-user">
+                      <div className="identity-cell">
+                        <div className="user-name mono">{record.qr_code ?? "Uncoded instance"}</div>
+                        <div className="user-username">{record.item_name ?? "Tracked item instance"}</div>
+                      </div>
+                    </td>
+                    <td><span className="mono">{record.serial_number || "-"}</span></td>
+                    <td><span className="chip">{formatItemLabel(record.status)}</span></td>
+                    <td>
+                      <div className="login-cell instance-table-cell">
+                        <div>{record.location_name ?? "-"}</div>
+                        <div className="login-cell-sub mono">{record.full_location_path ?? record.location_code ?? "-"}</div>
+                      </div>
+                    </td>
+                    <td>
+                      {record.allocated_to
+                        ? <span className="chip">{record.allocated_to} ({formatItemLabel(record.allocated_to_type)})</span>
+                        : <span className="muted-note">-</span>}
+                    </td>
+                    <td>{record.in_charge ?? "-"}</td>
+                    <td>
+                      <div className="login-cell instance-table-cell">
+                        <div>{record.authority_store_name ?? "-"}</div>
+                        <div className="login-cell-sub mono">{record.authority_store_code ?? "-"}</div>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WorkspaceBatchesTab({
+  itemId,
+  selectedLocationId,
+  onClearSelectedLocation,
+}: {
+  itemId: string;
+  selectedLocationId: string | null;
+  onClearSelectedLocation: () => void;
+}) {
+  const extraQuery = selectedLocationId ? `&location=${encodeURIComponent(selectedLocationId)}` : "";
+  const { records, isLoading, fetchError, setFetchError, load } = useItemRelatedList<ItemBatchRecord>(itemId, "/api/inventory/item-batches/", "Failed to load item batches", extraQuery);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const filteredRecords = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return records.filter(record => {
+      if (q) {
+        const hay = [record.batch_number, record.item_code ?? "", record.created_by_name ?? ""].join(" ").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (statusFilter === "active" && !record.is_active) return false;
+      if (statusFilter === "disabled" && record.is_active) return false;
+      if (statusFilter === "expired" && !isExpired(record.expiry_date)) return false;
+      return true;
+    });
+  }, [records, search, statusFilter]);
+
+  return (
+    <div className={workspaceStyles.tabStack}>
+      {fetchError ? (
+        <Alert onDismiss={() => setFetchError(null)} action={<button type="button" className="btn btn-xs" onClick={() => load()}>Retry</button>}>
+          {fetchError}
+        </Alert>
+      ) : null}
+      {selectedLocationId ? (
+        <div className={workspaceStyles.scopeNotice}>
+          <span>Filtered to the location selected in Distribution.</span>
+          <button type="button" className="btn btn-xs btn-ghost" onClick={onClearSelectedLocation}>
+            All item batches
+          </button>
+        </div>
+      ) : null}
+      <div className={workspaceStyles.tabToolbar}>
+        <div className="search-input">
+          <Ic d={<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>} size={14} />
+          <input placeholder="Search batch, item code, or creator..." value={search} onChange={event => setSearch(event.target.value)} />
+          {search ? <button type="button" className="clear-search" onClick={() => setSearch("")}>x</button> : null}
+        </div>
+        <div className="chip-filter">
+          {[
+            { key: "all", label: "All" },
+            { key: "active", label: "Active" },
+            { key: "disabled", label: "Disabled" },
+            { key: "expired", label: "Expired" },
+          ].map(option => (
+            <button
+              key={option.key}
+              type="button"
+              className={"chip-filter-btn" + (statusFilter === option.key ? " active" : "")}
+              onClick={() => setStatusFilter(option.key)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="table-card">
+        <div className="table-card-head">
+          <div className="table-card-head-left">
+            <div className="eyebrow">Batch list</div>
+            <div className="table-count">
+              <span className="mono">{filteredRecords.length}</span>
+              <span>of</span>
+              <span className="mono">{records.length}</span>
+              <span>batches</span>
             </div>
+          </div>
+        </div>
+        {isLoading ? (
+          <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", borderTop: "1px solid var(--hairline)" }}>Loading batches...</div>
+        ) : (
+          <div className="h-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Batch</th>
+                  <th>Quantity</th>
+                  <th>Available</th>
+                  <th>Manufactured</th>
+                  <th>Expiry</th>
+                  <th>Expiry Status</th>
+                  <th>Active</th>
+                  <th>Created By</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRecords.length === 0 ? (
+                  <EmptyTableRow colSpan={9} message="No item batches match the current filters." />
+                ) : filteredRecords.map(record => (
+                  <tr key={record.id}>
+                    <td className="col-user">
+                      <div className="identity-cell">
+                        <div className="user-name">{record.batch_number}</div>
+                        <div className="user-username mono">{record.item_code ?? "-"}</div>
+                      </div>
+                    </td>
+                    <td>{formatQuantity(record.quantity)}</td>
+                    <td>{formatQuantity(record.available_quantity)}</td>
+                    <td>{formatItemDate(record.manufactured_date)}</td>
+                    <td>{formatItemDate(record.expiry_date)}</td>
+                    <td>{isExpired(record.expiry_date) ? <StatusPill tone="warning" label="Expired" /> : <StatusPill tone="success" label="Valid" />}</td>
+                    <td><StatusPill active={record.is_active} /></td>
+                    <td>{record.created_by_name ?? "-"}</td>
+                    <td>{formatItemDate(record.updated_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
@@ -1063,14 +2579,9 @@ export function ItemDistributionView({ itemId }: { itemId: string }) {
                   ) : filteredUnits.map(unit => (
                     <tr key={unit.id} onClick={() => router.push(`/items/${itemId}/distribution/${unit.id}`)} style={{ cursor: "pointer" }}>
                       <td className="col-user">
-                        <div className="user-cell">
-                          <div className="avatar" style={{ width: 32, height: 32, fontSize: 11, background: "linear-gradient(135deg, #3b4052, #0e1116)" }}>
-                            {(unit.name || "LC").split(" ").map(n => n[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "LC"}
-                          </div>
-                          <div>
-                            <div className="user-name">{unit.name}</div>
-                            <div className="user-username mono">{unit.code}</div>
-                          </div>
+                        <div className="identity-cell">
+                          <div className="user-name">{unit.name}</div>
+                          <div className="user-username mono">{unit.code}</div>
                         </div>
                       </td>
                       <td className="mono">{formatQuantity(unit.totalQuantity)}</td>
@@ -1263,14 +2774,9 @@ export function ItemStandaloneDistributionView({ itemId, standaloneId }: { itemI
                   ) : filteredDetails.map(row => (
                     <tr key={row.id}>
                       <td className="col-user">
-                        <div className="user-cell">
-                          <div className="avatar" style={{ width: 32, height: 32, fontSize: 11, background: row.kind === "person" ? "linear-gradient(135deg, #8a7b60, #4d442f)" : "linear-gradient(135deg, #3b4052, #0e1116)" }}>
-                            {(row.name || "DT").split(" ").map(n => n[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "DT"}
-                          </div>
-                          <div>
-                            <div className="user-name">{row.name}</div>
-                            <div className="user-username mono">{row.id}</div>
-                          </div>
+                        <div className="identity-cell">
+                          <div className="user-name">{row.name}</div>
+                          <div className="user-username mono">{row.id}</div>
                         </div>
                       </td>
                       <td><span className="chip">{detailKindLabel(row.kind)}</span></td>
@@ -1431,7 +2937,7 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
               <div className="filter-bar-left">
                 <div className="search-input">
                   <Ic d={<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>} size={14} />
-                  <input placeholder="Search serial, QR, location, assignee, or authority store..." value={search} onChange={e => setSearch(e.target.value)} />
+                  <input placeholder="Search instance code, serial, location, assignee, or authority store..." value={search} onChange={e => setSearch(e.target.value)} />
                   {search && <button type="button" className="clear-search" onClick={() => setSearch("")}>x</button>}
                 </div>
                 <div className="filter-select-group">
@@ -1465,44 +2971,33 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
                 <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", borderTop: "1px solid var(--hairline)" }}>Loading instances...</div>
               ) : (
                 <div className="h-scroll">
-                  <table className="data-table">
+                  <table className="data-table instance-list-table">
                     <thead>
                       <tr>
                         <th>Instance</th>
-                        <th>QR</th>
+                        <th>Serial number</th>
                         <th>Status</th>
                         <th>Current Location</th>
                         <th>Allocated To</th>
                         <th>In Charge</th>
                         <th>Authority Store</th>
-                        <th>Active</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredRecords.length === 0 ? (
-                        <EmptyTableRow colSpan={8} message="No item instances match the current filters." />
+                        <EmptyTableRow colSpan={7} message="No item instances match the current filters." />
                       ) : filteredRecords.map(record => (
                         <tr key={record.id} className="clickable-table-row" onClick={() => router.push(`/items/${itemId}/instances/${record.id}`)}>
                           <td className="col-user">
-                            <div className="user-cell">
-                              <div className="avatar" style={{ width: 32, height: 32, fontSize: 11, background: "linear-gradient(135deg, color-mix(in oklch, var(--primary) 82%, white), var(--primary))" }}>
-                                {(record.serial_number || "IN").slice(0, 2).toUpperCase()}
-                              </div>
-                              <div>
-                                <div className="user-name">{record.serial_number}</div>
-                                <div className="user-username mono">#{record.id}</div>
-                              </div>
+                            <div className="identity-cell">
+                              <div className="user-name mono">{record.qr_code ?? "Uncoded instance"}</div>
+                              <div className="user-username">{record.item_name ?? item?.name ?? "Tracked item instance"}</div>
                             </div>
                           </td>
-                          <td>
-                            <div className="instance-qr-cell">
-                              {record.qr_code_image ? <img src={getMediaHref(record.qr_code_image) ?? undefined} alt="" /> : <span className="instance-qr-placeholder">QR</span>}
-                              <span className="mono">{record.qr_code ?? "-"}</span>
-                            </div>
-                          </td>
+                          <td><span className="mono">{record.serial_number || "-"}</span></td>
                           <td><span className="chip">{formatItemLabel(record.status)}</span></td>
                           <td>
-                            <div className="login-cell">
+                            <div className="login-cell instance-table-cell">
                               <div>{record.location_name ?? "-"}</div>
                               <div className="login-cell-sub mono">{record.full_location_path ?? record.location_code ?? "-"}</div>
                             </div>
@@ -1514,12 +3009,11 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
                           </td>
                           <td>{record.in_charge ?? "-"}</td>
                           <td>
-                            <div className="login-cell">
+                            <div className="login-cell instance-table-cell">
                               <div>{record.authority_store_name ?? "-"}</div>
                               <div className="login-cell-sub mono">{record.authority_store_code ?? "-"}</div>
                             </div>
                           </td>
-                          <td><StatusPill active={record.is_active} /></td>
                         </tr>
                       ))}
                     </tbody>
@@ -1799,14 +3293,9 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
                   ) : filteredRecords.map(record => (
                     <tr key={record.id}>
                       <td className="col-user">
-                        <div className="user-cell">
-                          <div className="avatar" style={{ width: 32, height: 32, fontSize: 11, background: "linear-gradient(135deg, #3b4052, #0e1116)" }}>
-                            {(record.batch_number || "BA").slice(0, 2).toUpperCase()}
-                          </div>
-                          <div>
-                            <div className="user-name">{record.batch_number}</div>
-                            <div className="user-username mono">{record.item_code ?? item?.code ?? "-"}</div>
-                          </div>
+                        <div className="identity-cell">
+                          <div className="user-name">{record.batch_number}</div>
+                          <div className="user-username mono">{record.item_code ?? item?.code ?? "-"}</div>
                         </div>
                       </td>
                       <td>{formatQuantity(record.quantity)}</td>

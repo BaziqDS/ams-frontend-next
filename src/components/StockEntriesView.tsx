@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
 import { apiFetch, type Page } from "@/lib/api";
 import { getAllocatableTargetLocations, getAllocatableTargetPersons, getAllocatedReturnLocations, getAllocatedReturnPersons, getTransferDestinationStores, getUserAssignedStores, type StockAllocationRecord } from "@/lib/stockEntryLocationRules";
@@ -14,6 +14,7 @@ import { relTime, type LocationRecord } from "@/lib/userUiShared";
 type Density = "compact" | "balanced" | "comfortable";
 type EntryType = "RECEIPT" | "ISSUE" | "RETURN";
 type EntryStatus = "DRAFT" | "PENDING_ACK" | "COMPLETED" | "REJECTED" | "CANCELLED";
+type CorrectionStatus = "REQUESTED" | "APPROVED" | "APPLIED" | "REJECTED" | "BLOCKED";
 
 interface ItemRecord {
   id: number;
@@ -88,6 +89,15 @@ interface StockEntryRecord {
   created_by_name?: string | null;
   created_at: string;
   can_acknowledge?: boolean;
+  active_correction?: {
+    id: number;
+    original_entry?: number;
+    status: CorrectionStatus;
+    resolution_type: string;
+    reason: string;
+    message?: string | null;
+  } | null;
+  correction_status?: CorrectionStatus | null;
 }
 
 interface ReferenceData {
@@ -132,6 +142,18 @@ function StatusPill({ status }: { status: EntryStatus }) {
     <span className={`pill ${entryTone(status)}`}>
       <span className={`status-dot ${status === "COMPLETED" ? "active" : "inactive"}`} />
       {formatLabel(status)}
+    </span>
+  );
+}
+
+function CorrectionPill({ entry }: { entry: StockEntryRecord }) {
+  const status = entry.active_correction?.status ?? entry.correction_status;
+  if (!status || status === "APPLIED" || status === "REJECTED") return null;
+
+  const label = status === "REQUESTED" ? "Correction requested" : `Correction ${formatLabel(status)}`;
+  return (
+    <span className={`pill ${status === "BLOCKED" ? "pill-danger" : "pill-warning"}`}>
+      {label}
     </span>
   );
 }
@@ -502,11 +524,17 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
 
   useEffect(() => {
     if (!open) return;
-    setForm(formFromEntry(entry, refs.locations));
+    const nextForm = formFromEntry(entry, refs.locations);
+    if (mode === "create" && entry) {
+      nextForm.status = "DRAFT";
+      nextForm.remarks = `Replacement for ${entry.entry_number}`;
+      nextForm.items = nextForm.items.map(item => ({ ...item, instances: [] }));
+    }
+    setForm(nextForm);
     setErrors({});
     setSubmitError(null);
     setSubmitting(false);
-  }, [entry, open, refs.locations]);
+  }, [entry, mode, open, refs.locations]);
 
   useEffect(() => {
     if (!open) return;
@@ -667,9 +695,14 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
     setSubmitting(true);
     setSubmitError(null);
     try {
+      const payload = buildStockEntryPayload(form) as ReturnType<typeof buildStockEntryPayload> & { reference_entry?: number; reference_purpose?: string };
+      if (mode === "create" && entry) {
+        payload.reference_entry = entry.id;
+        payload.reference_purpose = "REPLACEMENT";
+      }
       await apiFetch(mode === "edit" && entry ? `/api/inventory/stock-entries/${entry.id}/` : "/api/inventory/stock-entries/", {
         method: mode === "edit" ? "PATCH" : "POST",
-        body: JSON.stringify(buildStockEntryPayload(form)),
+        body: JSON.stringify(payload),
       });
       await onSave();
       onClose();
@@ -690,8 +723,8 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
         <div className="modal-head">
           <div>
             <div className="eyebrow">Stock operation</div>
-            <h2 id="stock-entry-modal-title">{mode === "edit" ? "Edit Stock Entry" : "Create Stock Entry"}</h2>
-            <p>{mode === "edit" ? "Draft entries can be revised before stock movement is committed." : "Record a transfer/allocation or receipt with line items."}</p>
+            <h2 id="stock-entry-modal-title">{mode === "edit" ? "Edit Stock Entry" : entry ? "Create Replacement Entry" : "Create Stock Entry"}</h2>
+            <p>{mode === "edit" ? "Draft entries can be revised before stock movement is committed." : entry ? "Create a normal stock entry linked to the original record." : "Record a transfer/allocation or receipt with line items."}</p>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close stock entry modal">×</button>
         </div>
@@ -967,6 +1000,7 @@ function RowActions({ entry, canEdit, canDelete, pageBusy, deleteBusy, ackBusy, 
 
 export function StockEntriesView() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   const { isLoading: capsLoading } = useCapabilities();
   const canView = useCan("stock-entries");
@@ -985,10 +1019,12 @@ export function StockEntriesView() {
   const [density, setDensity] = useState<Density>("balanced");
   const [mode, setMode] = useState<"table" | "grid">("table");
   const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [editingEntry, setEditingEntry] = useState<StockEntryRecord | null>(null);
   const [busyAction, setBusyAction] = useState<{ kind: "delete" | "acknowledge"; entryId: number } | null>(null);
   const refsLoadedRef = useRef(false);
   const refsPromiseRef = useRef<Promise<boolean> | null>(null);
+  const replacementOpenedRef = useRef<string | null>(null);
 
   const loadRefs = useCallback(async () => {
     if (!canManage) return true;
@@ -1057,6 +1093,19 @@ export function StockEntriesView() {
     loadRefs();
   }, [canView, capsLoading, loadEntries, loadRefs, router]);
 
+  useEffect(() => {
+    const replacementFor = searchParams.get("replacement_for");
+    if (!replacementFor || !canManage || isLoading || replacementOpenedRef.current === replacementFor) return;
+    const source = entries.find(entry => String(entry.id) === replacementFor);
+    if (!source) return;
+    replacementOpenedRef.current = replacementFor;
+    setModalMode("create");
+    setEditingEntry(source);
+    setModalOpen(true);
+    void loadRefs();
+    router.replace("/stock-entries");
+  }, [canManage, entries, isLoading, loadRefs, router, searchParams]);
+
   const filteredEntries = useMemo(() => {
     const q = search.trim().toLowerCase();
     return entries.filter(entry => {
@@ -1077,17 +1126,20 @@ export function StockEntriesView() {
   }), [entries]);
 
   const openCreateModal = async () => {
+    setModalMode("create");
     setEditingEntry(null);
     setModalOpen(true);
     void loadRefs();
   };
   const openEditModal = async (entry: StockEntryRecord) => {
+    setModalMode("edit");
     setEditingEntry(entry);
     setModalOpen(true);
     void loadRefs();
   };
   const closeModal = () => {
     setModalOpen(false);
+    setModalMode("create");
     setEditingEntry(null);
   };
 
@@ -1140,7 +1192,7 @@ export function StockEntriesView() {
 
   return (
     <div data-density={density}>
-      <StockEntryModal open={modalOpen} mode={editingEntry ? "edit" : "create"} entry={editingEntry} refs={refs} refsLoading={refsLoading} assignedLocationIds={user?.assigned_locations} onClose={closeModal} onSave={handleSave} />
+      <StockEntryModal open={modalOpen} mode={modalMode} entry={editingEntry} refs={refs} refsLoading={refsLoading} assignedLocationIds={user?.assigned_locations} onClose={closeModal} onSave={handleSave} />
       <Topbar breadcrumb={["Operations", "Stock Entries"]} />
       <div className="page">
         {fetchError && <Alert action={<button type="button" className="btn btn-xs" onClick={() => { loadEntries(); loadRefs(); }}>Retry</button>} onDismiss={() => setFetchError(null)}>{fetchError}</Alert>}
@@ -1220,7 +1272,12 @@ export function StockEntriesView() {
                         <td>{entry.from_location_name ?? "System / inspection"}</td>
                         <td>{entryTarget(entry)}</td>
                         <td><div className="group-cell">{entry.items.slice(0, 2).map(item => <span key={`${entry.id}-${item.id ?? item.item}`} className="chip">{item.item_name ?? `Item ${item.item}`} × {item.quantity}</span>)}{entry.items.length > 2 && <span className="muted-note mono">+{entry.items.length - 2} more</span>}</div></td>
-                        <td><StatusPill status={entry.status} /></td>
+                        <td>
+                          <div className="group-cell">
+                            <StatusPill status={entry.status} />
+                            <CorrectionPill entry={entry} />
+                          </div>
+                        </td>
                         <td><div className="login-cell"><div>{relTime(entry.created_at)}</div><div className="login-cell-sub mono">{entry.created_by_name ?? "Unknown"}</div></div></td>
                         <td className="col-actions"><RowActions entry={entry} canEdit={canManage} canDelete={canDelete} pageBusy={pageBusy} deleteBusy={deleteBusyId === entry.id} ackBusy={ackBusyId === entry.id} onEdit={() => openEditModal(entry)} onDelete={() => handleDelete(entry)} onAcknowledge={() => handleAcknowledge(entry)} /></td>
                       </tr>
@@ -1235,7 +1292,13 @@ export function StockEntriesView() {
           <div className="users-grid">
             {filteredEntries.map(entry => (
               <div className="user-card" key={entry.id} onClick={() => router.push(`/stock-entries/${entry.id}`)} style={{ cursor: "pointer" }}>
-                <div className="user-card-head"><div className="avatar" style={{ width: 44, height: 44, fontSize: 12, background: "linear-gradient(135deg, color-mix(in oklch, var(--primary) 82%, white), var(--primary))" }}>{entry.entry_type.slice(0, 2)}</div><StatusPill status={entry.status} /></div>
+                <div className="user-card-head">
+                  <div className="avatar" style={{ width: 44, height: 44, fontSize: 12, background: "linear-gradient(135deg, color-mix(in oklch, var(--primary) 82%, white), var(--primary))" }}>{entry.entry_type.slice(0, 2)}</div>
+                  <div className="group-cell" style={{ justifyContent: "flex-end" }}>
+                    <StatusPill status={entry.status} />
+                    <CorrectionPill entry={entry} />
+                  </div>
+                </div>
                 <div className="user-card-name">{entry.entry_number}</div>
                 <div className="user-card-meta mono">{formatDate(entry.entry_date)}</div>
                 <div className="user-card-section"><div className="eyebrow">Movement</div><div style={{ fontSize: 13, color: "var(--text-1)" }}>{entry.from_location_name ?? "System"} → {entryTarget(entry)}</div></div>

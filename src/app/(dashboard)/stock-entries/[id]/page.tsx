@@ -1,14 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
 import { apiFetch, type Page } from "@/lib/api";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
+import {
+  buildFullReversalPayload,
+  describeQuantityCorrectionChange,
+  getCorrectionModeCopy,
+  getQuantityCorrectionUiCopy,
+  validateFullReversalRequest,
+  type CorrectionMode,
+} from "@/lib/stockEntryCorrectionRules";
 
 type EntryType = "RECEIPT" | "ISSUE" | "RETURN";
 type EntryStatus = "DRAFT" | "PENDING_ACK" | "COMPLETED" | "REJECTED" | "CANCELLED";
+type CorrectionStatus = "REQUESTED" | "APPROVED" | "APPLIED" | "REJECTED" | "BLOCKED";
 
 interface StockRegisterRecord {
   id: number;
@@ -22,6 +31,7 @@ interface StockEntryItemInstance {
   id: number;
   item: number;
   batch: number | null;
+  current_location: number | null;
   status: string;
   item_name?: string | null;
   item_code?: string | null;
@@ -67,6 +77,7 @@ interface StockEntryRecord {
   purpose: string | null;
   items: StockEntryItemRecord[];
   reference_entry?: number | null;
+  reference_purpose?: string | null;
   acknowledged_by?: number | null;
   acknowledged_by_name?: string | null;
   acknowledged_at?: string | null;
@@ -76,6 +87,13 @@ interface StockEntryRecord {
   created_by_name?: string | null;
   created_at: string;
   can_acknowledge?: boolean;
+  can_cancel?: boolean;
+  can_correct?: boolean;
+  can_request_reversal?: boolean;
+  active_correction?: CorrectionSummary | null;
+  correction_status?: CorrectionStatus | null;
+  generated_correction_entries?: RelatedEntrySummary[];
+  replacement_entry?: RelatedEntrySummary | null;
 }
 
 interface RelatedEntries {
@@ -83,6 +101,56 @@ interface RelatedEntries {
   children: StockEntryRecord[];
   linkedReceipt: StockEntryRecord | null;
   generatedReturns: StockEntryRecord[];
+}
+
+interface RelatedEntrySummary {
+  id: number;
+  entry_number: string;
+  entry_type: EntryType;
+  status: EntryStatus;
+  reference_purpose?: string | null;
+}
+
+interface CorrectionSummary {
+  id: number;
+  original_entry?: number;
+  status: CorrectionStatus;
+  resolution_type: string;
+  reason: string;
+  message?: string | null;
+  requested_at?: string | null;
+  applied_at?: string | null;
+}
+
+interface CorrectionPreviewLine {
+  id: number;
+  item: number;
+  item_name: string;
+  original_quantity: number;
+  corrected_quantity: number;
+  delta: number;
+  resolution_type: string;
+  message: string;
+  affected_instances: number[];
+}
+
+interface CorrectionPreview {
+  resolution_type: string;
+  message: string;
+  lines: CorrectionPreviewLine[];
+}
+
+interface CorrectionSubmitResult extends CorrectionSummary {
+  original_entry?: number;
+  generated_entries?: RelatedEntrySummary[];
+  lines?: Array<{
+    id: number;
+    original_item: number;
+    original_quantity: number;
+    corrected_quantity: number;
+    delta: number;
+    affected_instances: number[];
+  }>;
 }
 
 type LineResolution = {
@@ -136,6 +204,25 @@ function signature(value: string | null | undefined) {
 function formatRegisterRef(name: string | null | undefined, page: number | null | undefined, fallback: string) {
   if (!name && !page) return fallback;
   return `${name ?? "Register"}${page ? ` / pg ${page}` : ""}`;
+}
+
+function correctionSubmittedMessage(correction: CorrectionSubmitResult) {
+  if (correction.status === "APPLIED") {
+    const generatedCount = correction.generated_entries?.length ?? 0;
+    return generatedCount
+      ? `Correction applied. ${generatedCount} generated movement record${generatedCount === 1 ? " is" : "s are"} linked below.`
+      : "Correction applied. The stock balance has been updated.";
+  }
+
+  if (correction.status === "REQUESTED") {
+    return "Correction request submitted. It is waiting for approval before stock is moved.";
+  }
+
+  if (correction.status === "BLOCKED") {
+    return correction.message || "Correction is blocked because stock cannot be safely reversed from the current state.";
+  }
+
+  return `Correction ${formatLabel(correction.status)}. ${correction.message || "Refresh the entry to review the latest status."}`;
 }
 
 function firstRegisterRef(entry: StockEntryRecord) {
@@ -365,6 +452,27 @@ function lineRegisterRef(entry: StockEntryRecord, item: StockEntryItemRecord, li
 
 function trackingLabel(entry: StockEntryRecord, item: StockEntryItemRecord, related: RelatedEntries) {
   return effectiveInstances(entry, item, related).length > 0 ? "Individual" : "Quantity";
+}
+
+function selectableCorrectionInstances(entry: StockEntryRecord, item: StockEntryItemRecord, related: RelatedEntries, allInstances: StockEntryItemInstance[], delta: number) {
+  if (delta === 0) return [];
+  const currentInstanceIds = effectiveInstances(entry, item, related);
+  const isReturnFromAllocation = entry.entry_type === "RECEIPT" && Boolean(entry.issued_to || entry.from_location);
+
+  if (delta < 0) return currentInstanceIds;
+  if (isReturnFromAllocation) {
+    return allInstances
+      .filter(instance => Number(instance.item) === Number(item.item) && instance.status === "ALLOCATED")
+      .map(instance => instance.id);
+  }
+
+  return allInstances
+    .filter(instance => (
+      Number(instance.item) === Number(item.item) &&
+      Number(instance.current_location) === Number(entry.from_location) &&
+      instance.status === "AVAILABLE"
+    ))
+    .map(instance => instance.id);
 }
 
 function totals(entry: StockEntryRecord, related: RelatedEntries) {
@@ -1403,11 +1511,520 @@ function AckModal({ entry, related, registers, instances, onDone, onClose }: { e
   );
 }
 
+function CorrectionActionsPanel({
+  entry,
+  canApproveCorrections,
+  correctionActionBusy,
+  onCancelEntry,
+  onResolveDifference,
+  onRequestReversal,
+  onApproveCorrection,
+  onApplyCorrection,
+  onRejectCorrection,
+}: {
+  entry: StockEntryRecord;
+  canApproveCorrections: boolean;
+  correctionActionBusy: "approve" | "apply" | "reject" | null;
+  onCancelEntry: () => void;
+  onResolveDifference: () => void;
+  onRequestReversal: () => void;
+  onApproveCorrection: () => void;
+  onApplyCorrection: () => void;
+  onRejectCorrection: () => void;
+}) {
+  const hasAppliedReversal = entry.generated_correction_entries?.some(generated => generated.reference_purpose === "REVERSAL");
+  const canCreateReplacement = entry.status === "CANCELLED" || hasAppliedReversal;
+  const hasActions = entry.can_cancel || entry.can_correct || entry.can_request_reversal || entry.active_correction || canCreateReplacement;
+  const activeCorrection = entry.active_correction;
+  const differenceCopy = getCorrectionModeCopy("difference");
+  const reversalCopy = getCorrectionModeCopy("reversal");
+  const isProjectedReceiptCorrection = Boolean(
+    activeCorrection?.original_entry &&
+    activeCorrection.original_entry !== entry.id &&
+    entry.entry_type === "RECEIPT" &&
+    entry.reference_purpose === "AUTO_RECEIPT"
+  );
+  const isProjectedAdditionalMovement = isProjectedReceiptCorrection && activeCorrection?.resolution_type === "ADDITIONAL_MOVEMENT";
+  const correctionCanBeActedOnHere = Boolean(
+    activeCorrection &&
+    canApproveCorrections &&
+    !isProjectedAdditionalMovement &&
+    (activeCorrection.resolution_type !== "REVERSAL" || isProjectedReceiptCorrection)
+  );
+  if (!hasActions) return null;
+
+  return (
+    <Panel eyebrow="Controls" title="Entry correction actions">
+      <div style={{ display: "grid", gap: 12 }}>
+        {activeCorrection ? (
+          <div className="notice notice-warn">
+            <div className="notice-body">
+              <div className="notice-title">Correction {formatLabel(activeCorrection.status)}</div>
+              <div className="notice-text">
+                {activeCorrection.message || activeCorrection.reason}
+                {activeCorrection.status === "REQUESTED" && activeCorrection.resolution_type === "REVERSAL" && !isProjectedReceiptCorrection ? " Waiting for the receiving store to approve it from the linked receipt voucher." : ""}
+                {activeCorrection.status === "REQUESTED" && activeCorrection.resolution_type === "ADDITIONAL_MOVEMENT" && isProjectedReceiptCorrection ? " Waiting for the source store to approve and send the additional quantity." : ""}
+                {activeCorrection.status === "REQUESTED" && !isProjectedAdditionalMovement && (activeCorrection.resolution_type !== "REVERSAL" || isProjectedReceiptCorrection) ? " Approval is required before any linked movement is generated." : ""}
+                {activeCorrection.status === "APPROVED" && activeCorrection.resolution_type === "REVERSAL" && !isProjectedReceiptCorrection ? " The receiving store can apply it from the linked receipt voucher." : ""}
+                {activeCorrection.status === "APPROVED" && isProjectedAdditionalMovement ? " The source store can now apply it to generate the additional issue." : ""}
+                {activeCorrection.status === "APPROVED" && !isProjectedAdditionalMovement && (activeCorrection.resolution_type !== "REVERSAL" || isProjectedReceiptCorrection) ? " Apply it to generate the linked movement records." : ""}
+              </div>
+            </div>
+            {correctionCanBeActedOnHere && activeCorrection.status === "REQUESTED" ? (
+              <div className="notice-actions">
+                <button type="button" className="btn btn-xs btn-primary" onClick={onApproveCorrection} disabled={correctionActionBusy !== null}>
+                  {correctionActionBusy === "approve" ? "Approving..." : "Approve"}
+                </button>
+                <button type="button" className="btn btn-xs btn-ghost" onClick={onRejectCorrection} disabled={correctionActionBusy !== null}>
+                  {correctionActionBusy === "reject" ? "Rejecting..." : "Reject"}
+                </button>
+              </div>
+            ) : null}
+            {correctionCanBeActedOnHere && activeCorrection.status === "APPROVED" ? (
+              <div className="notice-actions">
+                <button type="button" className="btn btn-xs btn-primary" onClick={onApplyCorrection} disabled={correctionActionBusy !== null}>
+                  {correctionActionBusy === "apply" ? "Applying..." : "Apply Correction"}
+                </button>
+                <button type="button" className="btn btn-xs btn-ghost" onClick={onRejectCorrection} disabled={correctionActionBusy !== null}>
+                  {correctionActionBusy === "reject" ? "Rejecting..." : "Reject"}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {entry.can_cancel ? (
+            <button type="button" className="btn btn-sm" onClick={onCancelEntry}>
+              Cancel Entry
+            </button>
+          ) : null}
+          {entry.can_correct ? (
+            <button type="button" className="btn btn-sm btn-primary" onClick={onResolveDifference}>
+              {differenceCopy.actionLabel}
+            </button>
+          ) : null}
+          {entry.can_request_reversal ? (
+            <button type="button" className="btn btn-sm" onClick={onRequestReversal}>
+              {reversalCopy.actionLabel}
+            </button>
+          ) : null}
+          {canCreateReplacement ? (
+            <Link className="btn btn-sm" href={`/stock-entries?replacement_for=${entry.id}`}>
+              Create Replacement Entry
+            </Link>
+          ) : null}
+        </div>
+
+        {entry.generated_correction_entries?.length ? (
+          <div style={{ display: "grid", gap: 6 }}>
+            <div className="eyebrow">Generated Records</div>
+            {entry.generated_correction_entries.map(generated => (
+              <Link key={generated.id} href={`/stock-entries/${generated.id}`} className="chip" style={{ justifyContent: "space-between", textDecoration: "none" }}>
+                <span>{generated.entry_number}</span>
+                <span>{formatLabel(generated.reference_purpose ?? generated.entry_type)}</span>
+              </Link>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </Panel>
+  );
+}
+
+function CorrectionModal({ entry, related, instances, onDone, onClose }: { entry: StockEntryRecord; related: RelatedEntries; instances: StockEntryItemInstance[]; onDone: (correction: CorrectionSubmitResult) => Promise<void>; onClose: () => void }) {
+  const copy = getCorrectionModeCopy("difference");
+  const quantityCopy = getQuantityCorrectionUiCopy(entry.entry_type);
+  const [reason, setReason] = useState("");
+  const [lineQuantities, setLineQuantities] = useState<Record<number, string>>({});
+  const [lineInstances, setLineInstances] = useState<Record<number, string[]>>({});
+  const [preview, setPreview] = useState<CorrectionPreview | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLineQuantities(Object.fromEntries(entry.items.map(item => [item.id, String(item.accepted_quantity ?? item.quantity)])));
+    setLineInstances({});
+    setReason("");
+    setPreview(null);
+    setError(null);
+    setBusy(false);
+  }, [entry]);
+
+  const payload = () => ({
+    reason,
+    lines: entry.items.map(item => ({
+      id: item.id,
+      corrected_quantity: Number(lineQuantities[item.id] || 0),
+      instances: lineInstances[item.id] ?? [],
+    })),
+  });
+
+  const lineStates = entry.items.map((item, index) => {
+    const recordedQuantity = item.accepted_quantity ?? item.quantity;
+    const rawQuantity = lineQuantities[item.id] ?? "";
+    const correctedQuantity = Number(rawQuantity || 0);
+    const delta = correctedQuantity - recordedQuantity;
+    const selectableInstances = selectableCorrectionInstances(entry, item, related, instances, delta);
+    const selectedInstanceCount = lineInstances[item.id]?.length ?? 0;
+    const requiredInstanceCount = selectableInstances.length > 0 && delta !== 0 ? Math.abs(delta) : 0;
+    return {
+      item,
+      index,
+      recordedQuantity,
+      rawQuantity,
+      correctedQuantity,
+      delta,
+      selectableInstances,
+      selectedInstanceCount,
+      requiredInstanceCount,
+    };
+  });
+  const hasChangedLine = lineStates.some(line => line.delta !== 0);
+  const hasInvalidQuantity = lineStates.some(line => line.rawQuantity === "" || !Number.isFinite(line.correctedQuantity) || line.correctedQuantity < 0);
+  const instanceSelectionError = lineStates.find(line => line.requiredInstanceCount > 0 && line.selectedInstanceCount !== line.requiredInstanceCount);
+  const validationMessage = !reason.trim()
+    ? "Enter a reason before submitting a correction."
+    : hasInvalidQuantity
+      ? "Quantities cannot be less than zero."
+      : !hasChangedLine
+        ? quantityCopy.unchangedMessage
+        : instanceSelectionError
+          ? `Select exactly ${instanceSelectionError.requiredInstanceCount} affected instance${instanceSelectionError.requiredInstanceCount === 1 ? "" : "s"} for ${instanceSelectionError.item.item_name ?? `item ${instanceSelectionError.item.item}`}.`
+          : preview
+            ? null
+            : "Review what will happen before sending this correction request.";
+  const canPreview = reason.trim().length > 0 && !hasInvalidQuantity && hasChangedLine && !instanceSelectionError;
+  const canSubmit = canPreview && Boolean(preview) && preview?.resolution_type !== "BLOCKED";
+  const changedPreviewLines = preview?.lines.filter(line => line.delta !== 0) ?? [];
+  const primaryLabel = preview ? copy.submitLabel : "Check What Will Happen";
+
+  const toggleLineInstance = (lineId: number, instanceId: number, checked: boolean) => {
+    setLineInstances(prev => {
+      const current = prev[lineId] ?? [];
+      const value = String(instanceId);
+      return {
+        ...prev,
+        [lineId]: checked
+          ? [...current, value]
+          : current.filter(candidate => candidate !== value),
+      };
+    });
+    setPreview(null);
+  };
+
+  const runPreview = async () => {
+    if (!canPreview) {
+      setError(validationMessage ?? "Complete the correction details before previewing.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await apiFetch<CorrectionPreview>(`/api/inventory/stock-entries/${entry.id}/correction-preview/`, {
+        method: "POST",
+        body: JSON.stringify(payload()),
+      });
+      setPreview(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to preview correction");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const correction = await apiFetch<CorrectionSubmitResult>(`/api/inventory/stock-entries/${entry.id}/request-correction/`, {
+        method: "POST",
+        body: JSON.stringify(payload()),
+      });
+      await onDone(correction);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to submit correction");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handlePrimaryAction = () => {
+    if (preview) {
+      void submit();
+      return;
+    }
+    void runPreview();
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <div className="modal stock-correction-modal" role="dialog" aria-modal="true" aria-labelledby="stock-correction-title" onMouseDown={event => event.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <div className="eyebrow">Contextual correction</div>
+            <h2 id="stock-correction-title">{copy.title}</h2>
+            <div className="stock-ack-modal-sub">Use this only when the quantity on record is wrong.</div>
+          </div>
+          <button type="button" className="modal-close" aria-label="Close correction modal" onClick={onClose}>×</button>
+        </div>
+        <div className="modal-body">
+          <div className="stock-correction-form">
+            {error && <Alert>{error}</Alert>}
+            <div className="notice notice-warn stock-correction-risk">
+              <div className="notice-body">
+                <div className="notice-title">{copy.disclaimerTitle}</div>
+                <div className="notice-text">{copy.disclaimer}</div>
+              </div>
+            </div>
+            <Field label="Reason">
+              <textarea
+                className="input stock-correction-reason-input"
+                rows={3}
+                value={reason}
+                onChange={event => {
+                  setReason(event.target.value);
+                  setPreview(null);
+                }}
+                placeholder="Explain what mistake happened and why this correction is needed."
+              />
+            </Field>
+
+            <div className="stock-correction-lines" aria-label="Correction lines">
+              {lineStates.map(({ item, index, recordedQuantity, correctedQuantity, delta, selectableInstances, selectedInstanceCount }) => {
+                const changeText = describeQuantityCorrectionChange(recordedQuantity, correctedQuantity);
+                return (
+                  <section key={item.id} className="stock-correction-line">
+                    <div className="stock-correction-line-head">
+                      <div className="stock-correction-item">
+                        <div className="stock-correction-item-index">{String(index + 1).padStart(2, "0")}</div>
+                        <div className="stock-correction-item-copy">
+                          <div className="stock-correction-item-name">{item.item_name ?? `Item ${item.item}`}</div>
+                          <div className="stock-correction-item-meta">{item.batch_number ?? "No batch"} · {trackingLabel(entry, item, related)} tracking</div>
+                        </div>
+                      </div>
+                      <span className={`stock-correction-delta ${delta === 0 ? "is-neutral" : delta > 0 ? "is-positive" : "is-negative"}`}>
+                        {changeText}
+                      </span>
+                    </div>
+
+                    <div className="stock-correction-metrics">
+                      <div className="stock-correction-metric">
+                        <span>{quantityCopy.currentQuantityLabel}</span>
+                        <strong>{recordedQuantity}</strong>
+                      </div>
+                      <label className="field stock-correction-quantity-field">
+                        <span className="field-label">{quantityCopy.targetQuantityLabel}</span>
+                        <input
+                          className="input"
+                          type="number"
+                          min={0}
+                          value={lineQuantities[item.id] ?? ""}
+                          onChange={event => {
+                            setLineQuantities(prev => ({ ...prev, [item.id]: event.target.value }));
+                            setLineInstances(prev => ({ ...prev, [item.id]: [] }));
+                            setPreview(null);
+                          }}
+                        />
+                      </label>
+                    </div>
+                    <div className="stock-correction-line-help">{quantityCopy.helperText}</div>
+
+                    {selectableInstances.length > 0 ? (
+                      <div className="stock-correction-instance-picker">
+                        <div className="stock-correction-instance-note">
+                          <span>Select {Math.abs(delta)} affected instance{Math.abs(delta) === 1 ? "" : "s"}.</span>
+                          <strong>{selectedInstanceCount} selected</strong>
+                        </div>
+                        <div className="stock-correction-instance-grid">
+                          {selectableInstances.map(instanceId => (
+                            <label key={instanceId} className="stock-correction-instance-chip">
+                              <input
+                                type="checkbox"
+                                checked={(lineInstances[item.id] ?? []).includes(String(instanceId))}
+                                onChange={event => toggleLineInstance(item.id, instanceId, event.target.checked)}
+                              />
+                              <span>{instanceIdentifier(instances.find(candidate => candidate.id === instanceId), instanceId)}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </section>
+                );
+              })}
+            </div>
+
+            {preview ? (
+              <div className={`stock-correction-preview ${preview.resolution_type === "BLOCKED" ? "is-blocked" : "is-ready"}`}>
+                <div>
+                  <div className="stock-correction-preview-title">What will happen</div>
+                  <div className="stock-correction-preview-text">{preview.message}</div>
+                </div>
+                {changedPreviewLines.length ? (
+                  <div className="stock-correction-preview-lines">
+                    {changedPreviewLines.map(line => (
+                      <div key={line.id} className="stock-correction-preview-line">
+                        {line.item_name}: {describeQuantityCorrectionChange(line.original_quantity, line.corrected_quantity)} · {line.message}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {validationMessage ? (
+              <div className="notice notice-info stock-correction-guidance">
+                <div className="notice-body">
+                  <div className="notice-title">Next step</div>
+                  <div className="notice-text">{validationMessage}</div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <div className="modal-foot">
+          <div className="modal-foot-actions">
+            <button type="button" className="btn" disabled={busy} onClick={onClose}>Close</button>
+            <button type="button" className="btn btn-primary" disabled={(preview ? !canSubmit : !canPreview) || busy} onClick={handlePrimaryAction}>
+              {busy ? (preview ? "Submitting..." : "Checking...") : primaryLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FullReversalModal({ entry, onDone, onClose }: { entry: StockEntryRecord; onDone: (correction: CorrectionSubmitResult) => Promise<void>; onClose: () => void }) {
+  const copy = getCorrectionModeCopy("reversal");
+  const [reason, setReason] = useState("");
+  const [responsibilityAccepted, setResponsibilityAccepted] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const validationMessage = validateFullReversalRequest(reason, responsibilityAccepted);
+  const movementSummary = `${entry.from_location_name ?? "Source store"} -> ${entry.to_location_name ?? "Receiving store"}`;
+
+  const submit = async () => {
+    const validation = validateFullReversalRequest(reason, responsibilityAccepted);
+    if (validation) {
+      setError(validation);
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Request full return for ${entry.entry_number}? This will ask the receiving store to return the full transfer. Continue?`,
+    );
+    if (!confirmed) return;
+
+    setBusy(true);
+    setError(null);
+    try {
+      const correction = await apiFetch<CorrectionSubmitResult>(`/api/inventory/stock-entries/${entry.id}/request-correction/`, {
+        method: "POST",
+        body: JSON.stringify(buildFullReversalPayload(entry, reason)),
+      });
+      await onDone(correction);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to submit full return request");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <div className="modal stock-correction-modal stock-reversal-modal" role="dialog" aria-modal="true" aria-labelledby="stock-reversal-title" onMouseDown={event => event.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <div className="eyebrow">Exceptional stock action</div>
+            <h2 id="stock-reversal-title">{copy.title}</h2>
+            <div className="stock-ack-modal-sub">No quantity editing. This requests return of the complete transfer.</div>
+          </div>
+          <button type="button" className="modal-close" aria-label="Close full return modal" onClick={onClose}>x</button>
+        </div>
+        <div className="modal-body">
+          <div className="stock-correction-form">
+            {error && <Alert>{error}</Alert>}
+            <div className="notice notice-warn stock-correction-risk">
+              <div className="notice-body">
+                <div className="notice-title">{copy.disclaimerTitle}</div>
+                <div className="notice-text">{copy.disclaimer}</div>
+              </div>
+            </div>
+
+            <div className="stock-reversal-summary" aria-label="Full return summary">
+              <div>
+                <span>Entry</span>
+                <strong>{entry.entry_number}</strong>
+              </div>
+              <div>
+                <span>Movement</span>
+                <strong>{movementSummary}</strong>
+              </div>
+              <div>
+                <span>Effect</span>
+                <strong>Request full return from receiver</strong>
+              </div>
+            </div>
+
+            <Field label="Reason">
+              <textarea
+                className="input stock-correction-reason-input"
+                rows={3}
+                value={reason}
+                onChange={event => {
+                  setReason(event.target.value);
+                  setError(null);
+                }}
+                placeholder="Explain why this full transfer needs to be returned."
+              />
+            </Field>
+
+            <label className="stock-reversal-ack">
+              <input
+                type="checkbox"
+                checked={responsibilityAccepted}
+                onChange={event => {
+                  setResponsibilityAccepted(event.target.checked);
+                  setError(null);
+                }}
+              />
+              <span>I understand this is an auditable responsibility action and should only be used when an actual mistake happened.</span>
+            </label>
+
+            {validationMessage ? (
+              <div className="notice notice-info stock-correction-guidance">
+                <div className="notice-body">
+                  <div className="notice-title">Next step</div>
+                  <div className="notice-text">{validationMessage}</div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <div className="modal-foot">
+          <div className="modal-foot-actions">
+            <button type="button" className="btn" disabled={busy} onClick={onClose}>Close</button>
+            <button type="button" className="btn btn-primary" disabled={Boolean(validationMessage) || busy} onClick={submit}>
+              {busy ? "Submitting..." : copy.submitLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function StockEntryDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const { isLoading: capsLoading } = useCapabilities();
   const canView = useCan("stock-entries");
+  const canApproveCorrections = useCan("stock-entries", "full");
 
   const [entry, setEntry] = useState<StockEntryRecord | null>(null);
   const [allEntries, setAllEntries] = useState<StockEntryRecord[]>([]);
@@ -1415,7 +2032,11 @@ export default function StockEntryDetailPage() {
   const [instances, setInstances] = useState<StockEntryItemInstance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [ackModalOpen, setAckModalOpen] = useState(false);
+  const [correctionModalOpen, setCorrectionModalOpen] = useState(false);
+  const [correctionMode, setCorrectionMode] = useState<CorrectionMode>("difference");
+  const [correctionActionBusy, setCorrectionActionBusy] = useState<"approve" | "apply" | "reject" | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1450,6 +2071,82 @@ export default function StockEntryDetailPage() {
     load();
   }, [canView, capsLoading, load, router]);
 
+  const cancelEntry = useCallback(async () => {
+    if (!entry) return;
+    const reason = window.prompt("Enter a cancellation reason.");
+    if (!reason?.trim()) return;
+    try {
+      await apiFetch(`/api/inventory/stock-entries/${entry.id}/cancel/`, {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to cancel stock entry");
+    }
+  }, [entry, load]);
+
+  const handleCorrectionDone = useCallback(async (correction: CorrectionSubmitResult) => {
+    await load();
+    setActionNotice(correctionSubmittedMessage(correction));
+  }, [load]);
+
+  const approveCorrection = useCallback(async () => {
+    if (!entry?.active_correction) return;
+    setCorrectionActionBusy("approve");
+    setError(null);
+    try {
+      const correction = await apiFetch<CorrectionSubmitResult>(`/api/inventory/stock-corrections/${entry.active_correction.id}/approve/`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      await load();
+      setActionNotice(`Correction approved. ${correction.resolution_type === "REVERSAL" ? "Apply it to generate the return movement for the excess stock." : "Apply it to generate the linked stock records."}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to approve correction");
+    } finally {
+      setCorrectionActionBusy(null);
+    }
+  }, [entry?.active_correction, load]);
+
+  const applyCorrectionRequest = useCallback(async () => {
+    if (!entry?.active_correction) return;
+    setCorrectionActionBusy("apply");
+    setError(null);
+    try {
+      const correction = await apiFetch<CorrectionSubmitResult>(`/api/inventory/stock-corrections/${entry.active_correction.id}/apply/`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      await load();
+      setActionNotice(correctionSubmittedMessage(correction));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to apply correction");
+    } finally {
+      setCorrectionActionBusy(null);
+    }
+  }, [entry?.active_correction, load]);
+
+  const rejectCorrection = useCallback(async () => {
+    if (!entry?.active_correction) return;
+    const reason = window.prompt("Enter a rejection reason.");
+    if (!reason?.trim()) return;
+    setCorrectionActionBusy("reject");
+    setError(null);
+    try {
+      await apiFetch<CorrectionSubmitResult>(`/api/inventory/stock-corrections/${entry.active_correction.id}/reject/`, {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      });
+      await load();
+      setActionNotice("Correction rejected. No stock movement was generated.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reject correction");
+    } finally {
+      setCorrectionActionBusy(null);
+    }
+  }, [entry?.active_correction, load]);
+
   const related = useMemo<RelatedEntries>(() => {
     if (!entry) {
       return { reference: null, children: [], linkedReceipt: null, generatedReturns: [] };
@@ -1466,6 +2163,17 @@ export default function StockEntryDetailPage() {
       <Topbar breadcrumb={["Operations", "Stock Entries", entry?.entry_number ?? "Detail"]} />
       <div className="page">
         {error && <Alert>{error}</Alert>}
+        {actionNotice ? (
+          <div className="notice notice-info">
+            <div className="notice-body">
+              <div className="notice-title">Correction submitted</div>
+              <div className="notice-text">{actionNotice}</div>
+            </div>
+            <div className="notice-actions">
+              <button type="button" className="btn btn-xs btn-ghost" onClick={() => setActionNotice(null)}>Dismiss</button>
+            </div>
+          </div>
+        ) : null}
 
         {loading ? (
           <div className="table-card" style={{ padding: 32, color: "var(--muted)", textAlign: "center" }}>Loading stock entry...</div>
@@ -1476,6 +2184,23 @@ export default function StockEntryDetailPage() {
               Back to Stock Entries
             </Link>
             <StockVoucherHead entry={entry} related={related} />
+            <CorrectionActionsPanel
+              entry={entry}
+              canApproveCorrections={canApproveCorrections}
+              correctionActionBusy={correctionActionBusy}
+              onCancelEntry={cancelEntry}
+              onResolveDifference={() => {
+                setCorrectionMode("difference");
+                setCorrectionModalOpen(true);
+              }}
+              onRequestReversal={() => {
+                setCorrectionMode("reversal");
+                setCorrectionModalOpen(true);
+              }}
+              onApproveCorrection={approveCorrection}
+              onApplyCorrection={applyCorrectionRequest}
+              onRejectCorrection={rejectCorrection}
+            />
             <AcknowledgementNotice entry={entry} related={related} onAcknowledge={() => setAckModalOpen(true)} />
             <RoutingPanel entry={entry} related={related} />
             <ItemsIssuedTable entry={entry} related={related} instances={instances} />
@@ -1494,6 +2219,12 @@ export default function StockEntryDetailPage() {
             </div>
             {ackModalOpen && entry.can_acknowledge && entry.status === "PENDING_ACK" && (
               <AckModal entry={entry} related={related} registers={registers} instances={instances} onDone={load} onClose={() => setAckModalOpen(false)} />
+            )}
+            {correctionModalOpen && correctionMode === "difference" && entry.can_correct && (
+              <CorrectionModal entry={entry} related={related} instances={instances} onDone={handleCorrectionDone} onClose={() => setCorrectionModalOpen(false)} />
+            )}
+            {correctionModalOpen && correctionMode === "reversal" && entry.can_request_reversal && (
+              <FullReversalModal entry={entry} onDone={handleCorrectionDone} onClose={() => setCorrectionModalOpen(false)} />
             )}
           </>
         ) : null}

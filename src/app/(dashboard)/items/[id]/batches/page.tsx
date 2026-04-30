@@ -1,14 +1,11 @@
-"use client";
+import { redirect } from "next/navigation";
+import { buildItemsWorkspaceHref } from "@/lib/itemsWorkspaceState";
 
-import { Suspense } from "react";
-import { useParams } from "next/navigation";
-import { ItemBatchesView } from "@/components/ItemModuleViews";
-
-export default function ItemBatchesPage() {
-  const params = useParams<{ id: string }>();
-  return (
-    <Suspense fallback={null}>
-      <ItemBatchesView itemId={params.id} />
-    </Suspense>
-  );
+export default async function ItemBatchesPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  redirect(buildItemsWorkspaceHref({ itemId: id, tab: "batches" }));
 }

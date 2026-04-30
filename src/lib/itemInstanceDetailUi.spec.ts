@@ -46,10 +46,8 @@ describe("item instance detail UI helpers", () => {
       itemName: "Laptops Auto",
       locationName: "Central Store",
       allocatedTo: "IT Services Department",
-      inspectionCertificate: "PRINT/001",
-      updatedAt: "2026-04-28T00:00:00Z",
     })).toBe(
-      "Tracked unit of Laptops Auto, currently located at Central Store, allocated to IT Services Department. Inspection certificate PRINT/001 is linked to this record. Last updated 28 Apr 2026.",
+      "Tracked unit of Laptops Auto, currently located at Central Store, allocated to IT Services Department.",
     );
   });
 

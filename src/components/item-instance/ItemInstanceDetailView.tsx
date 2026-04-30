@@ -2,14 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Topbar } from "@/components/Topbar";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
-import { apiFetch, type Page } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import {
   buildInstanceDescription,
   buildInstanceStatusLabel,
-  buildInstanceTitle,
   getPrimaryInstanceIdentifier,
 } from "@/lib/itemInstanceDetailUi";
 import { formatItemDate, formatItemLabel, type ItemRecord } from "@/lib/itemUi";
@@ -63,10 +62,6 @@ const Icon = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
     {typeof d === "string" ? <path d={d} /> : d}
   </svg>
 );
-
-function normalizeList<T>(data: Page<T> | T[]) {
-  return Array.isArray(data) ? data : data.results;
-}
 
 function getMediaHref(file: string | null | undefined) {
   if (!file) return null;
@@ -157,22 +152,26 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
   const router = useRouter();
   const { isLoading: capsLoading } = useCapabilities();
   const canViewItems = useCan("items");
+  const canManageItems = useCan("items", "manage");
   const [item, setItem] = useState<ItemRecord | null>(null);
   const [instance, setInstance] = useState<ItemInstanceRecord | null>(null);
-  const [itemInstances, setItemInstances] = useState<ItemInstanceRecord[]>([]);
   const [relatedEntries, setRelatedEntries] = useState<RelatedStockEntryRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [isEditingSerial, setIsEditingSerial] = useState(false);
+  const [serialDraft, setSerialDraft] = useState("");
+  const [serialSaveError, setSerialSaveError] = useState<string | null>(null);
+  const [isSavingSerial, setIsSavingSerial] = useState(false);
+  const serialInputRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
     setIsLoading(true);
     setFetchError(null);
 
     try {
-      const [itemData, instanceData, itemInstanceData] = await Promise.all([
+      const [itemData, instanceData] = await Promise.all([
         apiFetch<ItemRecord>(`/api/inventory/items/${itemId}/`),
         apiFetch<ItemInstanceRecord>(`/api/inventory/item-instances/${instanceId}/`),
-        apiFetch<Page<ItemInstanceRecord> | ItemInstanceRecord[]>(`/api/inventory/item-instances/?page_size=1000&item=${itemId}`),
       ]);
 
       const stockEntryIds = Array.from(new Set((instanceData.stock_entry_ids ?? []).filter(Number.isFinite)));
@@ -182,7 +181,6 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
 
       setItem(itemData);
       setInstance(instanceData);
-      setItemInstances(normalizeList(itemInstanceData));
       setRelatedEntries(
         stockEntryResults
           .flatMap(result => result.status === "fulfilled" ? [result.value] : [])
@@ -204,28 +202,61 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
     load();
   }, [canViewItems, capsLoading, load, router]);
 
-  const sortedInstances = useMemo(
-    () => [...itemInstances].sort((left, right) => left.id - right.id),
-    [itemInstances],
-  );
+  useEffect(() => {
+    setSerialDraft(instance?.serial_number ?? "");
+    setIsEditingSerial(false);
+    setSerialSaveError(null);
+  }, [instance?.id, instance?.serial_number]);
 
-  const instancePosition = useMemo(() => {
-    if (!instance) return null;
-    const index = sortedInstances.findIndex(candidate => candidate.id === instance.id);
-    return index >= 0 ? index + 1 : null;
-  }, [instance, sortedInstances]);
+  useEffect(() => {
+    if (!isEditingSerial) return;
+    serialInputRef.current?.focus();
+    serialInputRef.current?.select();
+  }, [isEditingSerial]);
+
+  const handleStartSerialEdit = useCallback(() => {
+    setSerialDraft(instance?.serial_number ?? "");
+    setSerialSaveError(null);
+    setIsEditingSerial(true);
+  }, [instance?.serial_number]);
+
+  const handleCancelSerialEdit = useCallback(() => {
+    setSerialDraft(instance?.serial_number ?? "");
+    setSerialSaveError(null);
+    setIsEditingSerial(false);
+  }, [instance?.serial_number]);
+
+  const handleSaveSerial = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!instance) return;
+
+    const nextSerial = serialDraft.trim();
+    const currentSerial = instance.serial_number?.trim() ?? "";
+    if (nextSerial === currentSerial) {
+      setSerialSaveError(null);
+      setIsEditingSerial(false);
+      return;
+    }
+
+    setIsSavingSerial(true);
+    setSerialSaveError(null);
+    try {
+      const updatedInstance = await apiFetch<ItemInstanceRecord>(`/api/inventory/item-instances/${instance.id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ serial_number: nextSerial || null }),
+      });
+      setInstance(updatedInstance);
+      setIsEditingSerial(false);
+    } catch (err) {
+      setSerialSaveError(err instanceof Error ? err.message : "Failed to update serial number");
+    } finally {
+      setIsSavingSerial(false);
+    }
+  }, [instance, serialDraft]);
 
   const qrHref = getMediaHref(instance?.qr_code_image);
   const itemName = item?.name ?? instance?.item_name ?? "Item";
-  const title = instance
-    ? buildInstanceTitle({
-      itemName,
-      serialNumber: instance.serial_number,
-      instanceId: instance.id,
-      position: instancePosition,
-      total: sortedInstances.length || undefined,
-    })
-    : "Item instance";
+  const title = itemName;
   const primaryIdentifier = instance
     ? getPrimaryInstanceIdentifier({
       serialNumber: instance.serial_number,
@@ -241,8 +272,6 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
       itemName,
       locationName: cleanValue(instance.location_name),
       allocatedTo: cleanValue(instance.allocated_to),
-      inspectionCertificate: cleanValue(instance.inspection_certificate),
-      updatedAt: instance.updated_at,
     })
     : "";
   const breadcrumb = useMemo(
@@ -251,7 +280,7 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
   );
 
   const categoryName = item?.category_display ?? instance?.item_category_name ?? "Uncategorized";
-  const modelNumber = cleanValue(instance?.item_model_number);
+  const trackingLabel = formatTrackingLabel(item?.tracking_type);
   const currentLocation = cleanValue(instance?.location_name) ?? "Not recorded";
   const currentLocationSub = formatHierarchyPath(instance?.full_location_path) ?? cleanValue(instance?.location_code);
   const authorityStore = cleanValue(instance?.authority_store_name) ?? "Not recorded";
@@ -262,79 +291,14 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
   const relatedEntryCount = relatedEntries.length;
   const latestRelatedEntry = relatedEntries[0] ?? null;
   const inspectionHref = instance?.inspection_certificate_id ? `/inspections/${instance.inspection_certificate_id}` : null;
-  const heroIdentifierPrefix = cleanValue(instance?.serial_number) ? "SN /" : "ID /";
-
-  const custodyCards = useMemo(() => {
-    const cards = [
-      {
-        step: "Parent item",
-        value: itemName,
-        sub: `${item?.code ?? instance?.item_code ?? "No code"}${categoryName ? ` · ${categoryName}` : ""}`,
-        current: false,
-      },
-      {
-        step: "Authority store",
-        value: authorityStore,
-        sub: authorityStoreSub,
-        current: false,
-      },
-      {
-        step: "Current location",
-        value: currentLocation,
-        sub: currentLocationSub,
-        current: false,
-      },
-      {
-        step: cleanValue(instance?.allocated_to) ? "Allocated to · current" : "Current custody",
-        value: allocatedTo,
-        sub: cleanValue(instance?.allocated_to)
-          ? allocationSub ?? `In charge: ${inCharge}`
-          : `In charge: ${inCharge}`,
-        current: true,
-      },
-    ];
-
-    return cards;
-  }, [
-    allocatedTo,
-    allocationSub,
-    authorityStore,
-    authorityStoreSub,
-    categoryName,
-    currentLocation,
-    currentLocationSub,
-    inCharge,
-    instance?.allocated_to,
-    instance?.item_code,
-    item?.code,
-    itemName,
-  ]);
+  const heroIdentifierPrefix = cleanValue(instance?.serial_number) ? "Serial /" : "Instance /";
+  const statusTone = !instance?.is_active ? "warn" : statusLabel === "Available" ? "success" : "neutral";
+  const displayStatusLabel = instance?.is_active ? statusLabel : "Disabled";
 
   return (
     <div>
       <Topbar breadcrumb={breadcrumb} />
       <div className="page">
-        {(latestRelatedEntry || inspectionHref) ? (
-          <div className={styles.detailTabs}>
-            {latestRelatedEntry ? (
-              <Link className={styles.detailTab} href={`/stock-entries/${latestRelatedEntry.id}`}>
-                <Icon d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8M8 17h5" size={14} />
-                Stock Entry — detail
-              </Link>
-            ) : null}
-            {inspectionHref ? (
-              <Link className={styles.detailTab} href={inspectionHref}>
-                <Icon d="M9 12l2 2 4-4M21 12c0 4-3.5 7-9 10-5.5-3-9-6-9-10a9 9 0 0 1 18 0Z" size={14} />
-                Inspection Certificate — detail
-              </Link>
-            ) : null}
-            <span className={`${styles.detailTab} ${styles.detailTabActive}`}>
-              <Icon d="M12 2 3 7l9 5 9-5-9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5" size={14} />
-              Item Instance — detail
-            </span>
-          </div>
-        ) : null}
-
         <Link className={styles.pageBack} href={`/items/${itemId}/instances`}>
           <Icon d="M19 12H5M12 19l-7-7 7-7" size={12} />
           Back to {itemName} — instances
@@ -356,23 +320,17 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
                 <h1 className={styles.pageTitle}>{title}</h1>
                 <div className={styles.pageSub}>{description}</div>
                 <div className={styles.pageIdRow}>
-                  <span className={styles.docNo}>{primaryIdentifier}</span>
-                  <StatusBadge label={statusLabel} tone={instance.is_active ? "success" : "neutral"} />
-                  <StatusBadge label={instance.is_active ? "Active record" : "Disabled record"} tone={instance.is_active ? "success" : "warn"} />
-                  <span className={styles.docMeta}>
-                    <span className={styles.dotSep}>·</span>
-                    <span>Created <strong>{formatDateTime(instance.created_at)}</strong></span>
-                    {cleanValue(instance.created_by_name) ? (
-                      <>
-                        <span className={styles.dotSep}>·</span>
-                        <span>by <span className={styles.monoSmall}>{instance.created_by_name}</span></span>
-                      </>
-                    ) : null}
-                  </span>
+                  <StatusBadge label={displayStatusLabel} tone={statusTone} />
                 </div>
               </div>
 
               <div className={styles.pageActions}>
+                {canManageItems && !isEditingSerial ? (
+                  <button type="button" className="btn btn-sm" onClick={handleStartSerialEdit}>
+                    <Icon d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.1 2.1 0 113 3L12 15l-4 1 1-4 9.5-9.5Z" size={14} />
+                    Edit serial
+                  </button>
+                ) : null}
                 {qrHref ? (
                   <a className="btn btn-sm" href={qrHref} target="_blank" rel="noopener noreferrer">
                     <Icon d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z" size={14} />
@@ -399,36 +357,15 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
                     <span className={styles.heroSerialPrefix}>{heroIdentifierPrefix}</span>
                     {primaryIdentifier}
                   </div>
-                  <StatusBadge label={instance.is_active ? "Active record" : "Disabled record"} tone={instance.is_active ? "success" : "warn"} />
                 </div>
 
                 <div className={styles.heroSummaryLine}>
                   <div className={styles.heroCrumbs}>
+                    <span className={styles.monoSmall}>{item?.code ?? instance.item_code ?? "No code"}</span>
+                    <span className={styles.heroCrumbSep}>›</span>
                     <span>{categoryName}</span>
                     <span className={styles.heroCrumbSep}>›</span>
-                    <span className={styles.monoSmall}>{item?.code ?? instance.item_code ?? "No code"}</span>
-                  </div>
-                  <div className={styles.heroParent}>
-                    {itemName}{modelNumber ? ` · ${modelNumber}` : ""}
-                  </div>
-                </div>
-
-                <div className={styles.heroAttrs}>
-                  <div className={styles.heroAttr}>
-                    <div className={styles.heroAttrLabel}>Item code</div>
-                    <div className={`${styles.heroAttrValue} ${styles.monoSmall}`}>{item?.code ?? instance.item_code ?? "Not recorded"}</div>
-                  </div>
-                  <div className={styles.heroAttr}>
-                    <div className={styles.heroAttrLabel}>Model number</div>
-                    <div className={styles.heroAttrValue}>{modelNumber ?? "Not recorded"}</div>
-                  </div>
-                  <div className={styles.heroAttr}>
-                    <div className={styles.heroAttrLabel}>Category</div>
-                    <div className={styles.heroAttrValue}>{categoryName}</div>
-                  </div>
-                  <div className={styles.heroAttr}>
-                    <div className={styles.heroAttrLabel}>Tracking</div>
-                    <div className={styles.heroAttrValue}>{formatTrackingLabel(item?.tracking_type)}</div>
+                    <span>{trackingLabel}</span>
                   </div>
                 </div>
               </div>
@@ -455,43 +392,49 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
               </aside>
             </div>
 
-            <div className={styles.custodyGrid}>
-              {custodyCards.map((card, index) => (
-                <div key={card.step} className={`${styles.custodyCard} ${card.current ? styles.custodyCardCurrent : ""}`}>
-                  <div className={styles.custodyStep}>
-                    <span className={styles.custodyIndex}>{index + 1}</span>
-                    {card.step}
-                  </div>
-                  <div className={styles.custodyValue}>{card.value}</div>
-                  {card.sub ? <div className={styles.custodySub}>{card.sub}</div> : null}
-                  {index < custodyCards.length - 1 ? <span className={styles.custodyArrow}><Icon d="M9 18l6-6-6-6" size={9} /></span> : null}
-                </div>
-              ))}
-            </div>
-
             <div className={styles.detailLayout}>
               <div className={styles.mainColumn}>
-                <SectionCard title="Identity & specifications" meta={item?.code ? <>inherited from <span className={styles.monoSmall}>{item.code}</span></> : undefined}>
-                  <div className={styles.specsGrid}>
-                    <div className={styles.specsVisual}>
-                      <div className={styles.specsVisualPlaceholder}>Asset photo · not available</div>
-                    </div>
-                    <div className={styles.specsBody}>
-                      <div className={styles.kvGrid}>
-                        <DetailField label="Serial number" value={cleanValue(instance.serial_number) ?? "Not recorded"} />
-                        <DetailField label="QR code" value={<span className={styles.monoSmall}>{cleanValue(instance.qr_code) ?? "Not recorded"}</span>} />
-                        <DetailField label="Item name" value={itemName} />
-                        <DetailField label="Item code" value={<span className={styles.monoSmall}>{item?.code ?? instance.item_code ?? "Not recorded"}</span>} />
-                        <DetailField label="Category" value={categoryName} sub={item?.category_type ? formatItemLabel(item.category_type) : undefined} />
-                        <DetailField label="Model number" value={modelNumber ?? "Not recorded"} />
-                        <DetailField label="Tracking type" value={formatTrackingLabel(item?.tracking_type)} sub={item?.tracking_type === "INDIVIDUAL" ? "one record per physical unit" : undefined} />
-                        <DetailField label="Active record" value={<StatusBadge label={instance.is_active ? "Active" : "Disabled"} tone={instance.is_active ? "success" : "warn"} />} />
-                        <DetailField label="Current location" value={currentLocation} sub={formatHierarchyPath(instance.full_location_path) ?? currentLocationSub} />
-                        <DetailField label="Authority store" value={authorityStore} sub={authorityStoreSub} />
-                        <DetailField label="Allocated to" value={allocatedTo} sub={allocationSub} />
-                        <DetailField label="In charge" value={inCharge} />
-                      </div>
-                    </div>
+                <SectionCard
+                  title="Instance details"
+                  meta={canManageItems ? "Serial number can be edited from this record." : undefined}
+                >
+                  <div className={styles.detailsGrid}>
+                    <DetailField
+                      label="Serial number"
+                      value={isEditingSerial ? (
+                        <form className={styles.serialEditor} onSubmit={handleSaveSerial}>
+                          <input
+                            ref={serialInputRef}
+                            className={styles.serialInput}
+                            type="text"
+                            value={serialDraft}
+                            onChange={event => setSerialDraft(event.target.value)}
+                            placeholder="Enter serial number"
+                            aria-label="Serial number"
+                            maxLength={100}
+                            disabled={isSavingSerial}
+                          />
+                          <div className={styles.serialActions}>
+                            <button type="submit" className="btn btn-xs" disabled={isSavingSerial}>
+                              {isSavingSerial ? "Saving..." : "Save"}
+                            </button>
+                            <button type="button" className="btn btn-xs btn-ghost" onClick={handleCancelSerialEdit} disabled={isSavingSerial}>
+                              Cancel
+                            </button>
+                          </div>
+                          <div className={serialSaveError ? styles.serialError : styles.serialHint}>
+                            {serialSaveError ?? "Leave the field empty if this unit has no serial number."}
+                          </div>
+                        </form>
+                      ) : (
+                        cleanValue(instance.serial_number) ?? "Not recorded"
+                      )}
+                    />
+                    <DetailField label="Instance ID" value={<span className={styles.monoSmall}>#{instance.id}</span>} />
+                    <DetailField label="Current location" value={currentLocation} sub={currentLocationSub} />
+                    <DetailField label="Authority store" value={authorityStore} sub={authorityStoreSub} />
+                    <DetailField label="Allocated to" value={allocatedTo} sub={allocationSub} />
+                    <DetailField label="In charge" value={inCharge} />
                   </div>
                 </SectionCard>
 
@@ -512,61 +455,45 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
                     ) : null}
                   </div>
                 ) : null}
+
+                {relatedEntries.length > 0 ? (
+                  <SectionCard title="Related stock entries" meta={`${relatedEntryCount} linked movement record${relatedEntryCount === 1 ? "" : "s"}`}>
+                    <div className={styles.relatedList}>
+                      {relatedEntries.map(entry => (
+                        <Link key={entry.id} className={styles.relatedRow} href={`/stock-entries/${entry.id}`}>
+                          <span className={styles.relatedIcon}>{entry.entry_type.slice(0, 1)}</span>
+                          <span className={styles.relatedCopy}>
+                            <span className={styles.relatedNumber}>{entry.entry_number}</span>
+                            <span className={styles.relatedMeta}>
+                              {formatItemLabel(entry.entry_type)} · {buildInstanceStatusLabel({ status: entry.status })} · {formatItemDate(entry.entry_date)}
+                            </span>
+                          </span>
+                        </Link>
+                      ))}
+                    </div>
+                  </SectionCard>
+                ) : null}
               </div>
 
               <aside className={styles.sideColumn}>
-                <SectionCard title="Record state">
+                <SectionCard title="Record details">
                   <div className={styles.stateStack}>
-                    <DetailField label="Created" value={formatDateTime(instance.created_at)} sub={cleanValue(instance.created_by_name) ? `by ${instance.created_by_name}` : undefined} />
+                    <DetailField label="Created" value={formatDateTime(instance.created_at)} />
                     <DetailField label="Last updated" value={formatDateTime(instance.updated_at)} />
-                    <DetailField label="Active flag" value={<StatusBadge label={instance.is_active ? "Active" : "Disabled"} tone={instance.is_active ? "success" : "warn"} />} sub={instance.is_active ? "available for active inventory use" : "retired or disabled from service"} />
-                    <DetailField label="Current status" value={<StatusBadge label={statusLabel} tone={instance.is_active ? "success" : "neutral"} />} />
-                  </div>
-
-                  <div className={styles.stateActions}>
-                    <div className={styles.stateActionsDivider} />
-                    <div className={styles.actionStack}>
-                      <Link className="btn btn-sm" href={`/items/${itemId}`}>
-                        Open item
-                      </Link>
-                      {inspectionHref ? (
-                        <Link className="btn btn-sm" href={inspectionHref}>
-                          View certificate
-                        </Link>
-                      ) : null}
-                      {latestRelatedEntry ? (
-                        <Link className="btn btn-sm" href={`/stock-entries/${latestRelatedEntry.id}`}>
-                          Latest stock entry
-                        </Link>
-                      ) : null}
-                      {qrHref ? (
-                        <a className="btn btn-sm" href={qrHref} target="_blank" rel="noopener noreferrer" download>
-                          Download QR
-                        </a>
-                      ) : null}
-                    </div>
+                    {cleanValue(instance.created_by_name) ? (
+                      <DetailField label="Created by" value={instance.created_by_name ?? "Not recorded"} />
+                    ) : null}
+                    {latestRelatedEntry ? (
+                      <DetailField
+                        label="Latest movement"
+                        value={<Link className={styles.inlineLink} href={`/stock-entries/${latestRelatedEntry.id}`}>{latestRelatedEntry.entry_number}</Link>}
+                        sub={`${formatItemLabel(latestRelatedEntry.entry_type)} · ${formatItemDate(latestRelatedEntry.entry_date)}`}
+                      />
+                    ) : null}
                   </div>
                 </SectionCard>
               </aside>
             </div>
-
-            {relatedEntries.length > 0 ? (
-              <SectionCard title="Related stock entries" meta={`${relatedEntryCount} linked movement record${relatedEntryCount === 1 ? "" : "s"}`}>
-                <div className={styles.relatedList}>
-                  {relatedEntries.map(entry => (
-                    <Link key={entry.id} className={styles.relatedRow} href={`/stock-entries/${entry.id}`}>
-                      <span className={styles.relatedIcon}>{entry.entry_type.slice(0, 1)}</span>
-                      <span className={styles.relatedCopy}>
-                        <span className={styles.relatedNumber}>{entry.entry_number}</span>
-                        <span className={styles.relatedMeta}>
-                          {formatItemLabel(entry.entry_type)} · {buildInstanceStatusLabel({ status: entry.status })} · {formatItemDate(entry.entry_date)}
-                        </span>
-                      </span>
-                    </Link>
-                  ))}
-                </div>
-              </SectionCard>
-            ) : null}
           </>
         ) : (
           <div className={styles.loadingCard}>Item instance not found.</div>

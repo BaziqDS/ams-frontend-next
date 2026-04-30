@@ -1,4 +1,4 @@
-import { formatItemDate, formatItemLabel } from "./itemUi";
+import { formatItemLabel } from "./itemUi";
 
 type InstanceTitleInput = {
   itemName: string;
@@ -18,8 +18,6 @@ type InstanceDescriptionInput = {
   itemName: string;
   locationName?: string | null;
   allocatedTo?: string | null;
-  inspectionCertificate?: string | null;
-  updatedAt?: string | null;
 };
 
 type InstanceStatusLabelInput = {
@@ -52,8 +50,6 @@ export function buildInstanceDescription({
   itemName,
   locationName,
   allocatedTo,
-  inspectionCertificate,
-  updatedAt,
 }: InstanceDescriptionInput) {
   const locationPart = locationName?.trim()
     ? `currently located at ${locationName.trim()}`
@@ -61,14 +57,8 @@ export function buildInstanceDescription({
   const allocationPart = allocatedTo?.trim()
     ? `, allocated to ${allocatedTo.trim()}`
     : "";
-  const inspectionPart = inspectionCertificate?.trim()
-    ? ` Inspection certificate ${inspectionCertificate.trim()} is linked to this record.`
-    : "";
-  const updatedPart = updatedAt
-    ? ` Last updated ${formatItemDate(updatedAt)}.`
-    : "";
 
-  return `Tracked unit of ${itemName}, ${locationPart}${allocationPart}.${inspectionPart}${updatedPart}`.trim();
+  return `Tracked unit of ${itemName}, ${locationPart}${allocationPart}.`;
 }
 
 function humanizeStatus(status: string | null | undefined) {

@@ -21,45 +21,6 @@
   font-size: 13px;
 }
 
-.detailTabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  width: fit-content;
-  max-width: 100%;
-  margin-bottom: 18px;
-  padding: 4px;
-  border: 1px solid var(--hairline);
-  border-radius: 12px;
-  background: var(--surface-2);
-}
-
-.detailTab {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 30px;
-  padding: 0 12px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  color: var(--muted);
-  text-decoration: none;
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.detailTab:hover {
-  color: var(--ink);
-}
-
-.detailTabActive {
-  background: var(--card);
-  border-color: var(--hairline);
-  color: var(--ink);
-  box-shadow: var(--shadow-xs);
-}
-
 .pageBack {
   display: inline-flex;
   align-items: center;
@@ -524,6 +485,13 @@
   padding: 0;
 }
 
+.detailsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px 22px;
+  padding: 18px 20px;
+}
+
 .specsGrid {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
@@ -595,6 +563,48 @@
   color: var(--muted);
   font-size: 11.5px;
   line-height: 1.45;
+}
+
+.serialEditor {
+  display: grid;
+  gap: 8px;
+}
+
+.serialInput {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+}
+
+.serialInput:focus {
+  outline: 2px solid color-mix(in oklch, var(--primary) 24%, transparent);
+  outline-offset: 1px;
+  border-color: color-mix(in oklch, var(--primary) 45%, white);
+}
+
+.serialActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.serialHint,
+.serialError {
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.serialHint {
+  color: var(--muted);
+}
+
+.serialError {
+  color: var(--danger);
 }
 
 .inspectionBanner {
@@ -669,28 +679,18 @@
 }
 
 .stateStack .detailField:last-child {
+  padding-bottom: 0;
   margin-bottom: 0;
   border-bottom: 0;
 }
 
-.stateActions {
-  padding: 0 18px 18px;
+.inlineLink {
+  color: var(--primary);
+  text-decoration: none;
 }
 
-.stateActionsDivider {
-  height: 1px;
-  margin: 14px 0 12px;
-  background: var(--hairline);
-}
-
-.actionStack {
-  display: grid;
-  gap: 8px;
-}
-
-.actionStack :global(.btn) {
-  width: 100%;
-  justify-content: flex-start;
+.inlineLink:hover {
+  color: color-mix(in oklch, var(--primary) 85%, black);
 }
 
 .relatedList {
@@ -771,6 +771,7 @@
     border-top: 1px solid var(--hairline);
   }
 
+  .detailsGrid,
   .kvGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -832,15 +833,8 @@
 }
 
 @media (max-width: 640px) {
-  .detailTabs {
-    width: 100%;
-  }
-
-  .detailTab {
-    white-space: normal;
-  }
-
   .heroAttrs,
+  .detailsGrid,
   .kvGrid,
   .custodyGrid {
     grid-template-columns: 1fr;

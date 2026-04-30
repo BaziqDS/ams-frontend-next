@@ -16,6 +16,7 @@ export interface ItemRecord {
   in_transit_quantity?: number | string | null;
   available_quantity?: number | string | null;
   is_low_stock?: boolean;
+  standalone_location_count?: number | null;
   is_active: boolean;
   created_at?: string | null;
   updated_at?: string | null;
