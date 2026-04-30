@@ -3,8 +3,8 @@ import {
   canSelectDependencyLevel,
   getDependencyMinimums,
   normalizeSelectionsForDependencies,
-  type ModuleDependencies,
-} from "./page";
+} from "@/lib/rolePermissionDependencies";
+import type { ModuleDependencies } from "@/contexts/CapabilitiesContext";
 
 const dependencies: ModuleDependencies = {
   users: {

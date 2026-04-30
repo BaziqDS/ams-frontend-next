@@ -4,6 +4,7 @@ import {
   filterStockRegistersForInspectionStore,
   getAutoSelectedInspectionLocation,
   getInspectionItemFinancials,
+  getInspectionMainStoreRegisters,
   getInspectionQuantityError,
   getInspectionQuantityUpdateError,
   getScopedInspectionLocations,
@@ -215,6 +216,17 @@ describe("inspection stage form helpers", () => {
     ] as any[];
 
     expect(filterStockRegistersForInspectionStore(registers, 10)).toEqual([registers[0]]);
+  });
+
+  it("uses the inspection location main store for central register options", () => {
+    const registers = [
+      { id: 1, register_number: "CSR-CENTRAL", store: 10, store_name: "Central Store" },
+      { id: 2, register_number: "CSR-CSIT", store: 11, store_name: "CSIT Main Store" },
+      { id: 3, register_number: "CSR-EE", store: 12, store_name: "EE Main Store" },
+    ] as any[];
+
+    expect(getInspectionMainStoreRegisters(registers, { main_store_id: 10 })).toEqual([registers[0]]);
+    expect(getInspectionMainStoreRegisters(registers, { main_store_id: 11 })).toEqual([registers[1]]);
   });
 
   it("keeps all stock registers when the location main store is unknown", () => {

@@ -38,6 +38,10 @@ export interface InspectionItemRecord {
   batch_number: string;
   manufactured_date: string;
   expiry_date: string;
+  depreciation_asset_class?: number | null;
+  depreciation_asset_class_name?: string | null;
+  capitalization_cost?: number | string | null;
+  capitalization_date?: string | null;
 }
 
 export interface InspectionDocumentRecord {
@@ -106,6 +110,9 @@ export interface InspectionLocationOption {
   name: string;
   hierarchy_level: number;
   is_standalone: boolean;
+  main_store_id?: number | null;
+  main_store_display?: string | null;
+  main_store_code?: string | null;
 }
 
 export interface InspectionItemOption {
@@ -271,8 +278,8 @@ export function canResumeInspectionEditor(
   canManage: boolean,
   hasStage: (stage: string) => boolean,
 ) {
+  if (inspection.stage === "DRAFT") return hasStage("initiate_inspection") || canManage;
   if (!canManage) return false;
-  if (inspection.stage === "DRAFT") return true;
   if (inspection.stage === "STOCK_DETAILS") return hasStage("fill_stock_details");
   if (inspection.stage === "CENTRAL_REGISTER") return hasStage("fill_central_register");
   if (inspection.stage === "FINANCE_REVIEW") return hasStage("review_finance");

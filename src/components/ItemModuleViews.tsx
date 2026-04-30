@@ -29,6 +29,7 @@ import {
   type ItemDistributionDetailRow,
   type ItemDistributionStore,
   type ItemDistributionUnit,
+  type DepreciationSummary,
   type ItemRecord,
   type ItemStatusTone,
 } from "@/lib/itemUi";
@@ -201,6 +202,7 @@ type ItemInstanceRecord = {
   created_at?: string | null;
   updated_at?: string | null;
   created_by_name?: string | null;
+  depreciation_summary?: DepreciationSummary | null;
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -221,6 +223,7 @@ type ItemBatchRecord = {
   created_at?: string | null;
   updated_at?: string | null;
   created_by_name?: string | null;
+  depreciation_summary?: DepreciationSummary | null;
 };
 
 function normalizeList<T>(data: Page<T> | T[]) {
@@ -355,6 +358,27 @@ function itemPayload(form: ItemFormState) {
     specifications: form.specifications.trim() || null,
     is_active: form.is_active,
   };
+}
+
+function isFixedAssetItem(item: Pick<ItemRecord, "category_type"> | null | undefined) {
+  return item?.category_type === "FIXED_ASSET";
+}
+
+function isFixedAssetLotItem(item: Pick<ItemRecord, "category_type" | "tracking_type"> | null | undefined) {
+  return item?.category_type === "FIXED_ASSET" && item.tracking_type === "QUANTITY";
+}
+
+function batchLabelForItem(item: Pick<ItemRecord, "category_type" | "tracking_type"> | null | undefined, plural = true) {
+  if (isFixedAssetLotItem(item)) return plural ? "Asset Lots" : "Asset Lot";
+  return plural ? "Batches" : "Batch";
+}
+
+function formatMoneyValue(value: number | string | null | undefined) {
+  return new Intl.NumberFormat("en-PK", {
+    style: "currency",
+    currency: "PKR",
+    maximumFractionDigits: 0,
+  }).format(toNumber(value));
 }
 
 function LowStockBadge({ item }: { item: Pick<ItemRecord, "is_low_stock" | "low_stock_threshold" | "total_quantity"> }) {
@@ -933,7 +957,7 @@ export function ItemListView() {
                     { key: "all", label: "All", count: listSummary.totalItems, tone: undefined as "warn" | "danger" | undefined },
                     { key: "quantity", label: "Quantity", count: listSummary.quantity, tone: undefined },
                     { key: "individual", label: "Individual", count: listSummary.individual, tone: undefined },
-                    { key: "perishable", label: "Perishable", count: listSummary.perishable, tone: undefined },
+                    { key: "perishable", label: "Batches/Lots", count: listSummary.perishable, tone: undefined },
                   ]).map(option => (
                     <button
                       key={option.key}
@@ -1510,7 +1534,7 @@ function WorkspaceSelectedItemPane({
                 <span className={workspaceStyles.detailCodeChip}>{item.code}</span>
                 <span className={workspaceStyles.detailTrackingPill} data-t={workspaceTrackingTone(item.tracking_type)}>
                   <span className={workspaceStyles.detailTrackingDot} />
-                  {item.tracking_type === "INDIVIDUAL" ? "Individual tracking" : item.tracking_type === "QUANTITY" ? "Quantity tracking" : "Perishable batches"}
+                  {item.tracking_type === "INDIVIDUAL" ? "Individual tracking" : isFixedAssetLotItem(item) ? "Asset lot tracking" : item.tracking_type === "QUANTITY" ? "Quantity tracking" : "Perishable batches"}
                 </span>
               </div>
               <div className={workspaceStyles.detailMeta}>
@@ -1628,6 +1652,15 @@ function WorkspaceSelectedItemPane({
             })()}
           </div>
 
+          {isFixedAssetItem(item) ? (
+            <div className="detail-kv-grid" style={{ marginTop: 12 }}>
+              <DetailKV label="Capitalized assets" value={<span className="mono">{formatQuantity(item.depreciation_summary?.asset_count ?? (item.depreciation_summary?.capitalized ? 1 : 0))}</span>} />
+              <DetailKV label="Original cost" value={formatMoneyValue(item.depreciation_summary?.original_cost)} />
+              <DetailKV label="Accumulated depreciation" value={formatMoneyValue(item.depreciation_summary?.accumulated_depreciation)} />
+              <DetailKV label="Current WDV / NBV" value={formatMoneyValue(item.depreciation_summary?.current_wdv)} sub={item.depreciation_summary?.latest_posted_fiscal_year ? `FY ${item.depreciation_summary.latest_posted_fiscal_year}-${String(item.depreciation_summary.latest_posted_fiscal_year + 1).slice(-2)}` : "No posted run"} />
+            </div>
+          ) : null}
+
           <div className={workspaceStyles.tabBar}>
             <WorkspaceTabButton active={activeTab === "distribution"} count={units.length} onClick={() => onSelectTab("distribution")}>
               Distribution
@@ -1639,7 +1672,7 @@ function WorkspaceSelectedItemPane({
             ) : null}
             {canShowBatches(item.tracking_type, item.category_type) ? (
               <WorkspaceTabButton active={activeTab === "batches"} count={batchCount} onClick={() => onSelectTab("batches")}>
-                Batches
+                {batchLabelForItem(item)}
               </WorkspaceTabButton>
             ) : null}
             <WorkspaceTabButton active={activeTab === "info"} onClick={() => onSelectTab("info")}>
@@ -2035,7 +2068,7 @@ function WorkspaceDistributionTab({
                 ) : null}
                 {canShowBatches(item.tracking_type, item.category_type) && panel.locationId ? (
                   <button type="button" className="btn btn-sm btn-ghost" onClick={() => onSelectTab("batches")}>
-                    Batches here
+                    {isFixedAssetLotItem(item) ? "Asset lots here" : "Batches here"}
                   </button>
                 ) : null}
                 {panel.locationId ? (
@@ -2080,6 +2113,19 @@ function WorkspaceInfoTab({
         <div className="eyebrow">Specifications</div>
         <div className={workspaceStyles.infoBodyText}>{item.specifications?.trim() || "No specifications have been added for this item yet."}</div>
       </div>
+      {isFixedAssetItem(item) ? (
+        <div className={workspaceStyles.infoCard}>
+          <div className="eyebrow">Depreciation</div>
+          <div className={workspaceStyles.infoKvs}>
+            <DetailKV label="Capitalization status" value={item.depreciation_summary?.capitalized ? "Capitalized" : "Not capitalized"} />
+            <DetailKV label="Register entries" value={<span className="mono">{formatQuantity(item.depreciation_summary?.asset_count ?? (item.depreciation_summary?.capitalized ? 1 : 0))}</span>} />
+            <DetailKV label="Original cost" value={formatMoneyValue(item.depreciation_summary?.original_cost)} />
+            <DetailKV label="Accumulated depreciation" value={formatMoneyValue(item.depreciation_summary?.accumulated_depreciation)} />
+            <DetailKV label="Current WDV / NBV" value={formatMoneyValue(item.depreciation_summary?.current_wdv)} />
+            <DetailKV label="Latest posted FY" value={item.depreciation_summary?.latest_posted_fiscal_year ? `${item.depreciation_summary.latest_posted_fiscal_year}-${String(item.depreciation_summary.latest_posted_fiscal_year + 1).slice(-2)}` : "-"} />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -2281,9 +2327,11 @@ function WorkspaceBatchesTab({
   onClearSelectedLocation: () => void;
 }) {
   const extraQuery = selectedLocationId ? `&location=${encodeURIComponent(selectedLocationId)}` : "";
-  const { records, isLoading, fetchError, setFetchError, load } = useItemRelatedList<ItemBatchRecord>(itemId, "/api/inventory/item-batches/", "Failed to load item batches", extraQuery);
+  const { item, records, isLoading, fetchError, setFetchError, load } = useItemRelatedList<ItemBatchRecord>(itemId, "/api/inventory/item-batches/", "Failed to load item batches", extraQuery);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const pluralBatchLabel = batchLabelForItem(item);
+  const singularBatchLabel = batchLabelForItem(item, false);
 
   useEffect(() => {
     load();
@@ -2314,14 +2362,14 @@ function WorkspaceBatchesTab({
         <div className={workspaceStyles.scopeNotice}>
           <span>Filtered to the location selected in Distribution.</span>
           <button type="button" className="btn btn-xs btn-ghost" onClick={onClearSelectedLocation}>
-            All item batches
+            All item {pluralBatchLabel.toLowerCase()}
           </button>
         </div>
       ) : null}
       <div className={workspaceStyles.tabToolbar}>
         <div className="search-input">
           <Ic d={<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>} size={14} />
-          <input placeholder="Search batch, item code, or creator..." value={search} onChange={event => setSearch(event.target.value)} />
+          <input placeholder={`Search ${singularBatchLabel.toLowerCase()}, item code, or creator...`} value={search} onChange={event => setSearch(event.target.value)} />
           {search ? <button type="button" className="clear-search" onClick={() => setSearch("")}>x</button> : null}
         </div>
         <div className="chip-filter">
@@ -2345,12 +2393,12 @@ function WorkspaceBatchesTab({
       <div className="table-card">
         <div className="table-card-head">
           <div className="table-card-head-left">
-            <div className="eyebrow">Batch list</div>
+            <div className="eyebrow">{singularBatchLabel} list</div>
             <div className="table-count">
               <span className="mono">{filteredRecords.length}</span>
               <span>of</span>
               <span className="mono">{records.length}</span>
-              <span>batches</span>
+              <span>{pluralBatchLabel.toLowerCase()}</span>
             </div>
           </div>
         </div>
@@ -2361,12 +2409,13 @@ function WorkspaceBatchesTab({
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Batch</th>
+                  <th>{singularBatchLabel}</th>
                   <th>Quantity</th>
                   <th>Available</th>
                   <th>Manufactured</th>
                   <th>Expiry</th>
                   <th>Expiry Status</th>
+                  {isFixedAssetLotItem(item) ? <th>WDV / NBV</th> : null}
                   <th>Active</th>
                   <th>Created By</th>
                   <th>Updated</th>
@@ -2374,7 +2423,7 @@ function WorkspaceBatchesTab({
               </thead>
               <tbody>
                 {filteredRecords.length === 0 ? (
-                  <EmptyTableRow colSpan={9} message="No item batches match the current filters." />
+                  <EmptyTableRow colSpan={isFixedAssetLotItem(item) ? 10 : 9} message={`No item ${pluralBatchLabel.toLowerCase()} match the current filters.`} />
                 ) : filteredRecords.map(record => (
                   <tr key={record.id}>
                     <td className="col-user">
@@ -2387,7 +2436,8 @@ function WorkspaceBatchesTab({
                     <td>{formatQuantity(record.available_quantity)}</td>
                     <td>{formatItemDate(record.manufactured_date)}</td>
                     <td>{formatItemDate(record.expiry_date)}</td>
-                    <td>{isExpired(record.expiry_date) ? <StatusPill tone="warning" label="Expired" /> : <StatusPill tone="success" label="Valid" />}</td>
+                    <td>{isFixedAssetLotItem(item) ? <span className="pill pill-neutral">No expiry</span> : isExpired(record.expiry_date) ? <StatusPill tone="warning" label="Expired" /> : <StatusPill tone="success" label="Valid" />}</td>
+                    {isFixedAssetLotItem(item) ? <td>{formatMoneyValue(record.depreciation_summary?.current_wdv)}</td> : null}
                     <td><StatusPill active={record.is_active} /></td>
                     <td>{record.created_by_name ?? "-"}</td>
                     <td>{formatItemDate(record.updated_at)}</td>
@@ -2419,7 +2469,7 @@ function ItemPageActions({ item }: { item: ItemRecord | null }) {
       {canShowBatches(item.tracking_type, item.category_type) && (
         <Link className="btn btn-sm btn-ghost" href={`/items/${item.id}/batches`}>
           <Ic d="M20 7l-8 4-8-4m8 4v10m8-14l-8-4-8 4 8 4 8-4z" size={14} />
-          Batches
+          {batchLabelForItem(item)}
         </Link>
       )}
     </>
@@ -2801,7 +2851,7 @@ export function ItemStandaloneDistributionView({ itemId, standaloneId }: { itemI
                         {item && row.locationId && canShowBatches(item.tracking_type, item.category_type) && (
                           <Link className="btn btn-xs btn-ghost row-action" href={`/items/${itemId}/batches?location=${row.locationId}`}>
                             <Ic d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" size={13} />
-                            <span className="ra-label">Batches</span>
+                            <span className="ra-label">{batchLabelForItem(item)}</span>
                           </Link>
                         )}
                       </td>
@@ -3181,6 +3231,8 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
   const [density, setDensity] = useState<Density>("balanced");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const pluralBatchLabel = batchLabelForItem(item);
+  const singularBatchLabel = batchLabelForItem(item, false);
 
   useEffect(() => {
     if (capsLoading) return;
@@ -3207,7 +3259,7 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
 
   return (
     <div data-density={density}>
-      <Topbar breadcrumb={["Inventory", "Items", item?.name ?? "Item", "Batches"]} />
+      <Topbar breadcrumb={["Inventory", "Items", item?.name ?? "Item", pluralBatchLabel]} />
       <div className="page">
         {fetchError && (
           <Alert onDismiss={() => setFetchError(null)} action={<button type="button" className="btn btn-xs" onClick={() => load()}>Retry</button>}>
@@ -3217,8 +3269,8 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
 
         <div className="page-head">
           <div className="page-title-group">
-            <div className="eyebrow">Item batches</div>
-            <h1>{item?.name ?? "Batches"}</h1>
+            <div className="eyebrow">Item {pluralBatchLabel.toLowerCase()}</div>
+            <h1>{item?.name ?? pluralBatchLabel}</h1>
             <div className="page-sub">{item ? `${item.code} / ${formatItemLabel(String(item.tracking_type ?? ""))}` : "Loading item batch records."}</div>
           </div>
           <div className="page-head-actions">
@@ -3233,7 +3285,7 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
           <div className="filter-bar-left">
             <div className="search-input">
               <Ic d={<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>} size={14} />
-              <input placeholder="Search batch, item code, or creator..." value={search} onChange={e => setSearch(e.target.value)} />
+              <input placeholder={`Search ${singularBatchLabel.toLowerCase()}, item code, or creator...`} value={search} onChange={e => setSearch(e.target.value)} />
               {search && <button type="button" className="clear-search" onClick={() => setSearch("")}>x</button>}
             </div>
             <div className="chip-filter-group">
@@ -3260,12 +3312,12 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
         <div className="table-card">
           <div className="table-card-head">
             <div className="table-card-head-left">
-              <div className="eyebrow">Batch list</div>
+              <div className="eyebrow">{singularBatchLabel} list</div>
               <div className="table-count">
                 <span className="mono">{filteredRecords.length}</span>
                 <span>of</span>
                 <span className="mono">{records.length}</span>
-                <span>batches</span>
+                    <span>{pluralBatchLabel.toLowerCase()}</span>
               </div>
             </div>
           </div>
@@ -3276,12 +3328,13 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Batch</th>
+                    <th>{singularBatchLabel}</th>
                     <th>Quantity</th>
                     <th>Available</th>
                     <th>Manufactured</th>
                     <th>Expiry</th>
                     <th>Expiry Status</th>
+                    {isFixedAssetLotItem(item) ? <th>WDV / NBV</th> : null}
                     <th>Active</th>
                     <th>Created By</th>
                     <th>Updated</th>
@@ -3289,7 +3342,7 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
                 </thead>
                 <tbody>
                   {filteredRecords.length === 0 ? (
-                    <EmptyTableRow colSpan={9} message="No item batches match the current filters." />
+                    <EmptyTableRow colSpan={isFixedAssetLotItem(item) ? 10 : 9} message={`No item ${pluralBatchLabel.toLowerCase()} match the current filters.`} />
                   ) : filteredRecords.map(record => (
                     <tr key={record.id}>
                       <td className="col-user">
@@ -3302,7 +3355,8 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
                       <td>{formatQuantity(record.available_quantity)}</td>
                       <td>{formatItemDate(record.manufactured_date)}</td>
                       <td>{formatItemDate(record.expiry_date)}</td>
-                      <td>{isExpired(record.expiry_date) ? <StatusPill tone="warning" label="Expired" /> : <StatusPill tone="success" label="Valid" />}</td>
+                      <td>{isFixedAssetLotItem(item) ? <span className="pill pill-neutral">No expiry</span> : isExpired(record.expiry_date) ? <StatusPill tone="warning" label="Expired" /> : <StatusPill tone="success" label="Valid" />}</td>
+                      {isFixedAssetLotItem(item) ? <td>{formatMoneyValue(record.depreciation_summary?.current_wdv)}</td> : null}
                       <td><StatusPill active={record.is_active} /></td>
                       <td>{record.created_by_name ?? "-"}</td>
                       <td>{formatItemDate(record.updated_at)}</td>
@@ -3313,8 +3367,8 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
             </div>
           )}
           <div className="table-card-foot">
-            <div className="eyebrow">Batches are stock group records for perishable quantity items</div>
-            <div className="pager"><span className="mono pager-current">Item batches</span></div>
+            <div className="eyebrow">{pluralBatchLabel} are quantity group records for this item</div>
+            <div className="pager"><span className="mono pager-current">Item {pluralBatchLabel.toLowerCase()}</span></div>
           </div>
         </div>
       </div>

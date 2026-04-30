@@ -7,7 +7,7 @@ import { ItemModal } from "@/components/ItemModuleViews";
 import type { ItemRecord } from "@/lib/itemUi";
 import {
   buildStageItemsPayload,
-  filterStockRegistersForInspectionStore,
+  getInspectionMainStoreRegisters,
   normalizeStageItems,
   parseInspectionQuantity,
   type StageItemsPayloadMode,
@@ -32,12 +32,45 @@ type InspectionLocationDetail = {
   main_store_display?: string | null;
 };
 
+type DepreciationAssetClassOption = {
+  id: number;
+  name: string;
+  code: string;
+  current_rate?: string | null;
+};
+
 function normalizeApiList<T>(data: Page<T> | T[]) {
   return Array.isArray(data) ? data : data.results;
 }
 
 function acceptedItems(items: InspectionItemRecord[]) {
   return items.filter(item => Number(item.accepted_quantity || 0) > 0);
+}
+
+function isFixedAssetQuantityItem(item: Pick<InspectionItemRecord, "item_category_type" | "item_tracking_type">) {
+  return item.item_category_type === "FIXED_ASSET" && item.item_tracking_type === "QUANTITY";
+}
+
+function needsLotNumber(item: Pick<InspectionItemRecord, "item_category_type" | "item_tracking_type">) {
+  return item.item_category_type === "PERISHABLE" || isFixedAssetQuantityItem(item);
+}
+
+function isFixedAssetInspectionItem(item: Pick<InspectionItemRecord, "item_category_type">) {
+  return item.item_category_type === "FIXED_ASSET";
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("en-PK", {
+    style: "currency",
+    currency: "PKR",
+    maximumFractionDigits: 0,
+  }).format(Number.isFinite(value) ? value : 0);
+}
+
+function getAssetClassLabel(assetClass: DepreciationAssetClassOption) {
+  return assetClass.current_rate
+    ? `${assetClass.name} (${assetClass.code}) - ${assetClass.current_rate}%`
+    : `${assetClass.name} (${assetClass.code})`;
 }
 
 function Field({
@@ -127,6 +160,9 @@ export function Stage1Form({ data, onChange, readOnly }: StageFormProps) {
           batch_number: "",
           manufactured_date: "",
           expiry_date: "",
+          depreciation_asset_class: null,
+          capitalization_cost: "",
+          capitalization_date: "",
         },
       ],
     });
@@ -261,7 +297,7 @@ export function Stage2Form({ data, onChange, readOnly }: StageFormProps) {
       .then(([loadedRegisters, location]) => {
         if (ignored) return;
         setMainStoreName(location?.main_store_display ?? null);
-        setRegisters(filterStockRegistersForInspectionStore(loadedRegisters, location?.main_store_id));
+        setRegisters(getInspectionMainStoreRegisters(loadedRegisters, location));
       })
       .catch(() => {
         if (!ignored) setRegisters([]);
@@ -350,18 +386,25 @@ export function Stage3Form({ data, onChange, readOnly }: StageFormProps) {
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [searchByIndex, setSearchByIndex] = useState<Record<number, string>>({});
   const [createModalRowIndex, setCreateModalRowIndex] = useState<number | null>(null);
+  const [mainStoreName, setMainStoreName] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     let ignored = false;
+    setLoading(true);
     Promise.all([
       apiFetch<Page<InspectionItemOption> | InspectionItemOption[]>("/api/inventory/items/?page_size=500").then(normalizeApiList),
       apiFetch<Page<InspectionStockRegisterOption> | InspectionStockRegisterOption[]>("/api/inventory/stock-registers/?page_size=500").then(normalizeApiList),
       apiFetch<Page<CategoryRecord> | CategoryRecord[]>("/api/inventory/categories/?page_size=500").then(normalizeApiList),
+      data.department
+        ? apiFetch<InspectionLocationDetail>(`/api/inventory/locations/${data.department}/`).catch(() => null)
+        : Promise.resolve(null),
     ])
-      .then(([loadedItems, loadedRegisters, loadedCategories]) => {
+      .then(([loadedItems, loadedRegisters, loadedCategories, location]) => {
         if (ignored) return;
         setItems(loadedItems);
-        setRegisters(loadedRegisters);
+        setMainStoreName(location?.main_store_display ?? null);
+        setRegisters(getInspectionMainStoreRegisters(loadedRegisters, location));
         setCategories(loadedCategories);
       })
       .catch(() => {
@@ -369,11 +412,14 @@ export function Stage3Form({ data, onChange, readOnly }: StageFormProps) {
         setItems([]);
         setRegisters([]);
         setCategories([]);
+      })
+      .finally(() => {
+        if (!ignored) setLoading(false);
       });
     return () => {
       ignored = true;
     };
-  }, []);
+  }, [data.department]);
 
   const rows = acceptedItems(data.items || []);
   if (rows.length === 0) {
@@ -387,13 +433,14 @@ export function Stage3Form({ data, onChange, readOnly }: StageFormProps) {
     option: Pick<InspectionItemOption, "id" | "name" | "code" | "category_type" | "tracking_type">,
   ) => {
     const currentItem = data.items[sourceIndex];
+    const shouldKeepLotNumber = option.category_type === "PERISHABLE" || (option.category_type === "FIXED_ASSET" && option.tracking_type === "QUANTITY");
     updateItemAt(data, onChange, sourceIndex, {
       item: option.id,
       item_name: option.name,
       item_code: option.code,
       item_category_type: option.category_type ?? null,
       item_tracking_type: option.tracking_type ?? null,
-      batch_number: option.category_type === "PERISHABLE" ? currentItem?.batch_number || "" : "",
+      batch_number: shouldKeepLotNumber ? currentItem?.batch_number || "" : "",
       manufactured_date: option.category_type === "PERISHABLE" ? currentItem?.manufactured_date || "" : "",
       expiry_date: option.category_type === "PERISHABLE" ? currentItem?.expiry_date || "" : "",
     });
@@ -515,7 +562,7 @@ export function Stage3Form({ data, onChange, readOnly }: StageFormProps) {
                   )}
                 </div>
               </Field>
-              <Field label="Central register">
+              <Field label="Central register" hint={mainStoreName ? `Showing registers for ${mainStoreName}.` : "Showing registers for this inspection location when available."}>
                 <select
                   value={item.central_register ?? ""}
                   onChange={event => {
@@ -526,7 +573,7 @@ export function Stage3Form({ data, onChange, readOnly }: StageFormProps) {
                       central_register_no: register?.register_number ?? "",
                     });
                   }}
-                  disabled={readOnly}
+                  disabled={readOnly || loading}
                 >
                   <option value="">Select register...</option>
                   {registers.map(register => (
@@ -564,32 +611,36 @@ export function Stage3Form({ data, onChange, readOnly }: StageFormProps) {
                   placeholder="156"
                 />
               </Field>
-              {item.item_category_type === "PERISHABLE" ? (
+              {needsLotNumber(item) ? (
                 <>
-                  <Field label="Batch number">
+                  <Field label={isFixedAssetQuantityItem(item) ? "Asset lot number" : "Batch number"}>
                     <input
                       value={item.batch_number || ""}
                       onChange={event => updateItemAt(data, onChange, sourceIndex, { batch_number: event.target.value })}
                       disabled={readOnly}
-                      placeholder="Batch number"
+                      placeholder={isFixedAssetQuantityItem(item) ? "Asset lot number" : "Batch number"}
                     />
                   </Field>
-                  <Field label="Manufactured date">
-                    <input
-                      type="date"
-                      value={item.manufactured_date || ""}
-                      onChange={event => updateItemAt(data, onChange, sourceIndex, { manufactured_date: event.target.value })}
-                      disabled={readOnly}
-                    />
-                  </Field>
-                  <Field label="Expiry date">
-                    <input
-                      type="date"
-                      value={item.expiry_date || ""}
-                      onChange={event => updateItemAt(data, onChange, sourceIndex, { expiry_date: event.target.value })}
-                      disabled={readOnly}
-                    />
-                  </Field>
+                  {item.item_category_type === "PERISHABLE" ? (
+                    <>
+                      <Field label="Manufactured date">
+                        <input
+                          type="date"
+                          value={item.manufactured_date || ""}
+                          onChange={event => updateItemAt(data, onChange, sourceIndex, { manufactured_date: event.target.value })}
+                          disabled={readOnly}
+                        />
+                      </Field>
+                      <Field label="Expiry date">
+                        <input
+                          type="date"
+                          value={item.expiry_date || ""}
+                          onChange={event => updateItemAt(data, onChange, sourceIndex, { expiry_date: event.target.value })}
+                          disabled={readOnly}
+                        />
+                      </Field>
+                    </>
+                  ) : null}
                 </>
               ) : (
                 <div />
@@ -603,6 +654,37 @@ export function Stage3Form({ data, onChange, readOnly }: StageFormProps) {
 }
 
 export function Stage4Form({ data, onChange, readOnly }: StageFormProps) {
+  const fixedAssetRows = (data.items || [])
+    .map((item, sourceIndex) => ({ item, sourceIndex }))
+    .filter(({ item }) => Number(item.accepted_quantity || 0) > 0 && isFixedAssetInspectionItem(item));
+  const [assetClasses, setAssetClasses] = useState<DepreciationAssetClassOption[]>([]);
+  const [assetClassError, setAssetClassError] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    if (fixedAssetRows.length === 0) {
+      setAssetClassError(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    apiFetch<Page<DepreciationAssetClassOption> | DepreciationAssetClassOption[]>("/api/inventory/depreciation/asset-classes/?page_size=500")
+      .then(data => {
+        if (!active) return;
+        setAssetClasses(normalizeApiList(data).filter(assetClass => assetClass.code && assetClass.name));
+        setAssetClassError(false);
+      })
+      .catch(() => {
+        if (!active) return;
+        setAssetClassError(true);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [fixedAssetRows.length]);
+
   return (
     <div className="stage-form-list">
       <div className="stage-form-row">
@@ -620,6 +702,93 @@ export function Stage4Form({ data, onChange, readOnly }: StageFormProps) {
           </Field>
         </div>
       </div>
+
+      {fixedAssetRows.length > 0 ? (
+        <div className="table-card">
+          <div className="table-card-head">
+            <div className="table-card-head-left">
+              <div className="eyebrow">Fixed asset capitalization</div>
+              <div className="table-count">
+                <span className="mono">{fixedAssetRows.length}</span>
+                <span>lines</span>
+              </div>
+            </div>
+          </div>
+          <div className="h-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th>Tracking</th>
+                  <th>Qty</th>
+                  <th>Unit price</th>
+                  <th>Asset class</th>
+                  <th>Capitalization date</th>
+                  <th>Capitalized cost</th>
+                  <th>Lot / Serial basis</th>
+                </tr>
+              </thead>
+              <tbody>
+                {fixedAssetRows.map(({ item, sourceIndex }, index) => {
+                  const qty = Number(item.accepted_quantity || 0);
+                  const unitPrice = typeof item.unit_price === "number" ? item.unit_price : Number.parseFloat(item.unit_price);
+                  const defaultCost = qty * (Number.isFinite(unitPrice) ? unitPrice : 0);
+                  const defaultDate = data.finance_check_date || data.date_of_inspection || data.date || "";
+                  return (
+                    <tr key={item.id ?? `finance-fixed-asset-${index}`}>
+                      <td>
+                        <div className="login-cell">
+                          <div>{item.item_name || item.item_description || "Fixed asset"}</div>
+                          <div className="login-cell-sub mono">{item.item_code || "Unlinked"}</div>
+                        </div>
+                      </td>
+                      <td><span className="chip">{item.item_tracking_type === "INDIVIDUAL" ? "Instances" : "Asset Lot"}</span></td>
+                      <td>{qty}</td>
+                      <td>{formatCurrency(Number.isFinite(unitPrice) ? unitPrice : 0)}</td>
+                      <td>
+                        <select
+                          value={item.depreciation_asset_class ?? ""}
+                          onChange={event => updateItemAt(data, onChange, sourceIndex, {
+                            depreciation_asset_class: event.target.value ? Number(event.target.value) : null,
+                          })}
+                          disabled={readOnly || assetClassError}
+                        >
+                          <option value="">Default class</option>
+                          {assetClasses.map(assetClass => (
+                            <option key={assetClass.id} value={assetClass.id}>{getAssetClassLabel(assetClass)}</option>
+                          ))}
+                        </select>
+                        {assetClassError ? <div className="login-cell-sub">Default class will be used.</div> : null}
+                      </td>
+                      <td>
+                        <input
+                          type="date"
+                          value={item.capitalization_date || ""}
+                          onChange={event => updateItemAt(data, onChange, sourceIndex, { capitalization_date: event.target.value })}
+                          disabled={readOnly}
+                        />
+                        {!item.capitalization_date && defaultDate ? <div className="login-cell-sub">Default {defaultDate}</div> : null}
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.capitalization_cost ?? ""}
+                          placeholder={defaultCost.toFixed(2)}
+                          onChange={event => updateItemAt(data, onChange, sourceIndex, { capitalization_cost: event.target.value })}
+                          disabled={readOnly}
+                        />
+                      </td>
+                      <td>{item.item_tracking_type === "QUANTITY" ? (item.batch_number || "Lot number pending") : `${qty} register entries`}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -629,7 +798,9 @@ export function getStagePatchPayload(data: InspectionRecord, mode: StageItemsPay
     items: buildStageItemsPayload(normalizeStageItems(data.items || []), mode),
   };
 
-  if (mode === "central" && data.finance_check_date) {
+  if (mode === "finance") {
+    payload.finance_check_date = data.finance_check_date || null;
+  } else if (mode === "central" && data.finance_check_date) {
     payload.finance_check_date = data.finance_check_date;
   }
 

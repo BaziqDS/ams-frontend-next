@@ -18,6 +18,7 @@ import {
 } from "@/lib/inspectionUi";
 import {
   getAutoSelectedInspectionLocation,
+  getInspectionMainStoreRegisters,
   getInspectionQuantityError,
   getInspectionQuantityUpdateError,
   getScopedInspectionLocations,
@@ -112,6 +113,9 @@ function blankItem(): InspectionItemRecord {
     batch_number: "",
     manufactured_date: "",
     expiry_date: "",
+    depreciation_asset_class: null,
+    capitalization_cost: "",
+    capitalization_date: "",
   };
 }
 
@@ -207,6 +211,8 @@ export function InspectionModal({
   const selectedDepartmentLevel = mode === "create"
     ? locations.find(location => location.id === department)?.hierarchy_level ?? null
     : inspection?.department_hierarchy_level ?? null;
+  const selectedInspectionLocation = locations.find(location => String(location.id) === String(department || inspection?.department || ""));
+  const scopedRegisterOptions = getInspectionMainStoreRegisters(stockRegisters, selectedInspectionLocation);
 
   useEffect(() => {
     if (!open) return;
@@ -381,7 +387,14 @@ export function InspectionModal({
           base.central_register_no = item.central_register_no || null;
           base.central_register_page_no = item.central_register_page_no || null;
           base.batch_number = item.batch_number || null;
+          base.manufactured_date = item.manufactured_date || null;
           base.expiry_date = item.expiry_date || null;
+        }
+
+        if (canEditStage4 || stage === "FINANCE_REVIEW") {
+          base.depreciation_asset_class = item.depreciation_asset_class || null;
+          base.capitalization_cost = item.capitalization_cost || null;
+          base.capitalization_date = item.capitalization_date || null;
         }
 
         return base;
@@ -643,9 +656,20 @@ export function InspectionModal({
                             <td><input className="inspection-unit-price-input" type="number" step="0.01" value={item.unit_price} onChange={event => updateItem(index, { unit_price: event.target.value })} disabled={!canEditItems} /></td>
                             {showStockColumns && (
                               <td>
-                                <select value={item.stock_register ?? ""} onChange={event => updateItem(index, { stock_register: event.target.value ? Number(event.target.value) : null })} disabled={!canEditStage2 && !canEditStage3 && !canEditStage4}>
+                                <select
+                                  value={item.stock_register ?? ""}
+                                  onChange={event => {
+                                    const selectedId = event.target.value ? Number(event.target.value) : null;
+                                    const register = scopedRegisterOptions.find(option => option.id === selectedId);
+                                    updateItem(index, {
+                                      stock_register: selectedId,
+                                      stock_register_no: register?.register_number ?? "",
+                                    });
+                                  }}
+                                  disabled={!canEditStage2 && !canEditStage3 && !canEditStage4}
+                                >
                                   <option value="">—</option>
-                                  {stockRegisters.map(register => (
+                                  {scopedRegisterOptions.map(register => (
                                     <option key={register.id} value={register.id}>
                                       {register.register_number}
                                     </option>
@@ -656,9 +680,20 @@ export function InspectionModal({
                             )}
                             {showCentralColumns && (
                               <td>
-                                <select value={item.central_register ?? ""} onChange={event => updateItem(index, { central_register: event.target.value ? Number(event.target.value) : null })} disabled={!canEditStage3 && !canEditStage4}>
+                                <select
+                                  value={item.central_register ?? ""}
+                                  onChange={event => {
+                                    const selectedId = event.target.value ? Number(event.target.value) : null;
+                                    const register = scopedRegisterOptions.find(option => option.id === selectedId);
+                                    updateItem(index, {
+                                      central_register: selectedId,
+                                      central_register_no: register?.register_number ?? "",
+                                    });
+                                  }}
+                                  disabled={!canEditStage3 && !canEditStage4}
+                                >
                                   <option value="">—</option>
-                                  {stockRegisters.map(register => (
+                                  {scopedRegisterOptions.map(register => (
                                     <option key={register.id} value={register.id}>
                                       {register.register_number}
                                     </option>

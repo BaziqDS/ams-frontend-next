@@ -4,6 +4,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
 import { apiFetch, type Page } from "@/lib/api";
+import {
+  canSelectDependencyLevel,
+  getDependencyMinimums,
+  getInspectionStageMinimums,
+  normalizeSelectionsForDependencies,
+  normalizeSelectionsForInspectionStages,
+  type ModuleSelections,
+} from "@/lib/rolePermissionDependencies";
 import { relTime } from "@/lib/userUiShared";
 import { useCapabilities, type CapabilityLevel, type ModuleDependencies } from "@/contexts/CapabilitiesContext";
 
@@ -21,9 +29,6 @@ interface PermissionDetail {
   codename: string;
   model: string;
 }
-
-type ModuleSelections = Record<string, CapabilityLevel | null>;
-type DependencyMinimums = Record<string, CapabilityLevel>;
 
 const INSPECTION_STAGE_LABELS: Record<string, string> = {
   initiate_inspection: "Stage 1 — Initiate",
@@ -57,6 +62,7 @@ const MODULE_LABELS: Record<string, string> = {
   "stock-entries": "Stock Entries",
   "stock-registers": "Stock Registers",
   inspections: "Inspections",
+  depreciation: "Depreciation",
 };
 
 const LEVEL_DESCRIPTIONS: Record<CapabilityLevel, string> = {
@@ -77,7 +83,6 @@ const LEVEL_COLUMNS: Array<{
   { key: "full", label: "Full", cellLabel: "Create, edit, and delete", description: "Create, edit, and delete" },
 ];
 
-const LEVEL_RANK: Record<CapabilityLevel, number> = { view: 1, manage: 2, full: 3 };
 const LOCK_ICON_PATH = "M7 11V8a5 5 0 0 1 10 0v3M6 11h12v9H6z";
 
 function formatModule(key: string) {
@@ -87,24 +92,6 @@ function formatModule(key: string) {
 function formatLevel(level: CapabilityLevel | null | undefined) {
   if (!level) return "None";
   return level.charAt(0).toUpperCase() + level.slice(1);
-}
-
-export function getDependencyMinimums(
-  selections: ModuleSelections,
-  dependencies: ModuleDependencies,
-): DependencyMinimums {
-  const minimums: DependencyMinimums = {};
-  for (const [module, level] of Object.entries(selections)) {
-    if (!level) continue;
-    const reads = dependencies[module]?.[level] ?? [];
-    for (const dep of reads) {
-      const existing = minimums[dep];
-      if (!existing || LEVEL_RANK.view > LEVEL_RANK[existing]) {
-        minimums[dep] = "view";
-      }
-    }
-  }
-  return minimums;
 }
 
 function getDependencySources(
@@ -120,31 +107,6 @@ function getDependencySources(
     }
   }
   return sources;
-}
-
-export function canSelectDependencyLevel(
-  module: string,
-  level: CapabilityLevel | null,
-  minimums: DependencyMinimums,
-) {
-  const minimum = minimums[module];
-  if (!minimum) return true;
-  if (!level) return false;
-  return LEVEL_RANK[level] >= LEVEL_RANK[minimum];
-}
-
-export function normalizeSelectionsForDependencies(
-  selections: ModuleSelections,
-  dependencies: ModuleDependencies,
-): ModuleSelections {
-  const next = { ...selections };
-  const minimums = getDependencyMinimums(next, dependencies);
-  for (const [module, minimum] of Object.entries(minimums)) {
-    if (!canSelectDependencyLevel(module, next[module] ?? null, minimums)) {
-      next[module] = minimum;
-    }
-  }
-  return next;
 }
 
 function initialsFromName(name: string, fallback = "RO") {
@@ -359,12 +321,16 @@ function RoleModal({
 
   useEffect(() => {
     if (!open) return;
+    const nextInspectionStages = role?.inspection_stages ?? [];
     setName(role?.name ?? "");
-    setSelections(normalizeSelectionsForDependencies(
-      mergeSelections(manifest, role?.module_selections),
-      dependencies,
+    setSelections(normalizeSelectionsForInspectionStages(
+      normalizeSelectionsForDependencies(
+        mergeSelections(manifest, role?.module_selections),
+        dependencies,
+      ),
+      nextInspectionStages,
     ));
-    setInspectionStages(role?.inspection_stages ?? []);
+    setInspectionStages(nextInspectionStages);
     setStageDropdownOpen(false);
     setTouched(false);
     setSubmitting(false);
@@ -386,12 +352,24 @@ function RoleModal({
   const grantedCount = Object.values(selections).filter(Boolean).length;
   const moduleKeys = useMemo(() => Object.keys(manifest), [manifest]);
   const dependencyMinimums = useMemo(
-    () => getDependencyMinimums(selections, dependencies),
-    [selections, dependencies],
+    () => ({
+      ...getDependencyMinimums(selections, dependencies),
+      ...getInspectionStageMinimums(selections, inspectionStages),
+    }),
+    [selections, dependencies, inspectionStages],
   );
   const dependencySources = useMemo(
-    () => getDependencySources(selections, dependencies),
-    [selections, dependencies],
+    () => {
+      const sources = getDependencySources(selections, dependencies);
+      if (selections.inspections === "manage" && inspectionStages.includes("fill_central_register")) {
+        sources.items = [...(sources.items ?? []), "Stage 3 Central Register"];
+      }
+      if (selections.inspections === "manage" && inspectionStages.includes("review_finance")) {
+        sources.depreciation = [...(sources.depreciation ?? []), "Stage 4 Finance Review"];
+      }
+      return sources;
+    },
+    [selections, dependencies, inspectionStages],
   );
   const readyNote = canAssignPermissions
     ? moduleKeys.length === 0
@@ -404,9 +382,12 @@ function RoleModal({
       : "Creating a name-only role.";
 
   const setModuleLevel = (module: string, level: CapabilityLevel | null) => {
-    setSelections(prev => normalizeSelectionsForDependencies(
-      { ...prev, [module]: level },
-      dependencies,
+    setSelections(prev => normalizeSelectionsForInspectionStages(
+      normalizeSelectionsForDependencies(
+        { ...prev, [module]: level },
+        dependencies,
+      ),
+      module === "inspections" && level !== "manage" ? [] : inspectionStages,
     ));
     if (module === "inspections" && level !== "manage") {
       setInspectionStages([]);
@@ -415,9 +396,11 @@ function RoleModal({
   };
 
   const toggleInspectionStage = (stageKey: string) => {
-    setInspectionStages(prev =>
-      prev.includes(stageKey) ? prev.filter(s => s !== stageKey) : [...prev, stageKey],
-    );
+    setInspectionStages(prev => {
+      const nextStages = prev.includes(stageKey) ? prev.filter(s => s !== stageKey) : [...prev, stageKey];
+      setSelections(current => normalizeSelectionsForInspectionStages(current, nextStages));
+      return nextStages;
+    });
   };
 
   const submit = async () => {

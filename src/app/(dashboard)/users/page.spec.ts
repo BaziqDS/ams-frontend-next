@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shouldLoadUserAssignmentSelectors } from "./page";
+import { shouldLoadUserAssignmentSelectors } from "@/lib/userAssignmentSelectors";
 
 describe("users page assignment selector semantics", () => {
   it("loads assignment selectors for create when create_user_accounts is present", () => {

@@ -11,7 +11,7 @@ import {
   buildInstanceStatusLabel,
   getPrimaryInstanceIdentifier,
 } from "@/lib/itemInstanceDetailUi";
-import { formatItemDate, formatItemLabel, type ItemRecord } from "@/lib/itemUi";
+import { formatItemDate, formatItemLabel, toNumber, type DepreciationSummary, type ItemRecord } from "@/lib/itemUi";
 import styles from "./ItemInstanceDetailView.module.css";
 
 interface ItemInstanceRecord {
@@ -41,6 +41,7 @@ interface ItemInstanceRecord {
   created_at?: string | null;
   updated_at?: string | null;
   created_by_name?: string | null;
+  depreciation_summary?: DepreciationSummary | null;
 }
 
 interface RelatedStockEntryRecord {
@@ -86,6 +87,14 @@ function formatDateTime(value: string | null | undefined, fallback = "Not record
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function formatMoneyValue(value: number | string | null | undefined) {
+  return new Intl.NumberFormat("en-PK", {
+    style: "currency",
+    currency: "PKR",
+    maximumFractionDigits: 0,
+  }).format(toNumber(value));
 }
 
 function formatTrackingLabel(value: string | null | undefined) {
@@ -294,6 +303,7 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
   const heroIdentifierPrefix = cleanValue(instance?.serial_number) ? "Serial /" : "Instance /";
   const statusTone = !instance?.is_active ? "warn" : statusLabel === "Available" ? "success" : "neutral";
   const displayStatusLabel = instance?.is_active ? statusLabel : "Disabled";
+  const depreciation = instance?.depreciation_summary;
 
   return (
     <div>
@@ -437,6 +447,22 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
                     <DetailField label="In charge" value={inCharge} />
                   </div>
                 </SectionCard>
+
+                {depreciation?.capitalized ? (
+                  <SectionCard
+                    title="Financial profile"
+                    meta={depreciation.asset_number ? `Register ${depreciation.asset_number}` : undefined}
+                  >
+                    <div className={styles.detailsGrid}>
+                      <DetailField label="Original cost" value={formatMoneyValue(depreciation.original_cost)} />
+                      <DetailField label="Accumulated depreciation" value={formatMoneyValue(depreciation.accumulated_depreciation)} />
+                      <DetailField label="Current WDV / NBV" value={formatMoneyValue(depreciation.current_wdv)} />
+                      <DetailField label="Latest posted FY" value={depreciation.latest_posted_fiscal_year ? `${depreciation.latest_posted_fiscal_year}-${String(depreciation.latest_posted_fiscal_year + 1).slice(-2)}` : "Not posted"} />
+                      <DetailField label="Asset status" value={depreciation.status ? formatItemLabel(depreciation.status) : "Active"} />
+                      <DetailField label="Target type" value={depreciation.target_type === "LOT" ? "Asset lot" : "Individual instance"} />
+                    </div>
+                  </SectionCard>
+                ) : null}
 
                 {cleanValue(instance.inspection_certificate) ? (
                   <div className={styles.inspectionBanner}>

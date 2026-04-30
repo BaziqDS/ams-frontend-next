@@ -513,7 +513,7 @@ function buildStagePayload(inspection: InspectionRecord) {
   }
   if (inspection.stage === "FINANCE_REVIEW") {
     return {
-      items: buildStageItemsPayload(normalizeStageItems(inspection.items), "central"),
+      items: buildStageItemsPayload(normalizeStageItems(inspection.items), "finance"),
       finance_check_date: inspection.finance_check_date || null,
     };
   }

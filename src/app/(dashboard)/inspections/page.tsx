@@ -226,6 +226,7 @@ export default function InspectionsPage() {
   const canView = can("inspections", "view");
   const canManage = can("inspections", "manage");
   const canFull = can("inspections", "full");
+  const canInitiateInspection = hasInspectionStage("initiate_inspection");
 
   const [inspections, setInspections] = useState<InspectionRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -387,7 +388,7 @@ export default function InspectionsPage() {
 
           <div className="filter-bar-right">
             <DensityToggle density={density} setDensity={setDensity} />
-            {canManage && (
+            {canInitiateInspection && (
               <button type="button" className="btn btn-sm btn-primary" onClick={() => setCreateOpen(true)}>
                 <InspectionIcon d="M12 5v14M5 12h14" size={14} />
                 New Certificate

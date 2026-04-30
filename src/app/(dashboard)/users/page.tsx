@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
 import { AddUserModal } from "@/components/AddUserModal";
 import { tierMeta, relTime, type User } from "@/lib/userUiShared";
+import { shouldLoadUserAssignmentSelectors } from "@/lib/userAssignmentSelectors";
 import { apiFetch, type Page } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { ADMIN_PERMISSIONS } from "@/lib/adminPermissions";
@@ -81,14 +82,6 @@ function StatusPill({ active }: { active: boolean }) {
 
 const unavailableActionStyle = { opacity: 0.55, cursor: "not-allowed" } as const;
 const busyActionStyle = { opacity: 0.75, cursor: "wait" } as const;
-
-export function shouldLoadUserAssignmentSelectors(
-  mode: "create" | "edit",
-  canCreateUserAccounts: boolean,
-  canEditUserAccounts: boolean,
-) {
-  return mode === "edit" ? canEditUserAccounts : canCreateUserAccounts;
-}
 
 function RowActions({
   onEdit,

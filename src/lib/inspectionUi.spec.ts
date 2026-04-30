@@ -174,6 +174,18 @@ describe("inspection UI helpers", () => {
     ).toBe(true);
   });
 
+  it("allows a stage-one initiator to reopen a draft without broad manage capability", () => {
+    expect(
+      canResumeInspectionEditor(
+        {
+          stage: "DRAFT",
+        },
+        false,
+        stage => stage === "initiate_inspection",
+      ),
+    ).toBe(true);
+  });
+
   it("collects compact register references without duplicating repeated rows", () => {
     expect(
       getInspectionRegisterRefs([

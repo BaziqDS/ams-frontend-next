@@ -1,5 +1,18 @@
 export type TrackingType = "INDIVIDUAL" | "QUANTITY" | string | null | undefined;
 
+export interface DepreciationSummary {
+  capitalized: boolean;
+  asset_id?: number | null;
+  asset_count?: number | null;
+  asset_number?: string | null;
+  target_type?: "INSTANCE" | "LOT" | string | null;
+  original_cost?: number | string | null;
+  accumulated_depreciation?: number | string | null;
+  current_wdv?: number | string | null;
+  latest_posted_fiscal_year?: number | null;
+  status?: string | null;
+}
+
 export interface ItemRecord {
   id: number;
   name: string;
@@ -21,6 +34,7 @@ export interface ItemRecord {
   created_at?: string | null;
   updated_at?: string | null;
   created_by_name?: string | null;
+  depreciation_summary?: DepreciationSummary | null;
 }
 
 export interface ItemDistributionStore {
@@ -113,7 +127,7 @@ export function canShowInstances(trackingType: TrackingType) {
 }
 
 export function canShowBatches(trackingType: TrackingType, categoryType?: string | null) {
-  return trackingType === "QUANTITY" && categoryType === "PERISHABLE";
+  return trackingType === "QUANTITY" && (categoryType === "PERISHABLE" || categoryType === "FIXED_ASSET");
 }
 
 export function findDistributionUnit(units: ItemDistributionUnit[], unitId: string | number | null | undefined) {

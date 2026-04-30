@@ -1,6 +1,6 @@
 import type { InspectionItemRecord } from "@/lib/inspectionUi";
 
-export type StageItemsPayloadMode = "stock" | "central";
+export type StageItemsPayloadMode = "stock" | "central" | "finance";
 export type StockRegisterStoreLike = {
   store?: number | string | null;
 };
@@ -8,6 +8,9 @@ export type InspectionLocationScopeLike = {
   id: number;
   is_standalone: boolean;
   hierarchy_level: number;
+};
+export type InspectionMainStoreLocationLike = {
+  main_store_id?: number | string | null;
 };
 
 export function parseInspectionQuantity(value: string) {
@@ -36,6 +39,10 @@ export function normalizeStageItems(items: InspectionItemRecord[]) {
     batch_number: item.batch_number ?? "",
     manufactured_date: item.manufactured_date ?? "",
     expiry_date: item.expiry_date ?? "",
+    depreciation_asset_class: item.depreciation_asset_class ?? null,
+    depreciation_asset_class_name: item.depreciation_asset_class_name ?? null,
+    capitalization_cost: item.capitalization_cost ?? "",
+    capitalization_date: item.capitalization_date ?? "",
   }));
 }
 
@@ -57,13 +64,19 @@ export function buildStageItemsPayload(items: InspectionItemRecord[], mode: Stag
       stock_entry_date: item.stock_entry_date || null,
     };
 
-    if (mode === "central") {
+    if (mode === "central" || mode === "finance") {
       payload.central_register = item.central_register || null;
       payload.central_register_no = item.central_register_no || null;
       payload.central_register_page_no = item.central_register_page_no || null;
       payload.batch_number = item.batch_number || null;
       payload.manufactured_date = item.manufactured_date || null;
       payload.expiry_date = item.expiry_date || null;
+    }
+
+    if (mode === "finance") {
+      payload.depreciation_asset_class = item.depreciation_asset_class || null;
+      payload.capitalization_cost = item.capitalization_cost || null;
+      payload.capitalization_date = item.capitalization_date || null;
     }
 
     return payload;
@@ -112,6 +125,13 @@ export function filterStockRegistersForInspectionStore<T extends StockRegisterSt
 ) {
   if (mainStoreId === null || mainStoreId === undefined || mainStoreId === "") return registers;
   return registers.filter(register => String(register.store ?? "") === String(mainStoreId));
+}
+
+export function getInspectionMainStoreRegisters<T extends StockRegisterStoreLike>(
+  registers: T[],
+  location: InspectionMainStoreLocationLike | null | undefined,
+) {
+  return filterStockRegistersForInspectionStore(registers, location?.main_store_id);
 }
 
 export function getScopedInspectionLocations<T extends InspectionLocationScopeLike>(
