@@ -79,14 +79,15 @@ export function buildItemsWorkspaceHref({
   tab?: ItemsWorkspaceTab;
   locationId?: number | string | null;
 }) {
-  const params = new URLSearchParams({
-    item: String(itemId),
-    tab,
-  });
+  const params = new URLSearchParams();
 
   if (tab === "distribution" && locationId != null) {
     params.set("location", String(locationId));
+  } else if (tab !== "distribution") {
+    params.set("tab", tab);
   }
 
-  return `/items?${params.toString()}`;
+  const query = params.toString();
+  const path = `/items/${encodeURIComponent(String(itemId))}`;
+  return query ? `${path}?${query}` : path;
 }

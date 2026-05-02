@@ -109,18 +109,6 @@ function getDependencySources(
   return sources;
 }
 
-function initialsFromName(name: string, fallback = "RO") {
-  const initials = name
-    .split(/\s+/)
-    .filter(Boolean)
-    .map(part => part[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-
-  return initials || fallback;
-}
-
 function Field({ label, required, error, hint, children }: {
   label: string;
   required?: boolean;
@@ -784,9 +772,6 @@ export default function RolesPage() {
                       <tr key={role.id}>
                         <td>
                           <div className="user-cell">
-                            <div className="avatar" style={{ width: 32, height: 32, fontSize: 11, background: "linear-gradient(135deg, color-mix(in oklch, var(--primary) 82%, white), var(--primary))" }}>
-                              {initialsFromName(role.name)}
-                            </div>
                             <div>
                               <div className="user-name">{role.name}</div>
                               <div className="user-username mono">ID {role.id}</div>
@@ -830,9 +815,6 @@ export default function RolesPage() {
                 <div key={role.id} className="user-card">
                   <div className="user-card-head">
                     <div className="user-cell">
-                      <div className="avatar" style={{ width: 44, height: 44, fontSize: 12, background: "linear-gradient(135deg, color-mix(in oklch, var(--primary) 82%, white), var(--primary))" }}>
-                        {initialsFromName(role.name)}
-                      </div>
                       <div>
                         <div className="user-name">{role.name}</div>
                         <div className="user-username mono">ID {role.id}</div>

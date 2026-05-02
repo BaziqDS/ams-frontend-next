@@ -95,20 +95,6 @@ function LocationActions({
   );
 }
 
-function LocationAvatar({ name, type }: { name: string; type: string }) {
-  const initials = name.split(" ").map(n => n[0]).slice(0, 2).join("").toUpperCase() || "LC";
-  const bg = type === "DEPARTMENT" || type === "BUILDING"
-    ? "linear-gradient(135deg, color-mix(in oklch, var(--primary) 82%, white), var(--primary))"
-    : type === "LAB" || type === "ROOM"
-    ? "linear-gradient(135deg, #3b4052, #0e1116)"
-    : "linear-gradient(135deg, #8a7b60, #4d442f)";
-  return (
-    <div className="avatar" style={{ width: 44, height: 44, background: bg, fontSize: 12 }}>
-      {initials}
-    </div>
-  );
-}
-
 function LocationCard({
   location,
   canChange,
@@ -131,7 +117,6 @@ function LocationCard({
   return (
     <div className="user-card" onClick={onOpen} style={onOpen ? { cursor: "pointer" } : undefined}>
       <div className="user-card-head">
-        <LocationAvatar name={location.name} type={location.location_type} />
         <StatusPill active={location.is_active} />
       </div>
       <div className="user-card-name">{location.name}</div>
@@ -163,20 +148,6 @@ function LocationCard({
   );
 }
 
-function LocationTableAvatar({ name, type }: { name: string; type: string }) {
-  const initials = name.split(" ").map(n => n[0]).slice(0, 2).join("").toUpperCase() || "LC";
-  const bg = type === "DEPARTMENT" || type === "BUILDING"
-    ? "linear-gradient(135deg, color-mix(in oklch, var(--primary) 82%, white), var(--primary))"
-    : type === "LAB" || type === "ROOM"
-    ? "linear-gradient(135deg, #3b4052, #0e1116)"
-    : "linear-gradient(135deg, #8a7b60, #4d442f)";
-  return (
-    <div className="avatar" style={{ width: 32, height: 32, background: bg, fontSize: 11 }}>
-      {initials}
-    </div>
-  );
-}
-
 function LocationRow({
   location,
   canChange,
@@ -200,7 +171,6 @@ function LocationRow({
     <tr onClick={onOpen} style={onOpen ? { cursor: "pointer" } : undefined}>
       <td className="col-user">
         <div className="user-cell">
-          <LocationTableAvatar name={location.name} type={location.location_type} />
           <div>
             <div className="user-name">{location.name}</div>
             <div className="user-username mono">{location.code}</div>

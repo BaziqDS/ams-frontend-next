@@ -1,11 +1,9 @@
-import { redirect } from "next/navigation";
-import { buildItemsWorkspaceHref } from "@/lib/itemsWorkspaceState";
+"use client";
 
-export default async function ItemDistributionPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
-  redirect(buildItemsWorkspaceHref({ itemId: id, tab: "distribution" }));
+import { useParams } from "next/navigation";
+import { ItemWorkspaceDetailView } from "@/components/ItemModuleViews";
+
+export default function ItemDistributionPage() {
+  const params = useParams<{ id: string }>();
+  return <ItemWorkspaceDetailView itemId={params.id} />;
 }

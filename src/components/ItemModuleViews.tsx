@@ -41,7 +41,7 @@ const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
   </svg>
 );
 
-type WorkspaceFilterKey = "all" | "quantity" | "individual" | "perishable" | "low" | "out";
+type WorkspaceFilterKey = "all" | "individual" | "perishable" | "low" | "out";
 
 type WorkspaceLocationPanelState = {
   key: string;
@@ -627,9 +627,6 @@ function ItemCard({
   return (
     <div className="user-card" onClick={onOpen} style={{ cursor: "pointer" }}>
       <div className="user-card-head">
-        <div className="avatar" style={{ width: 44, height: 44, fontSize: 12, background: "linear-gradient(135deg, color-mix(in oklch, var(--primary) 82%, white), var(--primary))" }}>
-          {(item.name || "IT").split(" ").map(n => n[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "IT"}
-        </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
           <StatusPill tone={tone} label={tone === "danger" ? "Out of Stock" : "In Stock"} />
           <LowStockBadge item={item} />
@@ -705,13 +702,11 @@ export function ItemListView() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ItemRecord | null>(null);
   const [busyAction, setBusyAction] = useState<{ kind: "delete"; itemId: number } | null>(null);
-  const [workspaceRevision, setWorkspaceRevision] = useState(0);
-  const workspaceState = useMemo(
+  const [density, setDensity] = useState<Density>("balanced");
+  const legacyWorkspaceState = useMemo(
     () => parseItemsWorkspaceSearch(new URLSearchParams(searchParams.toString())),
     [searchParams],
   );
-  const selectedItemId = workspaceState.itemId;
-  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(workspaceState.locationId);
 
   const leafCategories = useMemo(
     () => categories.filter(category => category.parent_category !== null && category.is_active),
@@ -749,14 +744,17 @@ export function ItemListView() {
   }, [canViewItems, capsLoading, loadItems, router]);
 
   useEffect(() => {
-    setSelectedLocationId(workspaceState.locationId ?? null);
-  }, [selectedItemId]);
-
-  useEffect(() => {
-    if (workspaceState.locationId) {
-      setSelectedLocationId(workspaceState.locationId);
+    if (legacyWorkspaceState.itemId) {
+      router.replace(
+        buildItemsWorkspaceHref({
+          itemId: legacyWorkspaceState.itemId,
+          tab: legacyWorkspaceState.tab,
+          locationId: legacyWorkspaceState.locationId,
+        }),
+        { scroll: false },
+      );
     }
-  }, [workspaceState.locationId]);
+  }, [legacyWorkspaceState.itemId, legacyWorkspaceState.locationId, legacyWorkspaceState.tab, router]);
 
   const filteredItems = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -774,7 +772,6 @@ export function ItemListView() {
         ].join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
       }
-      if (filterKey === "quantity" && item.tracking_type !== "QUANTITY") return false;
       if (filterKey === "individual" && item.tracking_type !== "INDIVIDUAL") return false;
       if (filterKey === "perishable" && !canShowBatches(item.tracking_type, item.category_type)) return false;
       if (filterKey === "low" && !isLowStock(item)) return false;
@@ -782,16 +779,6 @@ export function ItemListView() {
       return true;
     });
   }, [filterKey, items, search]);
-
-  const listSummary = useMemo(() => ({
-    totalItems: items.length,
-    totalStock: items.reduce((sum, item) => sum + toNumber(item.total_quantity), 0),
-    lowStock: items.filter(item => isLowStock(item)).length,
-    outOfStock: items.filter(item => toNumber(item.total_quantity) <= 0).length,
-    quantity: items.filter(item => item.tracking_type === "QUANTITY").length,
-    individual: items.filter(item => item.tracking_type === "INDIVIDUAL").length,
-    perishable: items.filter(item => canShowBatches(item.tracking_type, item.category_type)).length,
-  }), [items]);
 
   const openCreateModal = () => {
     setEditingItem(null);
@@ -811,7 +798,6 @@ export function ItemListView() {
   const handleSave = async (_savedItem: ItemRecord) => {
     const refreshed = await loadItems({ showLoading: false });
     if (!refreshed) setActionError("Item saved, but the list could not be refreshed. Reload to resync the list.");
-    setWorkspaceRevision(current => current + 1);
   };
 
   const handleDelete = async (item: ItemRecord) => {
@@ -824,10 +810,6 @@ export function ItemListView() {
     try {
       await apiFetch(`/api/inventory/items/${item.id}/`, { method: "DELETE" });
       setItems(prev => prev.filter(record => record.id !== item.id));
-      if (selectedItemId === String(item.id)) {
-        router.replace("/items", { scroll: false });
-        setSelectedLocationId(null);
-      }
       const refreshed = await loadItems({ showLoading: false });
       if (!refreshed) setActionError("Item deleted, but the list could not be refreshed. The row was removed locally; reload to resync.");
     } catch (err) {
@@ -839,12 +821,313 @@ export function ItemListView() {
 
   const pageBusy = busyAction !== null;
   const deleteBusyItemId = busyAction?.kind === "delete" ? busyAction.itemId : null;
+
+  return (
+    <div data-density={density}>
+      <ItemModal
+        open={modalOpen}
+        mode={editingItem ? "edit" : "create"}
+        item={editingItem}
+        categories={leafCategories}
+        onClose={closeModal}
+        onSave={handleSave}
+      />
+      <Topbar breadcrumb={["Inventory", "Items"]} />
+      <div className="page">
+        {fetchError && (
+          <Alert
+            onDismiss={() => setFetchError(null)}
+            action={<button type="button" className="btn btn-xs" onClick={() => loadItems()}>Retry</button>}
+          >
+            {fetchError}
+          </Alert>
+        )}
+        {actionError && <Alert onDismiss={() => setActionError(null)}>{actionError}</Alert>}
+
+        <div className="page-head">
+          <div className="page-title-group">
+            <div className="eyebrow">Inventory</div>
+            <h1>Items</h1>
+            <div className="page-sub">Browse inventory item definitions and open a full detail workspace from any row.</div>
+          </div>
+          <div className="page-head-actions">
+            <button type="button" className="btn btn-sm btn-ghost">
+              <Ic d={<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M17 8l-5-5-5 5M12 3v12" /></>} size={14} />
+              Import
+            </button>
+          </div>
+        </div>
+
+        <div className="filter-bar">
+          <div className="filter-bar-left">
+            <div className="search-input">
+              <Ic d={<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>} size={14} />
+              <input
+                placeholder="Search by item, code, category, unit, or specification..."
+                value={search}
+                onChange={event => setSearch(event.target.value)}
+                aria-label="Search items"
+              />
+              {search && <button type="button" className="clear-search" onClick={() => setSearch("")}>x</button>}
+            </div>
+
+            <div className="chip-filter-group">
+              <div className="chip-filter-label">Tracking</div>
+              <div className="chip-filter">
+                  {([
+                    { key: "all", label: "All" },
+                    { key: "individual", label: "Individual" },
+                    { key: "perishable", label: "Batches/Lots" },
+                  ]).map(option => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      className={"chip-filter-btn" + (filterKey === option.key ? " active" : "")}
+                      onClick={() => setFilterKey(option.key as WorkspaceFilterKey)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+              </div>
+            </div>
+
+            <div className="chip-filter-group">
+              <div className="chip-filter-label">Stock</div>
+              <div className="chip-filter">
+                  {([
+                    { key: "low", label: "Low stock" },
+                    { key: "out", label: "No stock" },
+                  ]).map(option => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      className={"chip-filter-btn" + (filterKey === option.key ? " active" : "")}
+                      onClick={() => setFilterKey(option.key as WorkspaceFilterKey)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+              </div>
+            </div>
+          </div>
+          <div className="filter-bar-right">
+            <DensityToggle density={density} setDensity={setDensity} />
+            {canManageItems ? (
+              <button type="button" className="btn btn-primary btn-sm" onClick={openCreateModal} disabled={pageBusy}>
+                <Ic d="M12 5v14M5 12h14" size={14} />
+                New item
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="table-card">
+          <div className="table-card-head">
+            <div className="table-card-head-left">
+              <div className="eyebrow">Items list</div>
+              <div className="table-count">
+                <span className="mono">{filteredItems.length}</span>
+                <span>of</span>
+                <span className="mono">{items.length}</span>
+                <span>items</span>
+              </div>
+            </div>
+          </div>
+          <div className="h-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th>Tracking</th>
+                  <th>Total</th>
+                  <th>Available</th>
+                  <th>In Transit</th>
+                  <th>Locations</th>
+                  <th>Status</th>
+                  <th>Updated</th>
+                  <th style={{ textAlign: "right" }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+              {isLoading ? (
+                <EmptyTableRow colSpan={9} message="Loading items..." />
+              ) : filteredItems.length > 0 ? (
+                filteredItems.map(item => (
+                  <ItemListTableRow
+                    key={item.id}
+                    item={item}
+                    categoryPath={buildCategoryPath(item.category, categories, item.category_display)}
+                    canEdit={canManageItems}
+                    canDelete={canDeleteItems}
+                    pageBusy={pageBusy}
+                    deleteBusy={deleteBusyItemId === item.id}
+                    onOpen={() => router.push(`/items/${item.id}`)}
+                    onEdit={() => openEditModal(item)}
+                    onDelete={() => handleDelete(item)}
+                  />
+                ))
+              ) : (
+                <EmptyTableRow colSpan={9} message="No items match the current filters." />
+              )}
+              </tbody>
+            </table>
+          </div>
+          <div className="table-card-foot">
+            <div className="eyebrow">Click a row to open the item detail workspace</div>
+            <div className="pager"><span className="mono pager-current">1 / 1</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ItemListTableRow({
+  item,
+  categoryPath,
+  canEdit,
+  canDelete,
+  pageBusy,
+  deleteBusy,
+  onOpen,
+  onEdit,
+  onDelete,
+}: {
+  item: ItemRecord;
+  categoryPath: string | null;
+  canEdit: boolean;
+  canDelete: boolean;
+  pageBusy: boolean;
+  deleteBusy: boolean;
+  onOpen: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const totalQuantity = toNumber(item.total_quantity);
+  const standaloneLocationCount = toNumber(item.standalone_location_count);
+  const statusTone = itemStatusTone(item);
+
+  return (
+    <tr className="clickable-table-row" onClick={onOpen}>
+      <td className="col-user">
+        <div className="user-cell">
+          <span className={workspaceStyles.itemTableIcon} data-tracking={workspaceTrackingTone(item.tracking_type)}>
+            {workspaceTrackingIcon(item.tracking_type)}
+          </span>
+          <div>
+            <div className="user-name">{item.name}</div>
+            <div className="user-username mono">{item.code} · {categoryPath ?? item.category_display ?? "Uncategorized"}</div>
+          </div>
+        </div>
+      </td>
+      <td><span className="chip">{formatItemLabel(String(item.tracking_type ?? ""))}</span></td>
+      <td className="mono">{formatQuantity(item.total_quantity)} {item.acct_unit ?? "unit"}</td>
+      <td className="mono">{formatQuantity(item.available_quantity)}</td>
+      <td className="mono">{formatQuantity(item.in_transit_quantity)}</td>
+      <td><span className="chip chip-loc">{standaloneLocationCount} {standaloneLocationCount === 1 ? "location" : "locations"}</span></td>
+      <td>
+        <div className="group-cell">
+          <StatusPill tone={statusTone} label={totalQuantity <= 0 ? "Out of Stock" : "In Stock"} />
+          <LowStockBadge item={item} />
+        </div>
+      </td>
+      <td className="col-login">
+        <div className="login-cell">
+          <div>{formatItemDate(item.updated_at, "Unknown")}</div>
+          <div className="login-cell-sub mono">{formatItemDate(item.created_at, "Unknown")}</div>
+        </div>
+      </td>
+      <td className="col-actions">
+        <ItemActions
+          item={item}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          pageBusy={pageBusy}
+          deleteBusy={deleteBusy}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      </td>
+    </tr>
+  );
+}
+
+export function ItemWorkspaceDetailView({ itemId }: { itemId: string }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { isLoading: capsLoading } = useCapabilities();
+  const canViewItems = useCan("items");
+  const canManageItems = useCan("items", "manage");
+  const [categories, setCategories] = useState<CategoryRecord[]>([]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<ItemRecord | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [refreshToken, setRefreshToken] = useState(0);
+  const workspaceState = useMemo(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("item", itemId);
+    return parseItemsWorkspaceSearch(params);
+  }, [itemId, searchParams]);
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(workspaceState.locationId);
+
+  const leafCategories = useMemo(
+    () => categories.filter(category => category.parent_category !== null && category.is_active),
+    [categories],
+  );
+
+  const loadCategories = useCallback(async () => {
+    if (!canManageItems) {
+      setCategories([]);
+      return;
+    }
+
+    try {
+      const categoriesData = await apiFetch<Page<CategoryRecord> | CategoryRecord[]>("/api/inventory/categories/?page_size=500");
+      setCategories(normalizeList(categoriesData));
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to load item categories.");
+    }
+  }, [canManageItems]);
+
+  useEffect(() => {
+    if (capsLoading) return;
+    if (!canViewItems) {
+      router.replace("/403");
+      return;
+    }
+    loadCategories();
+  }, [canViewItems, capsLoading, loadCategories, router]);
+
+  useEffect(() => {
+    setSelectedLocationId(workspaceState.locationId ?? null);
+  }, [itemId]);
+
+  useEffect(() => {
+    if (workspaceState.locationId) {
+      setSelectedLocationId(workspaceState.locationId);
+    }
+  }, [workspaceState.locationId]);
+
+  const closeModal = () => {
+    setModalOpen(false);
+    setEditingItem(null);
+  };
+
+  const openEditModal = (item: ItemRecord) => {
+    setEditingItem(item);
+    setModalOpen(true);
+  };
+
+  const handleSave = async (_savedItem: ItemRecord) => {
+    setRefreshToken(current => current + 1);
+  };
+
   const setWorkspace = useCallback((next: {
     itemId?: string | null;
     tab?: ItemsWorkspaceTab;
     locationId?: string | null;
   }) => {
-    const nextItemId = next.itemId !== undefined ? next.itemId : selectedItemId;
+    const nextItemId = next.itemId !== undefined ? next.itemId : itemId;
     const nextTab = next.tab ?? workspaceState.tab;
     const nextLocationId = next.locationId !== undefined ? next.locationId : selectedLocationId;
 
@@ -861,9 +1144,23 @@ export function ItemListView() {
       }),
       { scroll: false },
     );
-  }, [router, selectedItemId, selectedLocationId, workspaceState.tab]);
+  }, [itemId, router, selectedLocationId, workspaceState.tab]);
+
+  if (capsLoading) {
+    return (
+      <div>
+        <Topbar breadcrumb={["Inventory", "Items", "Item detail"]} />
+        <div className="page">
+          <div className="detail-card detail-card-body">Loading item permissions...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!canViewItems) return null;
+
   return (
-    <div>
+    <div data-density="compact">
       <ItemModal
         open={modalOpen}
         mode={editingItem ? "edit" : "create"}
@@ -872,190 +1169,41 @@ export function ItemListView() {
         onClose={closeModal}
         onSave={handleSave}
       />
-      <Topbar breadcrumb={["Inventory", "Items"]} />
-      {(fetchError || actionError) && (
+      <Topbar breadcrumb={["Inventory", "Items", "Item detail"]} />
+      {actionError ? (
         <div className="page" style={{ paddingTop: 16, paddingBottom: 0 }}>
-          {fetchError && (
-            <Alert
-              onDismiss={() => setFetchError(null)}
-              action={<button type="button" className="btn btn-xs" onClick={() => loadItems()}>Retry</button>}
-            >
-              {fetchError}
-            </Alert>
-          )}
-          {actionError && <Alert onDismiss={() => setActionError(null)}>{actionError}</Alert>}
+          <Alert onDismiss={() => setActionError(null)}>{actionError}</Alert>
         </div>
-      )}
-      <div
-        className={`${workspaceStyles.workspaceShell} ${selectedItemId ? workspaceStyles.workspaceShellMobileDetail : ""}`}
-        data-density="compact"
-        data-layout="split"
-      >
-          <section className={workspaceStyles.listPane}>
-            <header className={workspaceStyles.listHead}>
-              <div className={workspaceStyles.listTitleRow}>
-                <div>
-                  <div className="eyebrow">Inventory</div>
-                  <h1 className={workspaceStyles.listTitle}>Items</h1>
-                </div>
-                <div className={workspaceStyles.listActions}>
-                  <button type="button" className="btn btn-ghost btn-sm">
-                    <Ic d={<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M17 8l-5-5-5 5M12 3v12" /></>} size={14} />
-                    Import
-                  </button>
-                  {canManageItems ? (
-                    <button type="button" className="btn btn-primary btn-sm" onClick={openCreateModal} disabled={pageBusy}>
-                      <Ic d="M12 5v14M5 12h14" size={14} />
-                      New item
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className={workspaceStyles.listSummary}>
-                <div className={workspaceStyles.listStat}>
-                  <div className={workspaceStyles.listStatValue}>{formatQuantity(listSummary.totalItems)}</div>
-                  <div className={workspaceStyles.listStatLabel}>Items</div>
-                </div>
-                <div className={workspaceStyles.listStatSep} />
-                <div className={workspaceStyles.listStat}>
-                  <div className={workspaceStyles.listStatValue}>{formatQuantity(listSummary.totalStock)}</div>
-                  <div className={workspaceStyles.listStatLabel}>Total stock</div>
-                </div>
-                <div className={workspaceStyles.listStatSep} />
-                <div className={workspaceStyles.listStat}>
-                  <div className={`${workspaceStyles.listStatValue} ${workspaceStyles.listStatWarn}`}>{formatQuantity(listSummary.lowStock)}</div>
-                  <div className={workspaceStyles.listStatLabel}>Low stock</div>
-                </div>
-                <div className={workspaceStyles.listStatSep} />
-                <div className={workspaceStyles.listStat}>
-                  <div className={`${workspaceStyles.listStatValue} ${workspaceStyles.listStatDanger}`}>{formatQuantity(listSummary.outOfStock)}</div>
-                  <div className={workspaceStyles.listStatLabel}>No stock</div>
-                </div>
-              </div>
-
-              <div className={workspaceStyles.listToolbar}>
-                <div className={workspaceStyles.listSearch}>
-                  <Ic d={<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>} size={14} />
-                  <input
-                    placeholder="Filter items by name, code, category..."
-                    value={search}
-                    onChange={event => setSearch(event.target.value)}
-                    aria-label="Filter items"
-                  />
-                  {search ? (
-                    <button type="button" className={workspaceStyles.listSearchClear} onClick={() => setSearch("")}>
-                      <Ic d="M18 6 6 18M6 6l12 12" size={12} />
-                    </button>
-                  ) : (
-                    <span className={workspaceStyles.listSearchKbd}>/</span>
-                  )}
-                </div>
-
-                <div className={workspaceStyles.listFilters}>
-                  {([
-                    { key: "all", label: "All", count: listSummary.totalItems, tone: undefined as "warn" | "danger" | undefined },
-                    { key: "quantity", label: "Quantity", count: listSummary.quantity, tone: undefined },
-                    { key: "individual", label: "Individual", count: listSummary.individual, tone: undefined },
-                    { key: "perishable", label: "Batches/Lots", count: listSummary.perishable, tone: undefined },
-                  ]).map(option => (
-                    <button
-                      key={option.key}
-                      type="button"
-                      className={`${workspaceStyles.filterPill} ${filterKey === option.key ? workspaceStyles.filterPillActive : ""}`}
-                      onClick={() => setFilterKey(option.key as WorkspaceFilterKey)}
-                    >
-                      {option.label}
-                      <span className={workspaceStyles.filterPillCount}>{formatQuantity(option.count)}</span>
-                    </button>
-                  ))}
-                  <span className={workspaceStyles.listFiltersSep} aria-hidden="true" />
-                  {([
-                    { key: "low", label: "Low stock", count: listSummary.lowStock, tone: "warn" as const },
-                    { key: "out", label: "No stock", count: listSummary.outOfStock, tone: "danger" as const },
-                  ]).map(option => (
-                    <button
-                      key={option.key}
-                      type="button"
-                      className={`${workspaceStyles.filterPill} ${filterKey === option.key ? workspaceStyles.filterPillActive : ""} ${option.tone === "warn" ? workspaceStyles.filterPillWarn : ""} ${option.tone === "danger" ? workspaceStyles.filterPillDanger : ""}`}
-                      onClick={() => setFilterKey(option.key as WorkspaceFilterKey)}
-                    >
-                      {option.label}
-                      <span className={workspaceStyles.filterPillCount}>{formatQuantity(option.count)}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </header>
-
-            <div className={workspaceStyles.listBody}>
-              {isLoading ? (
-                <div className={workspaceStyles.listEmpty}>Loading items...</div>
-              ) : (
-                filteredItems.length > 0 ? (
-                  <div className={workspaceStyles.listRows}>
-                    {filteredItems.map(item => (
-                      <WorkspaceItemRow
-                        key={item.id}
-                        item={item}
-                        categoryPath={buildCategoryPath(item.category, categories, item.category_display)}
-                        selected={selectedItemId === String(item.id)}
-                        canEdit={canManageItems}
-                        canDelete={canDeleteItems}
-                        pageBusy={pageBusy}
-                        deleteBusy={deleteBusyItemId === item.id}
-                        onSelect={() => {
-                          setSelectedLocationId(null);
-                          setWorkspace({ itemId: String(item.id), tab: "distribution", locationId: null });
-                        }}
-                        onEdit={() => openEditModal(item)}
-                        onDelete={() => handleDelete(item)}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <div className={workspaceStyles.listEmpty}>
-                    No items match the current filters.
-                  </div>
-                )
-              )}
-            </div>
-          </section>
-
-          <section className={workspaceStyles.detailPane}>
-            {selectedItemId ? (
-              <WorkspaceSelectedItemPane
-                itemId={selectedItemId}
-                categories={categories}
-                activeTab={workspaceState.tab}
-                selectedLocationId={selectedLocationId}
-                canManageItems={canManageItems}
-                refreshToken={workspaceRevision}
-                onBackToList={() => {
-                  setSelectedLocationId(null);
-                  router.replace("/items", { scroll: false });
-                }}
-                onEditItem={item => openEditModal(item)}
-                onSelectLocation={locationId => {
-                  setSelectedLocationId(locationId);
-                  setWorkspace({ itemId: selectedItemId, tab: "distribution", locationId });
-                }}
-                onClearSelectedLocation={() => {
-                  setSelectedLocationId(null);
-                  setWorkspace({ itemId: selectedItemId, tab: "distribution", locationId: null });
-                }}
-                onSelectTab={tab => setWorkspace({ itemId: selectedItemId, tab })}
-                onNormalizeState={nextState => {
-                  if (nextState.locationId !== undefined) {
-                    setSelectedLocationId(nextState.locationId);
-                  }
-                  setWorkspace(nextState);
-                }}
-              />
-            ) : (
-              <WorkspaceEmptyState />
-            )}
-          </section>
+      ) : null}
+      <div className={workspaceStyles.detailPageShell}>
+        <WorkspaceSelectedItemPane
+          itemId={itemId}
+          categories={categories}
+          activeTab={workspaceState.tab}
+          selectedLocationId={selectedLocationId}
+          canManageItems={canManageItems}
+          refreshToken={refreshToken}
+          onBackToList={() => {
+            setSelectedLocationId(null);
+            router.push("/items");
+          }}
+          onEditItem={item => openEditModal(item)}
+          onSelectLocation={locationId => {
+            setSelectedLocationId(locationId);
+            setWorkspace({ tab: "distribution", locationId });
+          }}
+          onClearSelectedLocation={() => {
+            setSelectedLocationId(null);
+            setWorkspace({ tab: "distribution", locationId: null });
+          }}
+          onSelectTab={tab => setWorkspace({ tab })}
+          onNormalizeState={nextState => {
+            if (nextState.locationId !== undefined) {
+              setSelectedLocationId(nextState.locationId);
+            }
+            setWorkspace(nextState);
+          }}
+        />
       </div>
     </div>
   );

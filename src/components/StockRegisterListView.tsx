@@ -96,18 +96,6 @@ function TimestampCell({ value, fallback }: { value: string | null | undefined; 
   );
 }
 
-function RegisterAvatar({ registerNumber, registerType }: { registerNumber: string; registerType: "CSR" | "DSR" }) {
-  const initials = registerNumber.split(/[-\s]+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase() || registerType;
-  const bg = registerType === "CSR"
-    ? "linear-gradient(135deg, color-mix(in oklch, var(--primary) 82%, white), var(--primary))"
-    : "linear-gradient(135deg, #3b4052, #0e1116)";
-  return (
-    <div className="avatar" style={{ width: 32, height: 32, background: bg, fontSize: 11 }}>
-      {initials}
-    </div>
-  );
-}
-
 function RowActions({
   onEdit,
   onDelete,
@@ -191,7 +179,6 @@ function StockRegisterRow({
     <tr>
       <td className="col-user">
         <div className="user-cell">
-          <RegisterAvatar registerNumber={register.register_number} registerType={register.register_type} />
           <div>
             <div className="user-name">{register.register_number}</div>
             <div className="user-username mono">{register.store_name ?? "Unknown store"}</div>
@@ -242,7 +229,6 @@ function StockRegisterCard({
   return (
     <div className="user-card">
       <div className="user-card-head">
-        <RegisterAvatar registerNumber={register.register_number} registerType={register.register_type} />
         <StatusPill active={register.is_active} />
       </div>
       <div className="user-card-name">{register.register_number}</div>

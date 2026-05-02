@@ -43,6 +43,20 @@
   min-width: 0;
 }
 
+.detailPageShell {
+  min-height: calc(100vh - 56px);
+  background: var(--surface);
+}
+
+.detailPageShell .detailStack {
+  max-width: 1680px;
+  padding: 24px 28px 40px 28px;
+}
+
+.detailPageShell .mobileBackRow {
+  display: block;
+}
+
 .listHead {
   padding: 18px 20px 0 20px;
   border-bottom: 1px solid var(--hairline);
@@ -323,6 +337,37 @@
 }
 
 .itemRow[data-tracking="perishable"] .itemRowAvatar {
+  background: oklch(0.97 0.025 80);
+  border-color: oklch(0.9 0.05 80);
+  color: oklch(0.5 0.13 70);
+}
+
+.itemTableIcon {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.itemTableIcon[data-tracking="individual"] {
+  background: oklch(0.97 0.02 270);
+  border-color: oklch(0.9 0.05 270);
+  color: oklch(0.45 0.12 270);
+}
+
+.itemTableIcon[data-tracking="quantity"] {
+  background: oklch(0.97 0.018 200);
+  border-color: oklch(0.9 0.04 200);
+  color: oklch(0.45 0.08 220);
+}
+
+.itemTableIcon[data-tracking="perishable"] {
   background: oklch(0.97 0.025 80);
   border-color: oklch(0.9 0.05 80);
   color: oklch(0.5 0.13 70);

@@ -26,13 +26,6 @@ function formatLabel(value: string | null | undefined, fallback = "—") {
   return value.replace(/[_-]+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
-function formatRate(value: string | number | null | undefined) {
-  if (value === null || value === undefined || value === "") return "—";
-  const num = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(num)) return String(value);
-  return `${num.toFixed(2)}%`;
-}
-
 function StatusPill({ active }: { active: boolean }) {
   return (
     <span className={"pill " + (active ? "pill-success" : "pill-neutral")}>
@@ -85,16 +78,11 @@ function RowActions({ onEdit, onDelete, canEdit, canDelete, disabled = false, de
 function CategoryRow({ category, isChildrenView, childCount, trackingSummary, canEdit, canDelete, onOpen, onEdit, onDelete, disabled = false, deleteBusy = false }: { category: CategoryRecord; isChildrenView: boolean; childCount: number; trackingSummary: string; canEdit: boolean; canDelete: boolean; onOpen?: () => void; onEdit?: () => void; onDelete?: () => void; disabled?: boolean; deleteBusy?: boolean }) {
   const resolvedType = category.resolved_category_type ?? category.category_type;
   const resolvedTracking = category.resolved_tracking_type ?? category.tracking_type;
-  const resolvedRate = category.resolved_depreciation_rate ?? category.default_depreciation_rate;
-  const showDepreciation = resolvedType === "FIXED_ASSET";
 
   return (
     <tr onClick={onOpen} style={onOpen ? { cursor: "pointer" } : undefined}>
       <td className="col-user">
         <div className="user-cell">
-          <div className="avatar" style={{ width: 32, height: 32, fontSize: 11, background: "linear-gradient(135deg, color-mix(in oklch, var(--primary) 82%, white), var(--primary))" }}>
-            {(category.name || "CA").split(" ").map(n => n[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "CA"}
-          </div>
           <div>
             <div className="user-name">{category.name}</div>
             <div className="user-username mono">{category.code}</div>
@@ -122,14 +110,6 @@ function CategoryRow({ category, isChildrenView, childCount, trackingSummary, ca
         </>
       )}
       {isChildrenView && <td>{category.parent_category_display ?? "Root category"}</td>}
-      <td>
-        <div className="login-cell">
-          <div>{showDepreciation ? formatRate(resolvedRate) : "—"}</div>
-          {showDepreciation && resolvedRate !== category.default_depreciation_rate && (
-            <div className="login-cell-sub mono">Default {formatRate(category.default_depreciation_rate)}</div>
-          )}
-        </div>
-      </td>
       <td><StatusPill active={category.is_active} /></td>
       <td className="col-login">
         <div className="login-cell">
@@ -146,14 +126,10 @@ function CategoryRow({ category, isChildrenView, childCount, trackingSummary, ca
 function CategoryCard({ category, childCount, trackingSummary, canEdit, canDelete, pageBusy, deleteBusy, onOpen, onEdit, onDelete }: { category: CategoryRecord; childCount: number; trackingSummary: string; canEdit: boolean; canDelete: boolean; pageBusy: boolean; deleteBusy: boolean; onOpen?: () => void; onEdit: () => void; onDelete: () => void }) {
   const resolvedType = category.resolved_category_type ?? category.category_type;
   const resolvedTracking = category.resolved_tracking_type ?? category.tracking_type;
-  const resolvedRate = category.resolved_depreciation_rate ?? category.default_depreciation_rate;
 
   return (
     <div className="user-card" onClick={onOpen} style={onOpen ? { cursor: "pointer" } : undefined}>
       <div className="user-card-head">
-        <div className="avatar" style={{ width: 44, height: 44, fontSize: 12, background: "linear-gradient(135deg, color-mix(in oklch, var(--primary) 82%, white), var(--primary))" }}>
-          {(category.name || "CA").split(" ").map(n => n[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "CA"}
-        </div>
         <StatusPill active={category.is_active} />
       </div>
       <div className="user-card-name">{category.name}</div>
@@ -170,10 +146,6 @@ function CategoryCard({ category, childCount, trackingSummary, canEdit, canDelet
         <div style={{ fontSize: 13, color: "var(--text-1)" }}>
           {category.parent_category_display ?? `${childCount} direct subcategories`}
         </div>
-      </div>
-      <div className="user-card-section">
-        <div className="eyebrow">Depreciation</div>
-        <div className="mono" style={{ fontSize: 13, color: "var(--text-1)" }}>{resolvedType === "FIXED_ASSET" ? formatRate(resolvedRate) : "-"}</div>
       </div>
       <div className="user-card-foot">
         <div>
@@ -508,7 +480,6 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
                     <th>Type</th>
                     {showTrackingColumn ? <th>Tracking</th> : <th>Subcategories</th>}
                     {showTrackingColumn ? <th>Parent</th> : <th>Tracking Profile</th>}
-                    <th>Depreciation</th>
                     <th>Status</th>
                     <th>Updated</th>
                     <th>Actions</th>
@@ -517,7 +488,7 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
                 <tbody>
                   {filteredCategories.length === 0 ? (
                     <tr>
-                      <td colSpan={9}>
+                      <td colSpan={8}>
                         <div style={{ padding: "32px 12px", textAlign: "center", color: "var(--text-2)", fontSize: 13 }}>
                           {emptyMessage}
                         </div>

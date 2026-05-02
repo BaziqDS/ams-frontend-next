@@ -47,8 +47,8 @@ describe("items workspace state helpers", () => {
   });
 
   it("builds canonical workspace hrefs for compatibility redirects", () => {
-    expect(buildItemsWorkspaceHref({ itemId: "42" })).toBe("/items?item=42&tab=distribution");
-    expect(buildItemsWorkspaceHref({ itemId: "42", tab: "instances" })).toBe("/items?item=42&tab=instances");
-    expect(buildItemsWorkspaceHref({ itemId: "42", tab: "distribution", locationId: "17" })).toBe("/items?item=42&tab=distribution&location=17");
+    expect(buildItemsWorkspaceHref({ itemId: "42" })).toBe("/items/42");
+    expect(buildItemsWorkspaceHref({ itemId: "42", tab: "instances" })).toBe("/items/42?tab=instances");
+    expect(buildItemsWorkspaceHref({ itemId: "42", tab: "distribution", locationId: "17" })).toBe("/items/42?location=17");
   });
 });

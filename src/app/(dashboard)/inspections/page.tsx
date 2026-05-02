@@ -168,9 +168,6 @@ function InspectionRow({
     >
       <td className="col-user">
         <div className="user-cell">
-          <div className="avatar" style={{ width: 34, height: 34, fontSize: 11, background: "linear-gradient(135deg, color-mix(in oklch, var(--primary) 80%, white), var(--primary))" }}>
-            IC
-          </div>
           <div>
             <div className="user-name">{inspection.contract_no}</div>
           </div>

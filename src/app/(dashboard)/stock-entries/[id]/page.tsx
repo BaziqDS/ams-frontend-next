@@ -184,10 +184,6 @@ function formatShortDate(value: string | null | undefined) {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
 }
 
-function initials(value: string | null | undefined) {
-  return (value || "NA").split(" ").map(part => part[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
-}
-
 function instanceIdentifier(instance: StockEntryItemInstance | undefined, fallbackId: number) {
   return instance?.qr_code?.trim()
     || instance?.serial_number?.trim()
@@ -806,7 +802,7 @@ function RoutingPanel({ entry, related }: { entry: StockEntryRecord; related: Re
         <div className="role">From · {entry.entry_type === "RECEIPT" ? "Source" : "Source store"}</div>
         <div className="name">{entry.from_location_name ?? "System / Inspection"}</div>
         <div className="sub">{entry.entry_type === "ISSUE" ? firstRegisterRef(entry) : "Source register not shown on receipt voucher"}</div>
-        <div className="person"><span className="av">{initials(sourcePerson)}</span> Issued by {sourcePerson}</div>
+        <div className="person">Issued by {sourcePerson}</div>
       </div>
       <div className="routing-arrow">
         <span className="arrow">{formatLabel(entry.entry_type)} <Ic d="M5 12h14M13 5l7 7-7 7" size={15} /></span>
@@ -815,7 +811,7 @@ function RoutingPanel({ entry, related }: { entry: StockEntryRecord; related: Re
         <div className="role">To · {entry.issued_to_name ? "Recipient person" : "Recipient location"}</div>
         <div className="name">{entryTarget(entry)}</div>
         <div className="sub">{entry.entry_type === "ISSUE" ? "Destination register captured on receipt voucher" : firstAckRegisterRef(entry, related)}</div>
-        <div className="person"><span className="av">{initials(ack.by ?? entryTarget(entry))}</span> Recipient: {ack.by ?? entryTarget(entry)}</div>
+        <div className="person">Recipient: {ack.by ?? entryTarget(entry)}</div>
       </div>
     </div>
   );
@@ -1309,7 +1305,6 @@ function ItemLedger({ entry, instances, related }: { entry: StockEntryRecord; in
                 <tr key={item.id} onClick={() => setExpanded(prev => ({ ...prev, [item.id]: !prev[item.id] }))} style={{ cursor: "pointer" }} aria-expanded={lineExpanded}>
                   <td className="col-user">
                     <div className="user-cell">
-                      <div className="avatar" style={{ width: 32, height: 32, fontSize: 11, background: "linear-gradient(135deg, color-mix(in oklch, var(--primary) 74%, white), var(--primary))" }}>{initials(item.item_name)}</div>
                       <div>
                         <div className="user-name">{item.item_name ?? `Item ${item.item}`}</div>
                         <div className="user-username mono">{effectiveInstances(entry, item, related).length ? `${effectiveInstances(entry, item, related).length} instances` : item.batch_number ?? "No batch"}</div>

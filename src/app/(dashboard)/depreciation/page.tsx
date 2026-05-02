@@ -8,7 +8,8 @@ import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
 import { apiFetch, type Page } from "@/lib/api";
 import { formatItemDate, formatItemLabel, formatQuantity, toNumber, type DepreciationSummary } from "@/lib/itemUi";
 
-type DepreciationTab = "register" | "runs" | "classes" | "uncapitalized" | "adjustments";
+type DepreciationTab = "setup" | "capitalize" | "register" | "runs" | "adjustments";
+type Density = "compact" | "balanced" | "comfortable";
 
 interface FixedAssetEntry {
   id: number;
@@ -56,6 +57,7 @@ interface DepreciationAssetClass {
   id: number;
   name: string;
   code: string;
+  category?: number | null;
   category_name?: string | null;
   current_rate?: string | null;
   is_active: boolean;
@@ -80,6 +82,13 @@ interface UncapitalizedAsset {
   batch: number | null;
   batch_number?: string | null;
   quantity: number;
+  depreciation_category?: number | null;
+  depreciation_category_name?: string | null;
+  depreciation_category_code?: string | null;
+  depreciation_setup?: number | null;
+  depreciation_setup_name?: string | null;
+  depreciation_setup_code?: string | null;
+  depreciation_rate?: string | null;
 }
 
 interface AssetValueAdjustment {
@@ -94,11 +103,31 @@ interface AssetValueAdjustment {
   reason: string;
 }
 
+interface InventoryCategory {
+  id: number;
+  name: string;
+  code: string;
+  parent_category: number | null;
+  category_type?: string | null;
+  resolved_category_type?: string | null;
+  is_active: boolean;
+}
+
+interface DepreciationSetupRow {
+  key: string;
+  categoryId: number | null;
+  categoryName: string;
+  categoryCode: string;
+  assetClass: DepreciationAssetClass | null;
+  currentRate: DepreciationRate | null;
+  rateCount: number;
+}
+
 const TABS: Array<{ key: DepreciationTab; label: string }> = [
+  { key: "setup", label: "Setup" },
+  { key: "capitalize", label: "To Capitalize" },
   { key: "register", label: "Register" },
-  { key: "runs", label: "Runs" },
-  { key: "classes", label: "Classes & Rates" },
-  { key: "uncapitalized", label: "Uncapitalized" },
+  { key: "runs", label: "Year-End Runs" },
   { key: "adjustments", label: "Adjustments" },
 ];
 
@@ -117,6 +146,18 @@ const Icon = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
   </svg>
 );
 
+function DensityToggle({ density, setDensity }: { density: Density; setDensity: (density: Density) => void }) {
+  return (
+    <div className="seg">
+      {(["compact", "balanced", "comfortable"] as const).map(option => (
+        <button type="button" key={option} className={"seg-btn" + (density === option ? " active" : "")} onClick={() => setDensity(option)}>
+          {option.charAt(0).toUpperCase() + option.slice(1)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function normalizeList<T>(data: Page<T> | T[]) {
   return Array.isArray(data) ? data : data.results;
 }
@@ -134,6 +175,23 @@ function statusPillClass(status: string | null | undefined) {
   if (status === "DRAFT") return "pill pill-warning";
   if (status === "REVERSED" || status === "DISPOSED" || status === "LOST" || status === "JUNK") return "pill pill-danger";
   return "pill pill-neutral";
+}
+
+function depreciationProfileCode(category: InventoryCategory) {
+  const rawCode = category.code || `CAT-${category.id}`;
+  return `DEP-${rawCode}`.toUpperCase().slice(0, 50);
+}
+
+function todayIsoDate() {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function isRateActiveOn(rate: DepreciationRate, isoDate: string) {
+  return rate.effective_from <= isoDate && (!rate.effective_to || rate.effective_to >= isoDate);
 }
 
 function Alert({ children, onDismiss }: { children: ReactNode; onDismiss?: () => void }) {
@@ -176,17 +234,68 @@ function Metric({ label, value, sub }: { label: string; value: ReactNode; sub?: 
   );
 }
 
+function ModalShell({
+  eyebrow,
+  title,
+  children,
+  footer,
+  onClose,
+  maxWidth = "min(760px, calc(100vw - 32px))",
+}: {
+  eyebrow: string;
+  title: string;
+  children: ReactNode;
+  footer: ReactNode;
+  onClose: () => void;
+  maxWidth?: string;
+}) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="depreciation-modal-title" style={{ maxWidth }}>
+        <header className="modal-head">
+          <div>
+            <div className="eyebrow">{eyebrow}</div>
+            <h2 id="depreciation-modal-title">{title}</h2>
+          </div>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
+            <Icon d="M6 6l12 12M6 18L18 6" size={14} />
+          </button>
+        </header>
+        <div className="modal-body">
+          <div style={{ display: "grid", gap: 16, padding: "18px 24px 24px" }}>
+            {children}
+          </div>
+        </div>
+        <footer className="modal-foot">
+          {footer}
+        </footer>
+      </div>
+    </div>
+  );
+}
+
 export default function DepreciationPage() {
   const router = useRouter();
   const { isLoading: capsLoading } = useCapabilities();
   const canView = useCan("depreciation");
   const canManage = useCan("depreciation", "manage");
   const canFull = useCan("depreciation", "full");
-  const [activeTab, setActiveTab] = useState<DepreciationTab>("register");
+  const canViewCategories = useCan("categories");
+  const [density, setDensity] = useState<Density>("balanced");
+  const [activeTab, setActiveTab] = useState<DepreciationTab>("setup");
   const [assets, setAssets] = useState<FixedAssetEntry[]>([]);
   const [runs, setRuns] = useState<DepreciationRun[]>([]);
   const [classes, setClasses] = useState<DepreciationAssetClass[]>([]);
   const [rates, setRates] = useState<DepreciationRate[]>([]);
+  const [categories, setCategories] = useState<InventoryCategory[]>([]);
   const [uncapitalized, setUncapitalized] = useState<UncapitalizedAsset[]>([]);
   const [adjustments, setAdjustments] = useState<AssetValueAdjustment[]>([]);
   const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null);
@@ -198,20 +307,27 @@ export default function DepreciationPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runYear, setRunYear] = useState(String(new Date().getFullYear() - (new Date().getMonth() < 6 ? 1 : 0)));
-  const [classForm, setClassForm] = useState({ name: "", code: "" });
-  const [rateForm, setRateForm] = useState({ asset_class: "", rate: "", effective_from: "", source_reference: "" });
-  const [capitalizationForm, setCapitalizationForm] = useState({ rowKey: "", original_cost: "", capitalization_date: "", asset_class: "" });
+  const [rateModalOpen, setRateModalOpen] = useState(false);
+  const [capitalizationModalOpen, setCapitalizationModalOpen] = useState(false);
+  const [adjustmentModalOpen, setAdjustmentModalOpen] = useState(false);
+  const [historyClassId, setHistoryClassId] = useState<number | null>(null);
+  const [historyFilters, setHistoryFilters] = useState({ from: "", to: "" });
+  const [rateForm, setRateForm] = useState({ category: "", rate: "", effective_from: "", effective_to: "", source_reference: "" });
+  const [capitalizationForm, setCapitalizationForm] = useState({ rowKey: "", original_cost: "", capitalization_date: "" });
   const [adjustmentForm, setAdjustmentForm] = useState({ asset: "", adjustment_type: "DISPOSAL", effective_date: "", amount: "", quantity_delta: "0", reason: "" });
 
   const load = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const [assetData, runData, classData, rateData, uncapitalizedData, adjustmentData] = await Promise.all([
+      const [assetData, runData, classData, rateData, categoryData, uncapitalizedData, adjustmentData] = await Promise.all([
         apiFetch<Page<FixedAssetEntry> | FixedAssetEntry[]>("/api/inventory/depreciation/assets/?page_size=500"),
         apiFetch<Page<DepreciationRun> | DepreciationRun[]>("/api/inventory/depreciation/runs/?page_size=200"),
         apiFetch<Page<DepreciationAssetClass> | DepreciationAssetClass[]>("/api/inventory/depreciation/asset-classes/?page_size=500"),
         apiFetch<Page<DepreciationRate> | DepreciationRate[]>("/api/inventory/depreciation/rates/?page_size=500"),
+        canViewCategories
+          ? apiFetch<Page<InventoryCategory> | InventoryCategory[]>("/api/inventory/categories/?page_size=500").catch(() => [] as InventoryCategory[])
+          : Promise.resolve([] as InventoryCategory[]),
         apiFetch<UncapitalizedAsset[]>("/api/inventory/depreciation/assets/uncapitalized/"),
         apiFetch<Page<AssetValueAdjustment> | AssetValueAdjustment[]>("/api/inventory/depreciation/adjustments/?page_size=500"),
       ]);
@@ -219,6 +335,7 @@ export default function DepreciationPage() {
       setRuns(normalizeList(runData));
       setClasses(normalizeList(classData));
       setRates(normalizeList(rateData));
+      setCategories(normalizeList(categoryData));
       setUncapitalized(uncapitalizedData);
       setAdjustments(normalizeList(adjustmentData));
     } catch (err) {
@@ -226,7 +343,7 @@ export default function DepreciationPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [canViewCategories]);
 
   useEffect(() => {
     if (capsLoading) return;
@@ -263,6 +380,85 @@ export default function DepreciationPage() {
     totals.accumulated += toNumber(depreciation?.accumulated_depreciation);
     return totals;
   }, { count: 0, originalCost: 0, accumulated: 0, currentWdv: 0 }), [assets]);
+
+  const fixedAssetCategories = useMemo(() => categories
+    .filter(category => category.parent_category === null)
+    .filter(category => (category.resolved_category_type ?? category.category_type) === "FIXED_ASSET")
+    .filter(category => category.is_active)
+    .sort((a, b) => a.name.localeCompare(b.name)), [categories]);
+
+  const configuredCategoryIds = useMemo(() => new Set(
+    classes
+      .map(assetClass => assetClass.category)
+      .filter((categoryId): categoryId is number => typeof categoryId === "number"),
+  ), [classes]);
+
+  const today = useMemo(() => todayIsoDate(), []);
+
+  const ratesByClass = useMemo(() => {
+    const grouped = new Map<number, DepreciationRate[]>();
+    rates.forEach(rate => {
+      const rows = grouped.get(rate.asset_class) ?? [];
+      rows.push(rate);
+      grouped.set(rate.asset_class, rows);
+    });
+    grouped.forEach(rows => rows.sort((a, b) => b.effective_from.localeCompare(a.effective_from) || b.id - a.id));
+    return grouped;
+  }, [rates]);
+
+  const depreciationSetupRows = useMemo(() => {
+    return fixedAssetCategories.map(category => {
+      const assetClass = classes.find(candidate => candidate.category === category.id) ?? null;
+      const classRates = assetClass ? ratesByClass.get(assetClass.id) ?? [] : [];
+      const currentRate = classRates.find(rate => isRateActiveOn(rate, today)) ?? classRates[0] ?? null;
+      return {
+        key: `category-${category.id}`,
+        categoryId: category.id,
+        categoryName: category.name,
+        categoryCode: category.code,
+        assetClass,
+        currentRate,
+        rateCount: classRates.length,
+      };
+    });
+  }, [classes, fixedAssetCategories, ratesByClass, today]);
+
+  const historyAssetClass = useMemo(
+    () => classes.find(assetClass => assetClass.id === historyClassId) ?? null,
+    [classes, historyClassId],
+  );
+
+  const historyRates = useMemo(() => {
+    if (!historyClassId) return [];
+    const rows = ratesByClass.get(historyClassId) ?? [];
+    return rows.filter(rate => {
+      const startsBeforeFilterEnd = !historyFilters.to || rate.effective_from <= historyFilters.to;
+      const endsAfterFilterStart = !historyFilters.from || !rate.effective_to || rate.effective_to >= historyFilters.from;
+      return startsBeforeFilterEnd && endsAfterFilterStart;
+    });
+  }, [historyClassId, historyFilters.from, historyFilters.to, ratesByClass]);
+
+  const openRateModal = (categoryId?: number | null) => {
+    setError(null);
+    setRateForm({ category: categoryId ? String(categoryId) : "", rate: "", effective_from: "", effective_to: "", source_reference: "" });
+    setRateModalOpen(true);
+  };
+
+  const openCapitalizationModal = (row?: UncapitalizedAsset) => {
+    setError(null);
+    setCapitalizationForm({
+      rowKey: row ? `${row.target_type}-${row.instance ?? row.batch}` : "",
+      original_cost: "",
+      capitalization_date: "",
+    });
+    setCapitalizationModalOpen(true);
+  };
+
+  const openAdjustmentModal = (assetId?: number) => {
+    setError(null);
+    setAdjustmentForm({ asset: assetId ? String(assetId) : "", adjustment_type: "DISPOSAL", effective_date: "", amount: "", quantity_delta: "0", reason: "" });
+    setAdjustmentModalOpen(true);
+  };
 
   const loadSchedule = async (assetId: number) => {
     setSelectedAssetId(assetId);
@@ -339,39 +535,34 @@ export default function DepreciationPage() {
     }
   };
 
-  const createAssetClass = async () => {
-    if (!canFull || !classForm.name.trim() || !classForm.code.trim()) return;
-    setBusy("create-class");
-    setError(null);
-    try {
-      await apiFetch<DepreciationAssetClass>("/api/inventory/depreciation/asset-classes/", {
-        method: "POST",
-        body: JSON.stringify({ name: classForm.name.trim(), code: classForm.code.trim().toUpperCase() }),
-      });
-      setClassForm({ name: "", code: "" });
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create asset class.");
-    } finally {
-      setBusy(null);
-    }
-  };
-
   const createRate = async () => {
-    if (!canFull || !rateForm.asset_class || !rateForm.rate || !rateForm.effective_from) return;
+    if (!canFull || !rateForm.category || !rateForm.rate || !rateForm.effective_from) return;
+    const category = fixedAssetCategories.find(row => row.id === Number(rateForm.category));
+    if (!category) return;
     setBusy("create-rate");
     setError(null);
     try {
+      const existingSetup = classes.find(assetClass => assetClass.category === category.id);
+      const setup = existingSetup ?? await apiFetch<DepreciationAssetClass>("/api/inventory/depreciation/asset-classes/", {
+        method: "POST",
+        body: JSON.stringify({
+          name: category.name,
+          code: depreciationProfileCode(category),
+          category: category.id,
+        }),
+      });
       await apiFetch<DepreciationRate>("/api/inventory/depreciation/rates/", {
         method: "POST",
         body: JSON.stringify({
-          asset_class: Number(rateForm.asset_class),
+          asset_class: setup.id,
           rate: rateForm.rate,
           effective_from: rateForm.effective_from,
+          ...(rateForm.effective_to ? { effective_to: rateForm.effective_to } : {}),
           source_reference: rateForm.source_reference.trim(),
         }),
       });
-      setRateForm({ asset_class: "", rate: "", effective_from: "", source_reference: "" });
+      setRateForm({ category: "", rate: "", effective_from: "", effective_to: "", source_reference: "" });
+      setRateModalOpen(false);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create rate version.");
@@ -394,7 +585,6 @@ export default function DepreciationPage() {
           instance: row.instance,
           batch: row.batch,
           target_type: row.target_type,
-          asset_class: capitalizationForm.asset_class ? Number(capitalizationForm.asset_class) : undefined,
           original_quantity: row.quantity,
           remaining_quantity: row.quantity,
           original_cost: capitalizationForm.original_cost,
@@ -402,7 +592,8 @@ export default function DepreciationPage() {
           depreciation_start_date: capitalizationForm.capitalization_date,
         }),
       });
-      setCapitalizationForm({ rowKey: "", original_cost: "", capitalization_date: "", asset_class: "" });
+      setCapitalizationForm({ rowKey: "", original_cost: "", capitalization_date: "" });
+      setCapitalizationModalOpen(false);
       await load();
       setActiveTab("register");
     } catch (err) {
@@ -429,6 +620,7 @@ export default function DepreciationPage() {
         }),
       });
       setAdjustmentForm({ asset: "", adjustment_type: "DISPOSAL", effective_date: "", amount: "", quantity_delta: "0", reason: "" });
+      setAdjustmentModalOpen(false);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create value adjustment.");
@@ -443,7 +635,7 @@ export default function DepreciationPage() {
   );
 
   return (
-    <div data-density="compact">
+    <div data-density={density}>
       <Topbar breadcrumb={["Inventory", "Depreciation"]} />
       <div className="page">
         {error ? <Alert onDismiss={() => setError(null)}>{error}</Alert> : null}
@@ -452,7 +644,7 @@ export default function DepreciationPage() {
           <div className="page-title-group">
             <div className="eyebrow">Finance</div>
             <h1>Depreciation</h1>
-            <div className="page-sub">Fixed asset register, fiscal-year runs, asset classes, and adjustments.</div>
+            <div className="page-sub">Finance setup, capitalization queue, fixed asset register, yearly runs, and adjustments.</div>
           </div>
           <div className="page-head-actions">
             <button type="button" className="btn btn-sm" onClick={() => load()} disabled={isLoading || busy !== null}>
@@ -480,6 +672,7 @@ export default function DepreciationPage() {
             </div>
           </div>
           <div className="filter-bar-right">
+            <DensityToggle density={density} setDensity={setDensity} />
             <span className="pill pill-neutral">{canFull ? "Full access" : canManage ? "Manage access" : "View access"}</span>
           </div>
         </div>
@@ -620,7 +813,7 @@ export default function DepreciationPage() {
             <div className="table-card">
               <div className="table-card-head">
                 <div className="table-card-head-left">
-                  <div className="eyebrow">Depreciation Runs</div>
+                  <div className="eyebrow">Year-End Depreciation Runs</div>
                   <div className="table-count"><span className="mono">{runs.length}</span><span>runs</span></div>
                 </div>
               </div>
@@ -637,7 +830,7 @@ export default function DepreciationPage() {
                   </thead>
                   <tbody>
                     {runs.length === 0 ? (
-                      <EmptyRow colSpan={5} message="No depreciation runs have been created." />
+                      <EmptyRow colSpan={5} message="No year-end depreciation runs have been created." />
                     ) : runs.map(run => (
                       <tr key={run.id}>
                         <td className="mono">{run.fiscal_year_label ?? `${run.fiscal_year_start}-${String(run.fiscal_year_start + 1).slice(-2)}`}</td>
@@ -707,81 +900,65 @@ export default function DepreciationPage() {
           </div>
         ) : null}
 
-        {activeTab === "classes" ? (
+        {activeTab === "setup" ? (
           <div style={{ display: "grid", gap: 16 }}>
-            {canFull ? (
-              <div className="stage-form-row">
-                <div className="stage-form-fields stage-form-fields-3">
-                  <Field label="Class name">
-                    <input value={classForm.name} onChange={event => setClassForm(prev => ({ ...prev, name: event.target.value }))} placeholder="Furniture" />
-                  </Field>
-                  <Field label="Class code">
-                    <input value={classForm.code} onChange={event => setClassForm(prev => ({ ...prev, code: event.target.value.toUpperCase() }))} placeholder="FURN" />
-                  </Field>
-                  <div style={{ alignSelf: "end" }}>
-                    <button type="button" className="btn btn-sm" onClick={createAssetClass} disabled={busy === "create-class"}>
-                      Add class
-                    </button>
-                  </div>
+            <div className="table-card">
+              <div className="table-card-head">
+                <div className="table-card-head-left">
+                  <div className="eyebrow">Depreciation Setup</div>
+                  <div className="table-count"><span className="mono">{depreciationSetupRows.length}</span><span>categories</span></div>
                 </div>
-                <div className="stage-form-fields stage-form-fields-4" style={{ marginTop: 12 }}>
-                  <Field label="Rate class">
-                    <select value={rateForm.asset_class} onChange={event => setRateForm(prev => ({ ...prev, asset_class: event.target.value }))}>
-                      <option value="">Select class</option>
-                      {classes.map(assetClass => <option key={assetClass.id} value={assetClass.id}>{assetClass.name} ({assetClass.code})</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Rate %">
-                    <input type="number" min={0} step="0.01" value={rateForm.rate} onChange={event => setRateForm(prev => ({ ...prev, rate: event.target.value }))} />
-                  </Field>
-                  <Field label="Effective from">
-                    <input type="date" value={rateForm.effective_from} onChange={event => setRateForm(prev => ({ ...prev, effective_from: event.target.value }))} />
-                  </Field>
-                  <Field label="Reference">
-                    <input value={rateForm.source_reference} onChange={event => setRateForm(prev => ({ ...prev, source_reference: event.target.value }))} placeholder="FBR reference" />
-                  </Field>
-                  <div style={{ alignSelf: "end" }}>
-                    <button type="button" className="btn btn-sm" onClick={createRate} disabled={busy === "create-rate"}>
+                <div className="table-card-actions" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {canViewCategories ? <Link href="/categories" className="btn btn-sm btn-ghost">Open categories</Link> : null}
+                  {canFull ? (
+                    <button type="button" className="btn btn-sm btn-primary" onClick={() => openRateModal()}>
+                      <Icon d="M12 5v14M5 12h14" size={14} />
                       Add rate
                     </button>
-                  </div>
+                  ) : null}
                 </div>
               </div>
-            ) : null}
-
-            <div className="table-card">
-              <div className="table-card-head"><div className="table-card-head-left"><div className="eyebrow">Asset Classes</div></div></div>
               <div className="h-scroll">
                 <table className="data-table">
-                  <thead><tr><th>Class</th><th>Code</th><th>Category</th><th>Current rate</th><th>Active</th></tr></thead>
+                  <thead><tr><th>Fixed asset category</th><th>Depreciation setup</th><th>Current rate</th><th>Effective period</th><th>Status</th><th>Actions</th></tr></thead>
                   <tbody>
-                    {classes.length === 0 ? <EmptyRow colSpan={5} message="No depreciation asset classes are configured." /> : classes.map(assetClass => (
-                      <tr key={assetClass.id}>
-                        <td>{assetClass.name}</td>
-                        <td className="mono">{assetClass.code}</td>
-                        <td>{assetClass.category_name ?? "-"}</td>
-                        <td>{assetClass.current_rate ? `${assetClass.current_rate}%` : "-"}</td>
-                        <td><span className={assetClass.is_active ? "pill pill-success" : "pill pill-neutral"}>{assetClass.is_active ? "Active" : "Inactive"}</span></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="table-card">
-              <div className="table-card-head"><div className="table-card-head-left"><div className="eyebrow">Rate History</div></div></div>
-              <div className="h-scroll">
-                <table className="data-table">
-                  <thead><tr><th>Class</th><th>Rate</th><th>Effective from</th><th>Effective to</th><th>Reference</th></tr></thead>
-                  <tbody>
-                    {rates.length === 0 ? <EmptyRow colSpan={5} message="No depreciation rate versions are configured." /> : rates.map(rate => (
-                      <tr key={rate.id}>
-                        <td>{rate.asset_class_name ?? "-"}</td>
-                        <td>{rate.rate}%</td>
-                        <td>{formatItemDate(rate.effective_from)}</td>
-                        <td>{formatItemDate(rate.effective_to)}</td>
-                        <td>{rate.source_reference || "-"}</td>
+                    {depreciationSetupRows.length === 0 ? <EmptyRow colSpan={6} message="No fixed asset categories are available for depreciation setup." /> : depreciationSetupRows.map(row => (
+                      <tr key={row.key}>
+                        <td style={{ textAlign: "left" }}>
+                          <div className="login-cell">
+                            <div>{row.categoryName}</div>
+                            <div className="login-cell-sub mono">{row.categoryCode}</div>
+                          </div>
+                        </td>
+                        <td>
+                          {row.assetClass ? (
+                            <div className="login-cell">
+                              <div>{row.assetClass.name}</div>
+                              <div className="login-cell-sub mono">{row.assetClass.code}</div>
+                            </div>
+                          ) : "Not configured"}
+                        </td>
+                        <td>{row.currentRate ? `${row.currentRate.rate}%` : "-"}</td>
+                        <td>
+                          {row.currentRate ? (
+                            <span>{formatItemDate(row.currentRate.effective_from)} to {row.currentRate.effective_to ? formatItemDate(row.currentRate.effective_to) : "Open"}</span>
+                          ) : "-"}
+                        </td>
+                        <td>
+                          {!row.assetClass ? <span className="pill pill-warning">Needs setup</span> : !row.assetClass.is_active ? <span className="pill pill-neutral">Inactive</span> : row.currentRate ? <span className="pill pill-success">Active</span> : <span className="pill pill-warning">No rate</span>}
+                        </td>
+                        <td className="col-actions">
+                          {row.assetClass ? (
+                            <button type="button" className="btn btn-xs btn-ghost row-action" onClick={() => { setHistoryClassId(row.assetClass?.id ?? null); setHistoryFilters({ from: "", to: "" }); }}>
+                              History
+                            </button>
+                          ) : null}
+                          {canFull && row.categoryId ? (
+                            <button type="button" className="btn btn-xs row-action" onClick={() => openRateModal(row.categoryId)}>
+                              {row.assetClass ? "Update rate" : "Set rate"}
+                            </button>
+                          ) : null}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -791,58 +968,39 @@ export default function DepreciationPage() {
           </div>
         ) : null}
 
-        {activeTab === "uncapitalized" ? (
+        {activeTab === "capitalize" ? (
           <div style={{ display: "grid", gap: 16 }}>
-            {canManage ? (
-              <div className="stage-form-row">
-                <div className="stage-form-fields stage-form-fields-4">
-                  <Field label="Fixed asset">
-                    <select value={capitalizationForm.rowKey} onChange={event => setCapitalizationForm(prev => ({ ...prev, rowKey: event.target.value }))}>
-                      <option value="">Select uncapitalized asset</option>
-                      {uncapitalized.map(row => {
-                        const key = `${row.target_type}-${row.instance ?? row.batch}`;
-                        return <option key={key} value={key}>{row.item_name} / {row.target_type === "LOT" ? row.batch_number : `Instance #${row.instance}`}</option>;
-                      })}
-                    </select>
-                  </Field>
-                  <Field label="Asset class">
-                    <select value={capitalizationForm.asset_class} onChange={event => setCapitalizationForm(prev => ({ ...prev, asset_class: event.target.value }))}>
-                      <option value="">Auto/default class</option>
-                      {classes.map(assetClass => <option key={assetClass.id} value={assetClass.id}>{assetClass.name} ({assetClass.code})</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Cost">
-                    <input type="number" min={0} step="0.01" value={capitalizationForm.original_cost} onChange={event => setCapitalizationForm(prev => ({ ...prev, original_cost: event.target.value }))} placeholder={selectedCapitalizationRow ? String(selectedCapitalizationRow.quantity) : "0.00"} />
-                  </Field>
-                  <Field label="Capitalization date">
-                    <input type="date" value={capitalizationForm.capitalization_date} onChange={event => setCapitalizationForm(prev => ({ ...prev, capitalization_date: event.target.value }))} />
-                  </Field>
-                  <div style={{ alignSelf: "end" }}>
-                    <button type="button" className="btn btn-sm" onClick={createCapitalization} disabled={busy === "capitalize"}>
-                      Capitalize
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
             <div className="table-card">
               <div className="table-card-head">
                 <div className="table-card-head-left">
-                  <div className="eyebrow">Uncapitalized Fixed Assets</div>
+                  <div className="eyebrow">Fixed Assets To Capitalize</div>
                   <div className="table-count"><span className="mono">{uncapitalized.length}</span><span>records</span></div>
                 </div>
+                {canManage ? (
+                  <button type="button" className="btn btn-sm btn-primary" onClick={() => openCapitalizationModal()} disabled={uncapitalized.length === 0}>
+                    <Icon d="M12 5v14M5 12h14" size={14} />
+                    Capitalize asset
+                  </button>
+                ) : null}
               </div>
               <div className="h-scroll">
                 <table className="data-table">
-                  <thead><tr><th>Item</th><th>Type</th><th>Instance / Lot</th><th>Quantity</th></tr></thead>
+                  <thead><tr><th>Item</th><th>Type</th><th>Instance / Lot</th><th>Quantity</th><th>Setup</th><th>Actions</th></tr></thead>
                   <tbody>
-                    {uncapitalized.length === 0 ? <EmptyRow colSpan={4} message="No uncapitalized fixed assets were found." /> : uncapitalized.map(row => (
+                    {uncapitalized.length === 0 ? <EmptyRow colSpan={6} message="No fixed assets are waiting for capitalization." /> : uncapitalized.map(row => (
                       <tr key={`${row.target_type}-${row.instance ?? row.batch}`}>
-                        <td><div className="login-cell"><div>{row.item_name}</div><div className="login-cell-sub mono">{row.item_code}</div></div></td>
+                        <td style={{ textAlign: "left" }}><div className="login-cell"><div>{row.item_name}</div><div className="login-cell-sub mono">{row.item_code}</div></div></td>
                         <td><span className="chip">{row.target_type === "LOT" ? "Asset Lot" : "Instance"}</span></td>
                         <td>{row.batch_number ?? (row.instance ? `Instance #${row.instance}` : "-")}</td>
                         <td>{formatQuantity(row.quantity)}</td>
+                        <td>{row.depreciation_setup_name ? `${row.depreciation_setup_name} / ${row.depreciation_rate ? `${row.depreciation_rate}%` : "No rate"}` : "Not configured"}</td>
+                        <td className="col-actions">
+                          {canManage ? (
+                            <button type="button" className="btn btn-xs row-action" onClick={() => openCapitalizationModal(row)}>
+                              Capitalize
+                            </button>
+                          ) : null}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -854,43 +1012,19 @@ export default function DepreciationPage() {
 
         {activeTab === "adjustments" ? (
           <div style={{ display: "grid", gap: 16 }}>
-            {canManage ? (
-              <div className="stage-form-row">
-                <div className="stage-form-fields stage-form-fields-4">
-                  <Field label="Asset">
-                    <select value={adjustmentForm.asset} onChange={event => setAdjustmentForm(prev => ({ ...prev, asset: event.target.value }))}>
-                      <option value="">Select asset</option>
-                      {assets.map(asset => <option key={asset.id} value={asset.id}>{asset.asset_number} / {asset.item_name}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Type">
-                    <select value={adjustmentForm.adjustment_type} onChange={event => setAdjustmentForm(prev => ({ ...prev, adjustment_type: event.target.value }))}>
-                      {ADJUSTMENT_TYPES.map(type => <option key={type} value={type}>{formatItemLabel(type)}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Effective date">
-                    <input type="date" value={adjustmentForm.effective_date} onChange={event => setAdjustmentForm(prev => ({ ...prev, effective_date: event.target.value }))} />
-                  </Field>
-                  <Field label="Amount">
-                    <input type="number" step="0.01" value={adjustmentForm.amount} onChange={event => setAdjustmentForm(prev => ({ ...prev, amount: event.target.value }))} placeholder="-10000.00" />
-                  </Field>
-                  <Field label="Quantity delta">
-                    <input type="number" step={1} value={adjustmentForm.quantity_delta} onChange={event => setAdjustmentForm(prev => ({ ...prev, quantity_delta: event.target.value }))} />
-                  </Field>
-                  <Field label="Reason">
-                    <input value={adjustmentForm.reason} onChange={event => setAdjustmentForm(prev => ({ ...prev, reason: event.target.value }))} placeholder="Reason" />
-                  </Field>
-                  <div style={{ alignSelf: "end" }}>
-                    <button type="button" className="btn btn-sm" onClick={createAdjustment} disabled={busy === "adjust"}>
-                      Add adjustment
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
             <div className="table-card">
-              <div className="table-card-head"><div className="table-card-head-left"><div className="eyebrow">Adjustments / Disposals</div></div></div>
+              <div className="table-card-head">
+                <div className="table-card-head-left">
+                  <div className="eyebrow">Adjustments / Disposals</div>
+                  <div className="table-count"><span className="mono">{adjustments.length}</span><span>records</span></div>
+                </div>
+                {canManage ? (
+                  <button type="button" className="btn btn-sm btn-primary" onClick={() => openAdjustmentModal()} disabled={assets.length === 0}>
+                    <Icon d="M12 5v14M5 12h14" size={14} />
+                    Add adjustment
+                  </button>
+                ) : null}
+              </div>
               <div className="h-scroll">
                 <table className="data-table">
                   <thead><tr><th>Asset</th><th>Item</th><th>Type</th><th>Date</th><th>Amount</th><th>Qty</th><th>Reason</th></tr></thead>
@@ -911,6 +1045,210 @@ export default function DepreciationPage() {
               </div>
             </div>
           </div>
+        ) : null}
+
+        {rateModalOpen ? (
+          <ModalShell
+            eyebrow="Depreciation Setup"
+            title="Add / Update Rate"
+            onClose={() => setRateModalOpen(false)}
+            footer={(
+              <>
+                <div className="modal-foot-meta mono">
+                  Previous active rates close automatically one day before the new effective-from date.
+                </div>
+                <div className="modal-foot-actions">
+                  <button type="button" className="btn btn-md" onClick={() => setRateModalOpen(false)} disabled={busy === "create-rate"}>Cancel</button>
+                  <button type="button" className="btn btn-md btn-primary" onClick={createRate} disabled={busy === "create-rate" || !rateForm.category || !rateForm.rate || !rateForm.effective_from}>
+                    {busy === "create-rate" ? "Saving..." : "Save rate"}
+                  </button>
+                </div>
+              </>
+            )}
+          >
+            <div className="stage-form-fields stage-form-fields-2">
+              <Field label="Fixed asset category">
+                <select value={rateForm.category} onChange={event => setRateForm(prev => ({ ...prev, category: event.target.value }))}>
+                  <option value="">Select category</option>
+                  {fixedAssetCategories.map(category => (
+                    <option key={category.id} value={category.id}>
+                      {category.name} ({category.code}){configuredCategoryIds.has(category.id) ? "" : " - needs setup"}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Rate %">
+                <input type="number" min={0} step="0.01" value={rateForm.rate} onChange={event => setRateForm(prev => ({ ...prev, rate: event.target.value }))} />
+              </Field>
+              <Field label="Effective from">
+                <input type="date" value={rateForm.effective_from} onChange={event => setRateForm(prev => ({ ...prev, effective_from: event.target.value }))} />
+              </Field>
+              <Field label="Effective to (optional)">
+                <input type="date" value={rateForm.effective_to} onChange={event => setRateForm(prev => ({ ...prev, effective_to: event.target.value }))} />
+              </Field>
+              <Field label="Reference">
+                <input value={rateForm.source_reference} onChange={event => setRateForm(prev => ({ ...prev, source_reference: event.target.value }))} placeholder="FBR reference" />
+              </Field>
+              <div style={{ alignSelf: "end", display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {canViewCategories ? <Link href="/categories" className="btn btn-sm btn-ghost">Open categories</Link> : null}
+              </div>
+            </div>
+            <div className="stage-form-helper">
+              Leave effective-to blank when this rate should stay active until finance adds a newer rate.
+            </div>
+          </ModalShell>
+        ) : null}
+
+        {historyAssetClass ? (
+          <ModalShell
+            eyebrow="Rate History"
+            title={historyAssetClass.name}
+            maxWidth="min(980px, calc(100vw - 32px))"
+            onClose={() => setHistoryClassId(null)}
+            footer={(
+              <>
+                <div className="modal-foot-meta mono">{historyRates.length} version{historyRates.length === 1 ? "" : "s"} shown</div>
+                <div className="modal-foot-actions">
+                  <button type="button" className="btn btn-md" onClick={() => setHistoryClassId(null)}>Close</button>
+                </div>
+              </>
+            )}
+          >
+            <div className="stage-form-fields stage-form-fields-3">
+              <Field label="From">
+                <input type="date" value={historyFilters.from} onChange={event => setHistoryFilters(prev => ({ ...prev, from: event.target.value }))} />
+              </Field>
+              <Field label="To">
+                <input type="date" value={historyFilters.to} onChange={event => setHistoryFilters(prev => ({ ...prev, to: event.target.value }))} />
+              </Field>
+              <div style={{ alignSelf: "end" }}>
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => setHistoryFilters({ from: "", to: "" })}>
+                  Clear filters
+                </button>
+              </div>
+            </div>
+            <div className="h-scroll">
+              <table className="data-table">
+                <thead><tr><th>Rate</th><th>Effective from</th><th>Effective to</th><th>Status today</th><th>Reference</th></tr></thead>
+                <tbody>
+                  {historyRates.length === 0 ? <EmptyRow colSpan={5} message="No rate versions match the selected dates." /> : historyRates.map(rate => (
+                    <tr key={rate.id}>
+                      <td>{rate.rate}%</td>
+                      <td>{formatItemDate(rate.effective_from)}</td>
+                      <td>{rate.effective_to ? formatItemDate(rate.effective_to) : "Open"}</td>
+                      <td><span className={isRateActiveOn(rate, today) ? "pill pill-success" : "pill pill-neutral"}>{isRateActiveOn(rate, today) ? "Active" : "Historical"}</span></td>
+                      <td>{rate.source_reference || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </ModalShell>
+        ) : null}
+
+        {capitalizationModalOpen ? (
+          <ModalShell
+            eyebrow="Fixed Asset Register"
+            title="Capitalize Asset"
+            onClose={() => setCapitalizationModalOpen(false)}
+            footer={(
+              <>
+                <div className="modal-foot-meta mono">
+                  Category and depreciation setup are read from the selected asset.
+                </div>
+                <div className="modal-foot-actions">
+                  <button type="button" className="btn btn-md" onClick={() => setCapitalizationModalOpen(false)} disabled={busy === "capitalize"}>Cancel</button>
+                  <button type="button" className="btn btn-md btn-primary" onClick={createCapitalization} disabled={busy === "capitalize" || !capitalizationForm.rowKey || !capitalizationForm.original_cost || !capitalizationForm.capitalization_date}>
+                    {busy === "capitalize" ? "Saving..." : "Capitalize"}
+                  </button>
+                </div>
+              </>
+            )}
+          >
+            <div className="stage-form-fields stage-form-fields-3">
+              <Field label="Fixed asset">
+                <select value={capitalizationForm.rowKey} onChange={event => setCapitalizationForm(prev => ({ ...prev, rowKey: event.target.value }))}>
+                  <option value="">Select asset to capitalize</option>
+                  {uncapitalized.map(row => {
+                    const key = `${row.target_type}-${row.instance ?? row.batch}`;
+                    return <option key={key} value={key}>{row.item_name} / {row.target_type === "LOT" ? row.batch_number : `Instance #${row.instance}`}</option>;
+                  })}
+                </select>
+              </Field>
+              <Field label="Cost">
+                <input type="number" min={0} step="0.01" value={capitalizationForm.original_cost} onChange={event => setCapitalizationForm(prev => ({ ...prev, original_cost: event.target.value }))} placeholder="0.00" />
+              </Field>
+              <Field label="Capitalization date">
+                <input type="date" value={capitalizationForm.capitalization_date} onChange={event => setCapitalizationForm(prev => ({ ...prev, capitalization_date: event.target.value }))} />
+              </Field>
+            </div>
+            {selectedCapitalizationRow ? (
+              <div className="detail-kv-grid">
+                <Metric
+                  label="Fixed asset category"
+                  value={selectedCapitalizationRow.depreciation_category_name ?? "Not resolved"}
+                  sub={selectedCapitalizationRow.depreciation_category_code ? <span className="mono">{selectedCapitalizationRow.depreciation_category_code}</span> : undefined}
+                />
+                <Metric
+                  label="Depreciation class"
+                  value={selectedCapitalizationRow.depreciation_setup_name ?? "Not configured"}
+                  sub={selectedCapitalizationRow.depreciation_setup_code ? <span className="mono">{selectedCapitalizationRow.depreciation_setup_code}</span> : "Create setup before posting depreciation"}
+                />
+                <Metric
+                  label="Current depreciation"
+                  value={selectedCapitalizationRow.depreciation_rate ? `${selectedCapitalizationRow.depreciation_rate}%` : "No rate"}
+                  sub="Read from Setup"
+                />
+              </div>
+            ) : null}
+          </ModalShell>
+        ) : null}
+
+        {adjustmentModalOpen ? (
+          <ModalShell
+            eyebrow="Fixed Asset Register"
+            title="Add Adjustment"
+            onClose={() => setAdjustmentModalOpen(false)}
+            footer={(
+              <>
+                <div className="modal-foot-meta mono">
+                  Adjustments affect future opening WDV; posted depreciation entries are not rewritten.
+                </div>
+                <div className="modal-foot-actions">
+                  <button type="button" className="btn btn-md" onClick={() => setAdjustmentModalOpen(false)} disabled={busy === "adjust"}>Cancel</button>
+                  <button type="button" className="btn btn-md btn-primary" onClick={createAdjustment} disabled={busy === "adjust" || !adjustmentForm.asset || !adjustmentForm.amount || !adjustmentForm.effective_date || !adjustmentForm.reason.trim()}>
+                    {busy === "adjust" ? "Saving..." : "Add adjustment"}
+                  </button>
+                </div>
+              </>
+            )}
+          >
+            <div className="stage-form-fields stage-form-fields-3">
+              <Field label="Asset">
+                <select value={adjustmentForm.asset} onChange={event => setAdjustmentForm(prev => ({ ...prev, asset: event.target.value }))}>
+                  <option value="">Select asset</option>
+                  {assets.map(asset => <option key={asset.id} value={asset.id}>{asset.asset_number} / {asset.item_name}</option>)}
+                </select>
+              </Field>
+              <Field label="Type">
+                <select value={adjustmentForm.adjustment_type} onChange={event => setAdjustmentForm(prev => ({ ...prev, adjustment_type: event.target.value }))}>
+                  {ADJUSTMENT_TYPES.map(type => <option key={type} value={type}>{formatItemLabel(type)}</option>)}
+                </select>
+              </Field>
+              <Field label="Effective date">
+                <input type="date" value={adjustmentForm.effective_date} onChange={event => setAdjustmentForm(prev => ({ ...prev, effective_date: event.target.value }))} />
+              </Field>
+              <Field label="Amount">
+                <input type="number" step="0.01" value={adjustmentForm.amount} onChange={event => setAdjustmentForm(prev => ({ ...prev, amount: event.target.value }))} placeholder="-10000.00" />
+              </Field>
+              <Field label="Quantity delta">
+                <input type="number" step={1} value={adjustmentForm.quantity_delta} onChange={event => setAdjustmentForm(prev => ({ ...prev, quantity_delta: event.target.value }))} />
+              </Field>
+              <Field label="Reason">
+                <input value={adjustmentForm.reason} onChange={event => setAdjustmentForm(prev => ({ ...prev, reason: event.target.value }))} placeholder="Reason" />
+              </Field>
+            </div>
+          </ModalShell>
         ) : null}
       </div>
     </div>

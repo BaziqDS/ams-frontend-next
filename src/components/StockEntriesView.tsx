@@ -1267,7 +1267,7 @@ export function StockEntriesView() {
                   <tbody>
                     {filteredEntries.length === 0 ? <tr><td colSpan={8}><div style={{ padding: "32px 12px", textAlign: "center", color: "var(--text-2)", fontSize: 13 }}>No stock entries match the current filters.</div></td></tr> : filteredEntries.map(entry => (
                       <tr key={entry.id} onClick={() => router.push(`/stock-entries/${entry.id}`)} style={{ cursor: "pointer" }}>
-                        <td><div className="user-cell"><div className="avatar" style={{ width: 32, height: 32, fontSize: 11, background: "linear-gradient(135deg, color-mix(in oklch, var(--primary) 82%, white), var(--primary))" }}>{entry.entry_type.slice(0, 2)}</div><div><div className="user-name">{entry.entry_number}</div><div className="user-username mono">{formatDate(entry.entry_date)}</div></div></div></td>
+                        <td><div className="user-cell"><div><div className="user-name">{entry.entry_number}</div><div className="user-username mono">{formatDate(entry.entry_date)}</div></div></div></td>
                         <td><span className="chip">{formatLabel(entry.entry_type)}</span></td>
                         <td>{entry.from_location_name ?? "System / inspection"}</td>
                         <td>{entryTarget(entry)}</td>
@@ -1293,7 +1293,6 @@ export function StockEntriesView() {
             {filteredEntries.map(entry => (
               <div className="user-card" key={entry.id} onClick={() => router.push(`/stock-entries/${entry.id}`)} style={{ cursor: "pointer" }}>
                 <div className="user-card-head">
-                  <div className="avatar" style={{ width: 44, height: 44, fontSize: 12, background: "linear-gradient(135deg, color-mix(in oklch, var(--primary) 82%, white), var(--primary))" }}>{entry.entry_type.slice(0, 2)}</div>
                   <div className="group-cell" style={{ justifyContent: "flex-end" }}>
                     <StatusPill status={entry.status} />
                     <CorrectionPill entry={entry} />
