@@ -548,14 +548,17 @@ export function Stage3Form({ data, onChange, readOnly }: StageFormProps) {
                             className="btn btn-xs"
                             onClick={() => setCreateModalRowIndex(sourceIndex)}
                             disabled={leafCategories.length === 0}
+                            title="Create new item and link"
+                            aria-label="Create new item and link"
                           >
-                            Create new item and link
+                            <InspectionIcon d="M12 5v14M5 12h14" size={12} />
+                            Item
                           </button>
                         ) : null}
                       </div>
                       {!readOnly && search.length >= 2 && searchResults.length === 0 ? (
                         <div className="stage-form-helper" style={{ marginTop: -4 }}>
-                          No matching item found. Use <strong>Create new item and link</strong> to add it to the catalog.
+                          No matching item found. Use <strong>+ Item</strong> to add it to the catalog and link it here.
                         </div>
                       ) : null}
                     </>

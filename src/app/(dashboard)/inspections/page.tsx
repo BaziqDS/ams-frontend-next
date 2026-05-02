@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
 import {
   InspectionIcon,
@@ -218,6 +218,7 @@ function InspectionRow({
 
 export default function InspectionsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { can, hasInspectionStage, isLoading: capsLoading } = useCapabilities();
 
   const canView = can("inspections", "view");
@@ -230,7 +231,12 @@ export default function InspectionsPage() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [stageFilter, setStageFilter] = useState<string>("all");
+  const [stageFilter, setStageFilter] = useState<string>(() => {
+    const stageParam = searchParams.get("stage");
+    return stageParam && ["DRAFT", "STOCK_DETAILS", "CENTRAL_REGISTER", "FINANCE_REVIEW", "COMPLETED", "REJECTED"].includes(stageParam)
+      ? stageParam
+      : "all";
+  });
   const [density, setDensity] = useState<"compact" | "balanced" | "comfortable">("balanced");
   const [createOpen, setCreateOpen] = useState(false);
   const [editingInspection, setEditingInspection] = useState<InspectionRecord | null>(null);
@@ -260,6 +266,15 @@ export default function InspectionsPage() {
     }
     loadInspections();
   }, [capsLoading, canView, loadInspections, router]);
+
+  useEffect(() => {
+    const stageParam = searchParams.get("stage");
+    if (stageParam && ["DRAFT", "STOCK_DETAILS", "CENTRAL_REGISTER", "FINANCE_REVIEW", "COMPLETED", "REJECTED"].includes(stageParam)) {
+      setStageFilter(stageParam);
+      return;
+    }
+    setStageFilter("all");
+  }, [searchParams]);
 
   const handleSave = useCallback(async () => {
     await loadInspections({ showLoading: false });

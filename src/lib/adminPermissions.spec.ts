@@ -11,4 +11,9 @@ describe("admin permissions items module", () => {
     expect(ADMIN_PERMISSIONS.stockRegisters.view).toBe("inventory.view_stock_registers");
     expect(PROTECTED_ADMIN_ROUTES["/stock-registers"]).toBe("inventory.view_stock_registers");
   });
+
+  it("protects the reports route with the domain view permission", () => {
+    expect(ADMIN_PERMISSIONS.reports.view).toBe("inventory.view_reports");
+    expect(PROTECTED_ADMIN_ROUTES["/reports"]).toBe("inventory.view_reports");
+  });
 });

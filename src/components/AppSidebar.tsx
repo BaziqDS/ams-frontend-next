@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCapabilities, type CapabilityLevel } from "@/contexts/CapabilitiesContext";
+import { useNotifications } from "@/contexts/NotificationsContext";
 
 type NavItem = {
   key: string;
@@ -21,7 +22,7 @@ type NavGroup = {
   items: NavItem[];
 };
 
-const IMPLEMENTED_ROUTES = new Set(["/dashboard", "/users", "/roles", "/locations", "/categories", "/items", "/stock-entries", "/stock-registers", "/inspections", "/depreciation"]);
+const IMPLEMENTED_ROUTES = new Set(["/dashboard", "/users", "/roles", "/locations", "/categories", "/items", "/stock-entries", "/stock-registers", "/inspections", "/depreciation", "/reports"]);
 
 const NavIcon = ({ d, size = 18 }: { d: React.ReactNode | string; size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden="true" focusable="false">
@@ -65,6 +66,7 @@ const NAV_ITEMS: NavGroup[] = [
       { key: "inspections", label: "Inspections", href: "/inspections", module: "inspections", icon: <><path d="M9 11l3 3 7-7"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></> },
       { key: "stock-registers", label: "Stock Registers", href: "/stock-registers", module: "stock-registers", icon: <><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></> },
       { key: "depreciation", label: "Depreciation", href: "/depreciation", module: "depreciation", icon: <><path d="M4 19h16"/><path d="M7 16V8M12 16V5M17 16v-3"/><path d="M5 8l5-5 4 4 5-5"/></> },
+      { key: "reports", label: "Reports", href: "/reports", module: "reports", icon: <><path d="M4 19h16"/><path d="M7 15v-4M12 15V7M17 15v-6"/><path d="M6 8h12"/></> },
     ],
   },
   {
@@ -82,6 +84,7 @@ export function AppSidebar() {
   const router = useRouter();
   const { logout } = useAuth();
   const { can } = useCapabilities();
+  const { getModuleCount } = useNotifications();
   const [collapsed, setCollapsed] = useState(false);
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
@@ -134,6 +137,8 @@ export function AppSidebar() {
                 "sb-item" +
                 (isActive(item.href) && !locked ? " active" : "") +
                 (locked ? " locked" : "");
+              const alertCount = !locked && item.module ? getModuleCount(item.module) : 0;
+              const badge = alertCount > 99 ? "99+" : String(alertCount);
 
               if (locked) {
                 return (
@@ -164,8 +169,10 @@ export function AppSidebar() {
                   <span className="sb-rail" />
                   <span className="sb-icon">
                     <NavIcon d={item.icon} size={16} />
+                    {collapsed && alertCount > 0 ? <span className="sb-icon-badge">{badge}</span> : null}
                   </span>
                   {!collapsed && <span className="sb-label">{item.label}</span>}
+                  {!collapsed && alertCount > 0 ? <span className="sb-badge">{badge}</span> : null}
                 </Link>
               );
             })}

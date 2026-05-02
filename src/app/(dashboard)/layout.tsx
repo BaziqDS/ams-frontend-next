@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { CapabilitiesProvider } from "@/contexts/CapabilitiesContext";
+import { NotificationsProvider } from "@/contexts/NotificationsContext";
 import { AppSidebar } from "@/components/AppSidebar";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -33,10 +34,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <CapabilitiesProvider>
-      <div className="app-frame">
-        <AppSidebar />
-        <div className="main-col">{children}</div>
-      </div>
+      <NotificationsProvider>
+        <div className="app-frame">
+          <AppSidebar />
+          <div className="main-col">{children}</div>
+        </div>
+      </NotificationsProvider>
     </CapabilitiesProvider>
   );
 }

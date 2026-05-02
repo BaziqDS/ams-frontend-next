@@ -1014,8 +1014,14 @@ export function StockEntriesView() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState(() => {
+    const typeParam = searchParams.get("type");
+    return typeParam && ["ISSUE", "RECEIPT", "RETURN"].includes(typeParam) ? typeParam : "all";
+  });
+  const [statusFilter, setStatusFilter] = useState(() => {
+    const statusParam = searchParams.get("status");
+    return statusParam && ["DRAFT", "PENDING_ACK", "COMPLETED", "CANCELLED"].includes(statusParam) ? statusParam : "all";
+  });
   const [density, setDensity] = useState<Density>("balanced");
   const [mode, setMode] = useState<"table" | "grid">("table");
   const [modalOpen, setModalOpen] = useState(false);
@@ -1094,6 +1100,20 @@ export function StockEntriesView() {
   }, [canView, capsLoading, loadEntries, loadRefs, router]);
 
   useEffect(() => {
+    const typeParam = searchParams.get("type");
+    if (typeParam && ["ISSUE", "RECEIPT", "RETURN"].includes(typeParam)) {
+      setTypeFilter(typeParam);
+    } else {
+      setTypeFilter("all");
+    }
+
+    const statusParam = searchParams.get("status");
+    if (statusParam && ["DRAFT", "PENDING_ACK", "COMPLETED", "CANCELLED"].includes(statusParam)) {
+      setStatusFilter(statusParam);
+    } else {
+      setStatusFilter("all");
+    }
+
     const replacementFor = searchParams.get("replacement_for");
     if (!replacementFor || !canManage || isLoading || replacementOpenedRef.current === replacementFor) return;
     const source = entries.find(entry => String(entry.id) === replacementFor);
