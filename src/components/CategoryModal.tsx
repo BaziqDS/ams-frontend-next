@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { apiFetch } from "@/lib/api";
+import { ThemedSelect } from "@/components/ThemedSelect";
 
 const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
   <svg aria-hidden="true" focusable="false" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -268,24 +269,37 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
               <Section n={2} title="Classification" sub="Category type and tracking rules.">
                 <div className="form-grid cols-2">
                   <Field label="Category type" required={!parentSelected} error={errors.category_type} hint={parentSelected ? "Optional for subcategories; inherited from the parent when left blank." : undefined}>
-                    <select
+                    <ThemedSelect
                       value={form.category_type}
-                      onChange={e => set({ category_type: e.target.value })}
-                      onBlur={() => setTouched(prev => new Set(prev).add("category_type"))}
-                    >
-                      <option value="">Select category type</option>
-                      <option value="FIXED_ASSET">Fixed Asset</option>
-                      <option value="CONSUMABLE">Consumable</option>
-                      <option value="PERISHABLE">Perishable</option>
-                    </select>
+                      onChange={value => {
+                        set({ category_type: value });
+                        setTouched(prev => new Set(prev).add("category_type"));
+                      }}
+                      placeholder="Select category type"
+                      ariaLabel="Category type"
+                      options={[
+                        { value: "FIXED_ASSET", label: "Fixed Asset" },
+                        { value: "CONSUMABLE", label: "Consumable" },
+                        { value: "PERISHABLE", label: "Perishable" },
+                      ]}
+                    />
                   </Field>
                   {showTrackingType && (
                     <Field label="Tracking type" required={!trackingTypeLocked} error={errors.tracking_type} hint={trackingTypeLocked ? "Tracking type is locked after subcategory creation." : "Required for subcategories."}>
-                      <select value={form.tracking_type} onChange={e => set({ tracking_type: e.target.value })} onBlur={() => setTouched(prev => new Set(prev).add("tracking_type"))} disabled={trackingTypeLocked}>
-                        <option value="">Select tracking type</option>
-                        <option value="INDIVIDUAL">Individual Tracking (Serial/QR)</option>
-                        <option value="QUANTITY">Quantity Based Tracking</option>
-                      </select>
+                      <ThemedSelect
+                        value={form.tracking_type}
+                        onChange={value => {
+                          set({ tracking_type: value });
+                          setTouched(prev => new Set(prev).add("tracking_type"));
+                        }}
+                        placeholder="Select tracking type"
+                        ariaLabel="Tracking type"
+                        disabled={trackingTypeLocked}
+                        options={[
+                          { value: "INDIVIDUAL", label: "Individual Tracking (Serial/QR)" },
+                          { value: "QUANTITY", label: "Quantity Based Tracking" },
+                        ]}
+                      />
                     </Field>
                   )}
                 </div>

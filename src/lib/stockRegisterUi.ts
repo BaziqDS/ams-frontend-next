@@ -32,3 +32,23 @@ export function getActiveStoreOptions(locations: LocationRecord[]) {
     .filter((location) => location.is_store && location.is_active)
     .sort((a, b) => a.name.localeCompare(b.name));
 }
+
+export function getCreatableStockRegisterStoreOptions(
+  locations: LocationRecord[],
+  assignedLocationIds: number[] | null | undefined,
+) {
+  const activeStores = getActiveStoreOptions(locations);
+  if (!assignedLocationIds?.length) return activeStores;
+
+  const assignedIds = new Set(assignedLocationIds.map(Number));
+  const hasAssignedRootStandalone = locations.some(location => (
+    assignedIds.has(location.id)
+    && location.is_active
+    && location.is_standalone
+    && location.hierarchy_level === 0
+  ));
+
+  if (!hasAssignedRootStandalone) return activeStores;
+
+  return activeStores.filter(location => assignedIds.has(location.id));
+}

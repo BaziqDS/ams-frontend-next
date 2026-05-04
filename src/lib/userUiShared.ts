@@ -43,9 +43,12 @@ export interface LocationRecord {
   is_active: boolean;
   is_store: boolean;
   is_standalone: boolean;
+  is_main_store?: boolean | null;
   main_store_id?: number | null;
   main_store_display?: string | null;
   main_store_code?: string | null;
+  root_main_store_id?: number | null;
+  root_main_store_display?: string | null;
   hierarchy_level: number;
   updated_at: string;
 }

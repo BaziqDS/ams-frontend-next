@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { apiFetch, type Page } from "@/lib/api";
 
 export interface NotificationModuleSummary {
@@ -50,10 +50,12 @@ interface NotificationsContextValue {
   feed: NotificationFeedItem[];
   isSummaryLoading: boolean;
   isPanelLoading: boolean;
+  isPanelRefreshing: boolean;
   refreshSummary: () => Promise<void>;
   loadPanelData: () => Promise<void>;
   markRead: (notificationId: number) => Promise<void>;
   markAllRead: () => Promise<void>;
+  clearFeed: () => Promise<void>;
   getModuleCount: (module: string) => number;
 }
 
@@ -64,6 +66,7 @@ const EMPTY_SUMMARY: NotificationSummary = {
 };
 
 const NotificationsContext = createContext<NotificationsContextValue | null>(null);
+const SUMMARY_POLL_MS = 15_000;
 
 function normalizeList<T>(data: Page<T> | T[]) {
   return Array.isArray(data) ? data : data.results;
@@ -75,6 +78,8 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   const [feed, setFeed] = useState<NotificationFeedItem[]>([]);
   const [isSummaryLoading, setIsSummaryLoading] = useState(true);
   const [isPanelLoading, setIsPanelLoading] = useState(false);
+  const [isPanelRefreshing, setIsPanelRefreshing] = useState(false);
+  const hasLoadedPanelDataRef = useRef(false);
 
   const refreshSummary = useCallback(async () => {
     try {
@@ -85,26 +90,37 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         modules: data.modules ?? {},
       });
     } catch {
-      setSummary(EMPTY_SUMMARY);
+      // Keep the last known summary instead of dropping the badge during transient polling errors.
     } finally {
       setIsSummaryLoading(false);
     }
   }, []);
 
   const loadPanelData = useCallback(async () => {
-    setIsPanelLoading(true);
+    const isInitialLoad = !hasLoadedPanelDataRef.current;
+
+    if (isInitialLoad) {
+      setIsPanelLoading(true);
+    } else {
+      setIsPanelRefreshing(true);
+    }
+
     try {
       const [alertsData, feedData] = await Promise.all([
         apiFetch<NotificationAlertRecord[]>("/api/notifications/alerts/"),
-        apiFetch<Page<NotificationFeedItem> | NotificationFeedItem[]>("/api/notifications/feed/?page_size=50"),
+        apiFetch<Page<NotificationFeedItem> | NotificationFeedItem[]>("/api/notifications/feed/?page_size=200"),
       ]);
       setAlerts(alertsData ?? []);
       setFeed(normalizeList(feedData));
+      hasLoadedPanelDataRef.current = true;
     } catch {
-      setAlerts([]);
-      setFeed([]);
+      // Keep the last loaded panel state during transient polling errors.
     } finally {
-      setIsPanelLoading(false);
+      if (isInitialLoad) {
+        setIsPanelLoading(false);
+      } else {
+        setIsPanelRefreshing(false);
+      }
     }
   }, []);
 
@@ -112,17 +128,26 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     void refreshSummary();
 
     const intervalId = window.setInterval(() => {
-      void refreshSummary();
-    }, 60_000);
+      if (document.visibilityState === "visible") {
+        void refreshSummary();
+      }
+    }, SUMMARY_POLL_MS);
 
     const handleFocus = () => {
       void refreshSummary();
     };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshSummary();
+      }
+    };
 
     window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       window.clearInterval(intervalId);
       window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [refreshSummary]);
 
@@ -162,6 +187,26 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     }
   }, [loadPanelData, refreshSummary]);
 
+  const clearFeed = useCallback(async () => {
+    const previousFeed = feed;
+    const previousSummary = summary;
+    setFeed([]);
+    setSummary(prev => ({ ...prev, unread_notifications: 0 }));
+
+    try {
+      await apiFetch<{ deleted: number }>("/api/notifications/feed/clear/", {
+        method: "POST",
+        body: "{}",
+      });
+      await refreshSummary();
+    } catch {
+      setFeed(previousFeed);
+      setSummary(previousSummary);
+      await loadPanelData();
+      await refreshSummary();
+    }
+  }, [feed, loadPanelData, refreshSummary, summary]);
+
   const getModuleCount = useCallback((module: string) => summary.modules?.[module]?.count ?? 0, [summary.modules]);
 
   const value = useMemo<NotificationsContextValue>(() => ({
@@ -170,12 +215,14 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     feed,
     isSummaryLoading,
     isPanelLoading,
+    isPanelRefreshing,
     refreshSummary,
     loadPanelData,
     markRead,
     markAllRead,
+    clearFeed,
     getModuleCount,
-  }), [summary, alerts, feed, isSummaryLoading, isPanelLoading, refreshSummary, loadPanelData, markRead, markAllRead, getModuleCount]);
+  }), [summary, alerts, feed, isSummaryLoading, isPanelLoading, isPanelRefreshing, refreshSummary, loadPanelData, markRead, markAllRead, clearFeed, getModuleCount]);
 
   return <NotificationsContext.Provider value={value}>{children}</NotificationsContext.Provider>;
 }

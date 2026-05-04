@@ -3,8 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
+import { ListPagination } from "@/components/ListPagination";
+import { ThemedSelect } from "@/components/ThemedSelect";
 import { apiFetch, type Page } from "@/lib/api";
-import { getAllocatableTargetLocations, getAllocatableTargetPersons, getAllocatedReturnLocations, getAllocatedReturnPersons, getTransferDestinationStores, getUserAssignedStores, type StockAllocationRecord } from "@/lib/stockEntryLocationRules";
+import { useClientPagination } from "@/lib/listPagination";
+import { getAllocatableTargetLocations, getAllocatableTargetPersons, getAllocatedReturnLocations, getAllocatedReturnPersons, getUserAssignedStores, type StockAllocationRecord } from "@/lib/stockEntryLocationRules";
 import { getIssueAvailableQuantity, getIssueBatchOptions, getIssueInstanceOptions, getIssueItemOptions, getReturnBatchOptions, getReturnInstanceOptions, getReturnItemOptions, getReturnQuantityLimit, type StockEntryItemInstance, type StockEntryStockRecord, type StockEntryReturnTarget } from "@/lib/stockEntryItemRules";
 import { buildStockEntryPayload, validateStockEntryForm, type CreatableStockEntryType, type StockEntryFormItem, type StockEntryFormState } from "@/lib/stockEntryFormRules";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
@@ -15,6 +18,8 @@ type Density = "compact" | "balanced" | "comfortable";
 type EntryType = "RECEIPT" | "ISSUE" | "RETURN";
 type EntryStatus = "DRAFT" | "PENDING_ACK" | "COMPLETED" | "REJECTED" | "CANCELLED";
 type CorrectionStatus = "REQUESTED" | "APPROVED" | "APPLIED" | "REJECTED" | "BLOCKED";
+
+const STOCK_ENTRIES_PAGE_SIZE = 12;
 
 interface ItemRecord {
   id: number;
@@ -109,6 +114,13 @@ interface ReferenceData {
   allocations: StockAllocationRecord[];
   stockRecords: StockEntryStockRecord[];
   instances: StockEntryItemInstance[];
+}
+
+interface StockEntryScopeStore {
+  id: number;
+  name: string;
+  code?: string | null;
+  is_central?: boolean;
 }
 
 const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
@@ -512,15 +524,17 @@ function entryTarget(entry: StockEntryRecord) {
   return entry.to_location_name ?? "—";
 }
 
-function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocationIds, onClose, onSave }: { open: boolean; mode: "create" | "edit"; entry: StockEntryRecord | null; refs: ReferenceData; refsLoading: boolean; assignedLocationIds?: number[]; onClose: () => void; onSave: () => void | Promise<void> }) {
+function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocationIds, isSuperuser = false, onClose, onSave }: { open: boolean; mode: "create" | "edit"; entry: StockEntryRecord | null; refs: ReferenceData; refsLoading: boolean; assignedLocationIds?: number[]; isSuperuser?: boolean; onClose: () => void; onSave: () => void | Promise<void> }) {
   const [form, setForm] = useState<StockEntryFormState>(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [transferrableStores, setTransferrableStores] = useState<LocationRecord[]>([]);
+  const [transferrableLoading, setTransferrableLoading] = useState(false);
   const storeOptions = useMemo(() => refs.locations.filter(location => location.is_store && location.is_active), [refs.locations]);
   const assignedStoreOptions = useMemo(() => getUserAssignedStores(assignedLocationIds, refs.locations), [assignedLocationIds, refs.locations]);
-  const selectableStoreOptions = assignedStoreOptions.length > 0 ? assignedStoreOptions : storeOptions;
-  const singleAssignedStore = mode === "create" && assignedStoreOptions.length === 1 ? assignedStoreOptions[0] : null;
+  const selectableStoreOptions = isSuperuser ? storeOptions : assignedStoreOptions;
+  const singleAssignedStore = mode === "create" && selectableStoreOptions.length === 1 ? selectableStoreOptions[0] : null;
 
   useEffect(() => {
     if (!open) return;
@@ -566,9 +580,33 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
     });
   }, [form.entry_type, open, singleAssignedStore]);
 
+  useEffect(() => {
+    if (!open || form.entry_type !== "ISSUE" || !form.from_location) {
+      setTransferrableStores([]);
+      setTransferrableLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setTransferrableLoading(true);
+    apiFetch<LocationRecord[]>(`/api/inventory/locations/transferrable/?from_location_id=${encodeURIComponent(form.from_location)}`)
+      .then(data => {
+        if (cancelled) return;
+        setTransferrableStores(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (!cancelled) setTransferrableStores([]);
+      })
+      .finally(() => {
+        if (!cancelled) setTransferrableLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, form.entry_type, form.from_location]);
+
   if (!open) return null;
 
-  const issueStoreOptions = getTransferDestinationStores(form.from_location, refs.locations);
+  const issueStoreOptions = transferrableStores.filter(location => location.is_active && location.is_store);
   const issueNonStoreOptions = getAllocatableTargetLocations(form.from_location, refs.locations);
   const issuePersonOptions = getAllocatableTargetPersons(form.from_location, refs.locations, refs.persons);
   const receiptNonStoreOptions = getAllocatedReturnLocations(form.to_location, refs.locations, refs.allocations);
@@ -732,14 +770,22 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
         <div className="modal-body">
           {submitError && <Alert onDismiss={() => setSubmitError(null)}>{submitError}</Alert>}
           {refsLoading && <div style={{ padding: 16, color: "var(--muted)", fontSize: 13 }}>Loading dropdown data…</div>}
+          {mode === "create" && !isSuperuser && !refsLoading && selectableStoreOptions.length === 0 && (
+            <Alert>A directly assigned store is required before this account can create stock entries.</Alert>
+          )}
 
           <Section n={1} title="Movement" sub={form.entry_type === "ISSUE" ? "Choose the store sending stock, then choose who or where receives it." : "Choose the store receiving returned stock, then choose who or where it is returning from."}>
             <div className="form-grid cols-2">
               <Field label="Entry Type" required>
-                <select value={form.entry_type} onChange={event => update("entry_type", event.target.value as CreatableStockEntryType)}>
-                  <option value="ISSUE">Transfer / Allocation</option>
-                  <option value="RECEIPT">Return Receipt</option>
-                </select>
+                <ThemedSelect
+                  value={form.entry_type}
+                  onChange={value => update("entry_type", value as CreatableStockEntryType)}
+                  options={[
+                    { value: "ISSUE", label: "Transfer / Allocation" },
+                    { value: "RECEIPT", label: "Return Receipt" },
+                  ]}
+                  ariaLabel="Select stock entry type"
+                />
               </Field>
               {form.entry_type === "ISSUE" ? (
                 <>
@@ -949,14 +995,16 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
                         />
                       </Field>
                       <Field label="Source Register">
-                        <select
+                        <ThemedSelect
                           value={row.stock_register}
-                          onChange={event => updateRow(index, { stock_register: event.target.value })}
+                          onChange={value => updateRow(index, { stock_register: value })}
                           disabled={!selectedSourceStoreId || sourceRegisterOptions.length === 0}
-                        >
-                          <option value="">No register</option>
-                          {sourceRegisterOptions.map(register => <option key={register.id} value={register.id}>{register.register_number} — {register.store_name}</option>)}
-                        </select>
+                          options={[
+                            { value: "", label: "No register" },
+                            ...sourceRegisterOptions.map(register => ({ value: String(register.id), label: register.register_number, meta: register.store_name ?? undefined })),
+                          ]}
+                          ariaLabel="Select source register"
+                        />
                       </Field>
                       <Field label="Page Number">
                         <input className="input" type="number" min="1" value={row.page_number} onChange={event => updateRow(index, { page_number: event.target.value })} placeholder="Optional" />
@@ -1022,12 +1070,14 @@ export function StockEntriesView() {
     const statusParam = searchParams.get("status");
     return statusParam && ["DRAFT", "PENDING_ACK", "COMPLETED", "CANCELLED"].includes(statusParam) ? statusParam : "all";
   });
+  const [storeScope, setStoreScope] = useState(() => searchParams.get("store") ?? "all");
   const [density, setDensity] = useState<Density>("balanced");
   const [mode, setMode] = useState<"table" | "grid">("table");
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [editingEntry, setEditingEntry] = useState<StockEntryRecord | null>(null);
   const [busyAction, setBusyAction] = useState<{ kind: "delete" | "acknowledge"; entryId: number } | null>(null);
+  const [scopeStores, setScopeStores] = useState<StockEntryScopeStore[]>([]);
   const refsLoadedRef = useRef(false);
   const refsPromiseRef = useRef<Promise<boolean> | null>(null);
   const replacementOpenedRef = useRef<string | null>(null);
@@ -1078,7 +1128,9 @@ export function StockEntriesView() {
     if (showLoading) setIsLoading(true);
     setFetchError(null);
     try {
-      const data = await apiFetch<Page<StockEntryRecord> | StockEntryRecord[]>("/api/inventory/stock-entries/?page_size=500");
+      const params = new URLSearchParams({ page_size: "500" });
+      if (storeScope !== "all") params.set("store", storeScope);
+      const data = await apiFetch<Page<StockEntryRecord> | StockEntryRecord[]>(`/api/inventory/stock-entries/?${params.toString()}`);
       setEntries(normalizeList(data));
       return true;
     } catch (err) {
@@ -1086,6 +1138,15 @@ export function StockEntriesView() {
       return false;
     } finally {
       if (showLoading) setIsLoading(false);
+    }
+  }, [storeScope]);
+
+  const loadScopeStores = useCallback(async () => {
+    try {
+      const data = await apiFetch<StockEntryScopeStore[]>("/api/inventory/stock-entries/scope-stores/");
+      setScopeStores(data);
+    } catch {
+      setScopeStores([]);
     }
   }, []);
 
@@ -1096,8 +1157,9 @@ export function StockEntriesView() {
       return;
     }
     loadEntries();
+    loadScopeStores();
     loadRefs();
-  }, [canView, capsLoading, loadEntries, loadRefs, router]);
+  }, [canView, capsLoading, loadEntries, loadRefs, loadScopeStores, router]);
 
   useEffect(() => {
     const typeParam = searchParams.get("type");
@@ -1113,6 +1175,8 @@ export function StockEntriesView() {
     } else {
       setStatusFilter("all");
     }
+
+    setStoreScope(searchParams.get("store") ?? "all");
 
     const replacementFor = searchParams.get("replacement_for");
     if (!replacementFor || !canManage || isLoading || replacementOpenedRef.current === replacementFor) return;
@@ -1139,11 +1203,14 @@ export function StockEntriesView() {
     });
   }, [entries, search, statusFilter, typeFilter]);
 
-  const stats = useMemo(() => ({
-    draft: entries.filter(entry => entry.status === "DRAFT").length,
-    pending: entries.filter(entry => entry.status === "PENDING_ACK").length,
-    completed: entries.filter(entry => entry.status === "COMPLETED").length,
-  }), [entries]);
+  const {
+    page,
+    totalPages,
+    pageItems: pagedEntries,
+    pageStart,
+    pageEnd,
+    setPage,
+  } = useClientPagination(filteredEntries, STOCK_ENTRIES_PAGE_SIZE, [search, typeFilter, statusFilter, storeScope]);
 
   const openCreateModal = async () => {
     setModalMode("create");
@@ -1212,7 +1279,7 @@ export function StockEntriesView() {
 
   return (
     <div data-density={density}>
-      <StockEntryModal open={modalOpen} mode={modalMode} entry={editingEntry} refs={refs} refsLoading={refsLoading} assignedLocationIds={user?.assigned_locations} onClose={closeModal} onSave={handleSave} />
+      <StockEntryModal open={modalOpen} mode={modalMode} entry={editingEntry} refs={refs} refsLoading={refsLoading} assignedLocationIds={user?.assigned_locations} isSuperuser={user?.is_superuser} onClose={closeModal} onSave={handleSave} />
       <Topbar breadcrumb={["Operations", "Stock Entries"]} />
       <div className="page">
         {fetchError && <Alert action={<button type="button" className="btn btn-xs" onClick={() => { loadEntries(); loadRefs(); }}>Retry</button>} onDismiss={() => setFetchError(null)}>{fetchError}</Alert>}
@@ -1235,34 +1302,62 @@ export function StockEntriesView() {
             </div>
             <div className="filter-select-group">
               <div className="chip-filter-label">Type</div>
-              <label className="filter-select-wrap">
-                <select value={typeFilter} onChange={event => setTypeFilter(event.target.value)} aria-label="Filter stock entries by type">
-                  <option value="all">All types</option>
-                  <option value="ISSUE">Transfer / Allocation</option>
-                  <option value="RECEIPT">Receipt</option>
-                  <option value="RETURN">Return</option>
-                </select>
-              </label>
+              <div className="filter-select-wrap">
+                <ThemedSelect
+                  value={typeFilter}
+                  onChange={setTypeFilter}
+                  size="compact"
+                  ariaLabel="Filter stock entries by type"
+                  options={[
+                    { value: "all", label: "All types" },
+                    { value: "ISSUE", label: "Transfer / Allocation" },
+                    { value: "RECEIPT", label: "Receipt" },
+                    { value: "RETURN", label: "Return" },
+                  ]}
+                />
+              </div>
             </div>
             <div className="filter-select-group">
               <div className="chip-filter-label">Status</div>
-              <label className="filter-select-wrap">
-                <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)} aria-label="Filter stock entries by status">
-                  <option value="all">All statuses</option>
-                  <option value="DRAFT">Draft</option>
-                  <option value="PENDING_ACK">Pending Ack</option>
-                  <option value="COMPLETED">Completed</option>
-                  <option value="CANCELLED">Cancelled</option>
-                </select>
-              </label>
+              <div className="filter-select-wrap">
+                <ThemedSelect
+                  value={statusFilter}
+                  onChange={setStatusFilter}
+                  size="compact"
+                  ariaLabel="Filter stock entries by status"
+                  options={[
+                    { value: "all", label: "All statuses" },
+                    { value: "DRAFT", label: "Draft" },
+                    { value: "PENDING_ACK", label: "Pending Ack" },
+                    { value: "COMPLETED", label: "Completed" },
+                    { value: "CANCELLED", label: "Cancelled" },
+                  ]}
+                />
+              </div>
             </div>
+            {scopeStores.length > 0 ? (
+              <div className="filter-select-group">
+                <div className="chip-filter-label">Store</div>
+                <div className="filter-select-wrap">
+                  <ThemedSelect
+                    value={storeScope}
+                    onChange={setStoreScope}
+                    size="compact"
+                    ariaLabel="Filter stock entries by assigned store"
+                    options={[
+                      { value: "all", label: "All stores" },
+                      ...scopeStores.map(store => ({
+                        value: String(store.id),
+                        label: store.name,
+                        meta: [store.code, store.is_central ? "Central Store" : null].filter(Boolean).join(" - "),
+                      })),
+                    ]}
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
           <div className="filter-bar-right">
-            <div className="chip-filter">
-              <span className="chip">Draft {stats.draft}</span>
-              <span className="chip">Pending {stats.pending}</span>
-              <span className="chip">Done {stats.completed}</span>
-            </div>
             <DensityToggle density={density} setDensity={setDensity} />
             <div className="seg" title="View mode">
               <button type="button" className={"seg-btn icon-only" + (mode === "table" ? " active" : "")} onClick={() => setMode("table")} title="Table"><Ic d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" size={14} /></button>
@@ -1283,9 +1378,9 @@ export function StockEntriesView() {
             {isLoading ? <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", borderTop: "1px solid var(--hairline)" }}>Loading stock entries…</div> : (
               <div className="h-scroll">
                 <table className="data-table">
-                  <thead><tr><th>Entry</th><th>Type</th><th>Source</th><th>Destination</th><th>Items</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
+                  <thead><tr><th>Entry</th><th>Type</th><th>Source</th><th>Destination</th><th>Items</th><th>Status</th><th>Created</th></tr></thead>
                   <tbody>
-                    {filteredEntries.length === 0 ? <tr><td colSpan={8}><div style={{ padding: "32px 12px", textAlign: "center", color: "var(--text-2)", fontSize: 13 }}>No stock entries match the current filters.</div></td></tr> : filteredEntries.map(entry => (
+                    {filteredEntries.length === 0 ? <tr><td colSpan={7}><div style={{ padding: "32px 12px", textAlign: "center", color: "var(--text-2)", fontSize: 13 }}>No stock entries match the current filters.</div></td></tr> : pagedEntries.map(entry => (
                       <tr key={entry.id} onClick={() => router.push(`/stock-entries/${entry.id}`)} style={{ cursor: "pointer" }}>
                         <td><div className="user-cell"><div><div className="user-name">{entry.entry_number}</div><div className="user-username mono">{formatDate(entry.entry_date)}</div></div></div></td>
                         <td><span className="chip">{formatLabel(entry.entry_type)}</span></td>
@@ -1299,18 +1394,23 @@ export function StockEntriesView() {
                           </div>
                         </td>
                         <td><div className="login-cell"><div>{relTime(entry.created_at)}</div><div className="login-cell-sub mono">{entry.created_by_name ?? "Unknown"}</div></div></td>
-                        <td className="col-actions"><RowActions entry={entry} canEdit={canManage} canDelete={canDelete} pageBusy={pageBusy} deleteBusy={deleteBusyId === entry.id} ackBusy={ackBusyId === entry.id} onEdit={() => openEditModal(entry)} onDelete={() => handleDelete(entry)} onAcknowledge={() => handleAcknowledge(entry)} /></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
-            <div className="table-card-foot"><div className="eyebrow">Showing {filteredEntries.length} rows</div><div className="pager"><span className="mono pager-current">Scoped stock entries</span></div></div>
+            <ListPagination
+              summary={filteredEntries.length === 0 ? "Showing 0 stock entries" : `Showing ${pageStart}-${pageEnd} of ${filteredEntries.length} stock entries`}
+              page={page}
+              totalPages={totalPages}
+              onPrev={() => setPage(current => Math.max(1, current - 1))}
+              onNext={() => setPage(current => Math.min(totalPages, current + 1))}
+            />
           </div>
         ) : filteredEntries.length > 0 ? (
           <div className="users-grid">
-            {filteredEntries.map(entry => (
+            {pagedEntries.map(entry => (
               <div className="user-card" key={entry.id} onClick={() => router.push(`/stock-entries/${entry.id}`)} style={{ cursor: "pointer" }}>
                 <div className="user-card-head">
                   <div className="group-cell" style={{ justifyContent: "flex-end" }}>
@@ -1327,6 +1427,16 @@ export function StockEntriesView() {
             ))}
           </div>
         ) : <div className="table-card"><div style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>No stock entries match the current filters.</div></div>}
+        {mode === "grid" && filteredEntries.length > 0 ? (
+          <ListPagination
+            summary={`Showing ${pageStart}-${pageEnd} of ${filteredEntries.length} stock entries`}
+            page={page}
+            totalPages={totalPages}
+            onPrev={() => setPage(current => Math.max(1, current - 1))}
+            onNext={() => setPage(current => Math.min(totalPages, current + 1))}
+            standalone
+          />
+        ) : null}
       </div>
     </div>
   );

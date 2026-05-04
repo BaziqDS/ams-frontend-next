@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { apiFetch, type Page } from "@/lib/api";
+import { ThemedSelect } from "@/components/ThemedSelect";
 import { LOCATION_TYPE_LABELS, locationTypeLabel, type LocationRecord } from "@/lib/userUiShared";
 
 const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
@@ -301,20 +302,31 @@ export function LocationModal({ open, mode, location, createContext = "default",
                 <div className="form-grid cols-2">
                   {showParentSelector && (
                     <Field label="Parent location" hint="Leave empty for a root location.">
-                      <select value={form.parent_location} onChange={e => set({ parent_location: e.target.value })} disabled={parentLoading || Boolean(parentError)}>
-                        <option value="">No parent</option>
-                        {parentLocations.map(parent => (
-                          <option key={parent.id} value={parent.id}>{parent.name} · {parent.code} · {locationTypeLabel(parent.location_type)}</option>
-                        ))}
-                      </select>
+                      <ThemedSelect
+                        value={form.parent_location}
+                        onChange={value => set({ parent_location: value })}
+                        placeholder="No parent"
+                        ariaLabel="Parent location"
+                        disabled={parentLoading || Boolean(parentError)}
+                        options={parentLocations.map(parent => ({
+                          value: String(parent.id),
+                          label: parent.name,
+                          meta: `${parent.code} · ${locationTypeLabel(parent.location_type)}`,
+                        }))}
+                      />
                     </Field>
                   )}
                   <Field label="Location type" required error={errors.location_type} span={isClassificationOnly ? 2 : 1}>
-                    <select value={form.location_type} onChange={e => set({ location_type: e.target.value })} onBlur={() => setTouched(prev => new Set(prev).add("location_type"))}>
-                      {Object.entries(LOCATION_TYPE_LABELS).map(([value, label]) => (
-                        <option key={value} value={value}>{label}</option>
-                      ))}
-                    </select>
+                    <ThemedSelect
+                      value={form.location_type}
+                      onChange={value => {
+                        set({ location_type: value });
+                        setTouched(prev => new Set(prev).add("location_type"));
+                      }}
+                      placeholder="Select location type"
+                      ariaLabel="Location type"
+                      options={Object.entries(LOCATION_TYPE_LABELS).map(([value, label]) => ({ value, label }))}
+                    />
                   </Field>
                 </div>
               </Section>

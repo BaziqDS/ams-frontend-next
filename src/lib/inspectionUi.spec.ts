@@ -2,9 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   canResumeInspectionEditor,
   getCreateInspectionSubmitLabel,
+  getInspectionActiveRevisionRequest,
   getInspectionAuditEntries,
+  getInspectionItemSecondaryLine,
+  getInspectionPreviousStage,
   getInspectionRegisterCoverage,
+  getInspectionRegisterDetailRows,
   getInspectionRegisterRefs,
+  getInspectionReturnActionLabel,
+  getInspectionStageDisplayLabel,
   getInspectionStageEditorLabel,
   getInspectionValueTotals,
   getInspectionWorkflowSteps,
@@ -162,6 +168,70 @@ describe("inspection UI helpers", () => {
     expect(getInspectionStageEditorLabel("FINANCE_REVIEW")).toBe("Review finance");
   });
 
+  it("maps workflow returns to the correct previous stage for departmental and root inspections", () => {
+    expect(getInspectionPreviousStage({ stage: "FINANCE_REVIEW", department_hierarchy_level: 2 })).toBe("CENTRAL_REGISTER");
+    expect(getInspectionPreviousStage({ stage: "CENTRAL_REGISTER", department_hierarchy_level: 2 })).toBe("STOCK_DETAILS");
+    expect(getInspectionPreviousStage({ stage: "CENTRAL_REGISTER", department_hierarchy_level: 0 })).toBe("DRAFT");
+    expect(getInspectionPreviousStage({ stage: "STOCK_DETAILS", department_hierarchy_level: 2 })).toBe("DRAFT");
+    expect(getInspectionPreviousStage({ stage: "DRAFT", department_hierarchy_level: 2 })).toBeNull();
+  });
+
+  it("builds return button labels from the previous workflow step", () => {
+    expect(getInspectionReturnActionLabel({ stage: "FINANCE_REVIEW", department_hierarchy_level: 2 })).toBe("Return to Central Register");
+    expect(getInspectionReturnActionLabel({ stage: "CENTRAL_REGISTER", department_hierarchy_level: 0 })).toBe("Return to Draft");
+  });
+
+  it("exposes active revision requests only while the certificate sits on the returned stage", () => {
+    expect(
+      getInspectionActiveRevisionRequest({
+        stage: "STOCK_DETAILS",
+        department_hierarchy_level: 2,
+        revision_requested_reason: "Please fix the department page reference.",
+        revision_requested_at: "2026-04-27T09:15:00Z",
+        revision_requested_by_name: "Ali Raza",
+        revision_requested_by: 17,
+        revision_requested_from_stage: "CENTRAL_REGISTER",
+      } as any),
+    ).toEqual({
+      actor: "Ali Raza",
+      reason: "Please fix the department page reference.",
+      requestedAt: "2026-04-27T09:15:00Z",
+      fromStage: "CENTRAL_REGISTER",
+      toStage: "STOCK_DETAILS",
+    });
+
+    expect(
+      getInspectionActiveRevisionRequest({
+        stage: "CENTRAL_REGISTER",
+        department_hierarchy_level: 2,
+        revision_requested_reason: "Please fix the department page reference.",
+        revision_requested_at: "2026-04-27T09:15:00Z",
+        revision_requested_by_name: "Ali Raza",
+        revision_requested_by: 17,
+        revision_requested_from_stage: "CENTRAL_REGISTER",
+      } as any),
+    ).toBeNull();
+  });
+
+  it("hides revision banners when no return reason is recorded", () => {
+    expect(
+      getInspectionActiveRevisionRequest({
+        stage: "DRAFT",
+        department_hierarchy_level: 0,
+        revision_requested_reason: null,
+        revision_requested_at: null,
+        revision_requested_by_name: null,
+        revision_requested_by: null,
+        revision_requested_from_stage: null,
+      } as any),
+    ).toBeNull();
+  });
+
+  it("shows cancelled when a closed inspection was cancelled by finance", () => {
+    expect(getInspectionStageDisplayLabel({ stage: "REJECTED", status: "CANCELLED" })).toBe("Cancelled");
+    expect(getInspectionStageDisplayLabel({ stage: "REJECTED", status: "REJECTED" })).toBe("Rejected");
+  });
+
   it("allows finance review to reopen through the shared resume helper", () => {
     expect(
       canResumeInspectionEditor(
@@ -244,6 +314,72 @@ describe("inspection UI helpers", () => {
     ]);
   });
 
+  it("omits empty inspection secondary text instead of showing placeholder copy", () => {
+    expect(getInspectionItemSecondaryLine({ item_specifications: "  Dell i7  ", item_code: "ITEM-01" })).toBe("Dell i7");
+    expect(getInspectionItemSecondaryLine({ item_specifications: "", item_code: "ITEM-01" })).toBe("ITEM-01");
+    expect(getInspectionItemSecondaryLine({ item_specifications: " ", item_code: "   " })).toBeNull();
+  });
+
+  it("builds register detail rows with departmental dates and central references", () => {
+    expect(
+      getInspectionRegisterDetailRows({
+        items: [
+          {
+            item_description: "Dell Latitude",
+            item_name: "Dell Latitude",
+            accepted_quantity: 2,
+            stock_register_name: "DPT-RAW-1",
+            stock_register_no: "",
+            stock_register_page_no: "12",
+            stock_entry_date: "2026-05-03",
+            central_register_name: "CENT-RAW-1",
+            central_register_no: "",
+            central_register_page_no: "8",
+          },
+          {
+            item_description: "Desk Chair",
+            item_name: "Desk Chair",
+            accepted_quantity: 0,
+            stock_register_name: "DPT-RAW-2",
+            stock_register_no: "",
+            stock_register_page_no: "4",
+            stock_entry_date: "2026-05-03",
+            central_register_name: "CENT-RAW-2",
+            central_register_no: "",
+            central_register_page_no: "9",
+          },
+          {
+            item_description: "Optical Mouse",
+            item_name: "Optical Mouse",
+            accepted_quantity: 1,
+            stock_register_name: "",
+            stock_register_no: "DPT-RAW-3",
+            stock_register_page_no: "",
+            stock_entry_date: "",
+            central_register_name: "",
+            central_register_no: "CENT-RAW-3",
+            central_register_page_no: "11",
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        itemLabel: "Dell Latitude",
+        acceptedQuantity: 2,
+        stockRegisterRef: "DPT-RAW-1 / p.12",
+        stockEntryDate: "2026-05-03",
+        centralRegisterRef: "CENT-RAW-1 / p.8",
+      },
+      {
+        itemLabel: "Optical Mouse",
+        acceptedQuantity: 1,
+        stockRegisterRef: "DPT-RAW-3",
+        stockEntryDate: null,
+        centralRegisterRef: "CENT-RAW-3 / p.11",
+      },
+    ]);
+  });
+
   it("computes tendered accepted and rejected value totals from mixed price types", () => {
     expect(
       getInspectionValueTotals({
@@ -318,6 +454,7 @@ describe("inspection UI helpers", () => {
   it("collapses created and initiated into a single audit stage entry", () => {
     const entries = getInspectionAuditEntries({
       stage: "CENTRAL_REGISTER",
+      status: "IN_PROGRESS",
       department_hierarchy_level: 2,
       created_at: "2026-04-26T10:28:00Z",
       initiated_at: "2026-04-26T10:28:00Z",
@@ -355,6 +492,7 @@ describe("inspection UI helpers", () => {
   it("uses stage usernames in audit entries instead of numeric ids when available", () => {
     const entries = getInspectionAuditEntries({
       stage: "REJECTED",
+      status: "REJECTED",
       department_hierarchy_level: 2,
       created_at: "2026-04-26T10:28:00Z",
       initiated_at: "2026-04-26T10:28:00Z",

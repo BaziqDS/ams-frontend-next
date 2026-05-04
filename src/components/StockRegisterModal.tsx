@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { apiFetch } from "@/lib/api";
+import { ThemedSelect } from "@/components/ThemedSelect";
 import type { LocationRecord, StockRegisterRecord } from "@/lib/userUiShared";
 
 const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
@@ -122,7 +123,7 @@ export function StockRegisterModal({ open, mode, register, stores, storesLoading
   const statusMessage = useMemo(() => {
     if (storesLoading) return "Loading stores before save becomes available.";
     if (storesError) return storesError;
-    if (stores.length === 0) return "No stores are available in your scope.";
+    if (stores.length === 0) return "No stores are available in your stock-register creation scope.";
     return null;
   }, [storesLoading, storesError, stores.length]);
 
@@ -196,23 +197,37 @@ export function StockRegisterModal({ open, mode, register, stores, storesLoading
                     <input value={form.register_number} onChange={(e) => set({ register_number: e.target.value })} onBlur={() => setTouched((prev) => new Set(prev).add("register_number"))} placeholder="Enter register number" />
                   </Field>
                   <Field label="Register type" required error={errors.register_type}>
-                    <select value={form.register_type} onChange={(e) => set({ register_type: e.target.value as "CSR" | "DSR" | "" })} onBlur={() => setTouched((prev) => new Set(prev).add("register_type"))}>
-                      <option value="CSR">Consumable Stock Register</option>
-                      <option value="DSR">Dead Stock Register</option>
-                    </select>
+                    <ThemedSelect
+                      value={form.register_type}
+                      onChange={(value) => {
+                        set({ register_type: value as "CSR" | "DSR" | "" });
+                        setTouched((prev) => new Set(prev).add("register_type"));
+                      }}
+                      placeholder="Select register type"
+                      ariaLabel="Register type"
+                      options={[
+                        { value: "CSR", label: "Consumable Stock Register" },
+                        { value: "DSR", label: "Dead Stock Register" },
+                      ]}
+                    />
                   </Field>
                 </div>
               </Section>
 
-              <Section n={2} title="Store Assignment" sub="Registers must belong to a store inside your accessible location scope.">
+              <Section n={2} title="Store Assignment" sub="Registers must belong to a store inside your current creation scope.">
                 <div className="form-grid cols-2">
                   <Field label="Store" required error={errors.store} span={2}>
-                    <select value={form.store} onChange={(e) => set({ store: e.target.value })} onBlur={() => setTouched((prev) => new Set(prev).add("store"))} disabled={storesLoading || !!storesError || stores.length === 0}>
-                      <option value="">Select store</option>
-                      {stores.map((store) => (
-                        <option key={store.id} value={String(store.id)}>{store.name}</option>
-                      ))}
-                    </select>
+                    <ThemedSelect
+                      value={form.store}
+                      onChange={(value) => {
+                        set({ store: value });
+                        setTouched((prev) => new Set(prev).add("store"));
+                      }}
+                      placeholder="Select store"
+                      ariaLabel="Store"
+                      disabled={storesLoading || !!storesError || stores.length === 0}
+                      options={stores.map((store) => ({ value: String(store.id), label: store.name }))}
+                    />
                   </Field>
                   <Field
                     label="Status"

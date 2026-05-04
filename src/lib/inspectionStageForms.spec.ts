@@ -3,6 +3,8 @@ import {
   buildStageItemsPayload,
   filterStockRegistersForInspectionStore,
   getAutoSelectedInspectionLocation,
+  getDefaultFinanceCheckDate,
+  getInspectionCentralStoreRegisters,
   getInspectionItemFinancials,
   getInspectionMainStoreRegisters,
   getInspectionQuantityError,
@@ -218,7 +220,7 @@ describe("inspection stage form helpers", () => {
     expect(filterStockRegistersForInspectionStore(registers, 10)).toEqual([registers[0]]);
   });
 
-  it("uses the inspection location main store for central register options", () => {
+  it("uses the inspection location main store for stock-detail register options", () => {
     const registers = [
       { id: 1, register_number: "CSR-CENTRAL", store: 10, store_name: "Central Store" },
       { id: 2, register_number: "CSR-CSIT", store: 11, store_name: "CSIT Main Store" },
@@ -227,6 +229,30 @@ describe("inspection stage form helpers", () => {
 
     expect(getInspectionMainStoreRegisters(registers, { main_store_id: 10 })).toEqual([registers[0]]);
     expect(getInspectionMainStoreRegisters(registers, { main_store_id: 11 })).toEqual([registers[1]]);
+  });
+
+  it("uses the root-level central store for central register options", () => {
+    const registers = [
+      { id: 1, register_number: "CSR-CENTRAL", store: 10, store_name: "Central Store" },
+      { id: 2, register_number: "CSR-CSIT", store: 11, store_name: "CSIT Main Store" },
+      { id: 3, register_number: "CSR-EE", store: 12, store_name: "EE Main Store" },
+    ] as any[];
+
+    expect(
+      getInspectionCentralStoreRegisters(registers, {
+        main_store_id: 11,
+        root_main_store_id: 10,
+        hierarchy_level: 1,
+      }),
+    ).toEqual([registers[0]]);
+
+    expect(
+      getInspectionCentralStoreRegisters(registers, {
+        main_store_id: 10,
+        root_main_store_id: 10,
+        hierarchy_level: 0,
+      }),
+    ).toEqual([registers[0]]);
   });
 
   it("keeps all stock registers when the location main store is unknown", () => {
@@ -249,7 +275,7 @@ describe("inspection stage form helpers", () => {
     expect(getScopedInspectionLocations(locations, [2, 3], false)).toEqual([locations[1]]);
   });
 
-  it("keeps all standalone locations for root users", () => {
+  it("keeps all standalone locations only for unrestricted users", () => {
     const locations = [
       { id: 1, name: "NED University", is_standalone: true, hierarchy_level: 0 },
       { id: 2, name: "Electrical Engineering", is_standalone: true, hierarchy_level: 1 },
@@ -259,8 +285,24 @@ describe("inspection stage form helpers", () => {
     expect(getScopedInspectionLocations(locations, [1], true)).toEqual([locations[0], locations[1]]);
   });
 
+  it("treats a directly assigned root standalone as a single create option for regular users", () => {
+    const locations = [
+      { id: 1, name: "NED University", is_standalone: true, hierarchy_level: 0 },
+      { id: 2, name: "Electrical Engineering", is_standalone: true, hierarchy_level: 1, hierarchy_path: "1/2" },
+      { id: 3, name: "Electrical Lab", is_standalone: false, hierarchy_level: 2, hierarchy_path: "1/2/3" },
+    ];
+
+    expect(getScopedInspectionLocations(locations, [1], false)).toEqual([locations[0]]);
+  });
+
   it("auto-selects only when exactly one scoped inspection location is available", () => {
     expect(getAutoSelectedInspectionLocation([{ id: 2 }])).toBe(2);
     expect(getAutoSelectedInspectionLocation([{ id: 2 }, { id: 4 }])).toBe("");
+  });
+
+  it("defaults a missing finance check date to today while preserving explicit values", () => {
+    expect(getDefaultFinanceCheckDate("2026-05-03", new Date("2026-05-04T09:00:00Z"))).toBe("2026-05-03");
+    expect(getDefaultFinanceCheckDate("", new Date("2026-05-04T09:00:00Z"))).toBe("2026-05-04");
+    expect(getDefaultFinanceCheckDate(null, new Date("2026-12-31T09:00:00Z"))).toBe("2026-12-31");
   });
 });

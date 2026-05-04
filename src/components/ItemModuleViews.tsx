@@ -3,10 +3,14 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { ListPagination } from "@/components/ListPagination";
+import { MultiSelectFilter, type MultiSelectFilterOption } from "@/components/MultiSelectFilter";
+import { ThemedSelect } from "@/components/ThemedSelect";
 import { Topbar } from "@/components/Topbar";
 import type { CategoryRecord } from "@/components/CategoryModal";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
 import { apiFetch, type Page } from "@/lib/api";
+import { useClientPagination } from "@/lib/listPagination";
 import {
   buildItemsWorkspaceHref,
   normalizeItemsWorkspaceState,
@@ -22,6 +26,7 @@ import {
   formatItemDate,
   formatItemLabel,
   formatQuantity,
+  formatTrackingTypeLabel,
   isLowStock,
   itemStatusTone,
   toNumber,
@@ -29,10 +34,13 @@ import {
   type ItemDistributionDetailRow,
   type ItemDistributionStore,
   type ItemDistributionUnit,
+  type ItemScopeOption,
+  type ItemScopeOptionsResponse,
   type DepreciationSummary,
   type ItemRecord,
   type ItemStatusTone,
 } from "@/lib/itemUi";
+import { relTime } from "@/lib/userUiShared";
 import workspaceStyles from "./ItemWorkspace.module.css";
 
 const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
@@ -42,6 +50,91 @@ const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
 );
 
 type WorkspaceFilterKey = "all" | "individual" | "perishable" | "low" | "out";
+type ItemsAlertFocus = "out-of-stock" | "low-stock" | "expired-batches" | "expiring-batches";
+
+function parseItemsListSearch(searchParams: URLSearchParams): { filterKey: WorkspaceFilterKey; alertFocus: ItemsAlertFocus | null } {
+  const focusParam = searchParams.get("focus");
+  const alertFocus = focusParam === "out-of-stock"
+    || focusParam === "low-stock"
+    || focusParam === "expired-batches"
+    || focusParam === "expiring-batches"
+    ? focusParam
+    : null;
+
+  const stockParam = searchParams.get("stock");
+  if (stockParam === "low" || stockParam === "out") {
+    return { filterKey: stockParam, alertFocus };
+  }
+
+  const trackingParam = searchParams.get("tracking");
+  if (trackingParam === "individual") {
+    return { filterKey: "individual", alertFocus };
+  }
+  if (trackingParam === "perishable" || trackingParam === "batches" || trackingParam === "lots") {
+    return { filterKey: "perishable", alertFocus };
+  }
+
+  if (alertFocus === "out-of-stock") {
+    return { filterKey: "out", alertFocus };
+  }
+  if (alertFocus === "low-stock") {
+    return { filterKey: "low", alertFocus };
+  }
+  if (alertFocus === "expired-batches" || alertFocus === "expiring-batches") {
+    return { filterKey: "perishable", alertFocus };
+  }
+
+  return { filterKey: "all", alertFocus };
+}
+
+function getItemsAlertFocusConfig(alertFocus: ItemsAlertFocus | null) {
+  switch (alertFocus) {
+    case "out-of-stock":
+      return {
+        tone: "critical" as const,
+        title: "Out-of-stock alert focus",
+        message: "Showing items that are currently at zero stock in your visible scope.",
+        openLabel: "Open",
+        openTitle: "Open item workspace",
+        preferBatchesTab: false,
+      };
+    case "low-stock":
+      return {
+        tone: "warning" as const,
+        title: "Low-stock alert focus",
+        message: "Showing items that are at or below their configured low-stock threshold in your visible scope.",
+        openLabel: "Open",
+        openTitle: "Open item workspace",
+        preferBatchesTab: false,
+      };
+    case "expired-batches":
+      return {
+        tone: "critical" as const,
+        title: "Expired batch alert focus",
+        message: "Showing batch / lot tracked items. Use Open batches to jump straight into the item batches view and review the expired lots in your visible stores.",
+        openLabel: "Open batches",
+        openTitle: "Open item batches",
+        preferBatchesTab: true,
+      };
+    case "expiring-batches":
+      return {
+        tone: "warning" as const,
+        title: "Expiring batch alert focus",
+        message: "Showing batch / lot tracked items. Use Open batches to jump straight into the item batches view and review lots that expire soon.",
+        openLabel: "Open batches",
+        openTitle: "Open item batches",
+        preferBatchesTab: true,
+      };
+    default:
+      return null;
+  }
+}
+
+const ITEMS_PAGE_SIZE = 15;
+const ITEM_DISTRIBUTION_PAGE_SIZE = 12;
+const ITEM_DETAIL_ROWS_PAGE_SIZE = 12;
+const ITEM_RELATED_RECORDS_PAGE_SIZE = 12;
+const EMPTY_SCOPE_TOKENS: string[] = [];
 
 type WorkspaceLocationPanelState = {
   key: string;
@@ -92,6 +185,24 @@ function workspaceTrackingTone(trackingType: string | null | undefined) {
 
 function workspaceLastUpdate(item: Pick<ItemRecord, "updated_at" | "created_at">) {
   return formatItemDate(item.updated_at ?? item.created_at, "Unknown");
+}
+
+function ItemTimestampCell({ value, fallback }: { value: string | null | undefined; fallback: string }) {
+  if (!value) {
+    return <div className="login-cell"><div>{fallback}</div></div>;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return <div className="login-cell"><div>{fallback}</div></div>;
+  }
+
+  return (
+    <div className="login-cell" title={formatItemDate(value, fallback)}>
+      <div>{relTime(value)}</div>
+      <div className="login-cell-sub mono">{date.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</div>
+    </div>
+  );
 }
 
 function buildUnitPanelState(item: ItemRecord, unit: ItemDistributionUnit): WorkspaceLocationPanelState {
@@ -230,6 +341,19 @@ function normalizeList<T>(data: Page<T> | T[]) {
   return Array.isArray(data) ? data : data.results;
 }
 
+function buildScopeQuery(scopeTokens: string[]) {
+  if (!scopeTokens.length) return "";
+  return scopeTokens.map(token => `scope=${encodeURIComponent(token)}`).join("&");
+}
+
+function scopeFilterOptions(options: ItemScopeOption[]): MultiSelectFilterOption[] {
+  return options.map(option => ({
+    id: option.id,
+    label: option.label,
+    meta: option.kind === "store" ? "Store" : option.kind === "all" ? "Default" : "Standalone",
+  }));
+}
+
 function getMediaHref(file: string | null | undefined) {
   if (!file) return null;
   return file.startsWith("http") ? file : `${API_BASE}${file}`;
@@ -347,7 +471,7 @@ function itemForm(item: ItemRecord | null): ItemFormState {
   };
 }
 
-function itemPayload(form: ItemFormState) {
+function itemPayload(form: ItemFormState, options?: { provisionalInspectionId?: number | null }) {
   return {
     name: form.name.trim(),
     code: form.code.trim().toUpperCase(),
@@ -357,6 +481,12 @@ function itemPayload(form: ItemFormState) {
     description: form.description.trim() || null,
     specifications: form.specifications.trim() || null,
     is_active: form.is_active,
+    ...(options?.provisionalInspectionId
+      ? {
+          is_provisional: true,
+          provisional_inspection: options.provisionalInspectionId,
+        }
+      : {}),
   };
 }
 
@@ -391,6 +521,7 @@ export function ItemModal({
   mode,
   item,
   categories,
+  provisionalInspectionId = null,
   onClose,
   onSave,
 }: {
@@ -398,6 +529,7 @@ export function ItemModal({
   mode: "create" | "edit";
   item: ItemRecord | null;
   categories: CategoryRecord[];
+  provisionalInspectionId?: number | null;
   onClose: () => void;
   onSave: (savedItem: ItemRecord) => void | Promise<void>;
 }) {
@@ -434,6 +566,9 @@ export function ItemModal({
   };
   const issueCount = Object.values(errors).filter(Boolean).length;
   const canSave = !submitting && categories.length > 0;
+  const categorySetupMessage = categories.length === 0
+    ? "Create at least one active subcategory before adding an item here."
+    : null;
   const set = (patch: Partial<ItemFormState>) => setForm(prev => ({ ...prev, ...patch }));
 
   const submit = async () => {
@@ -455,7 +590,7 @@ export function ItemModal({
     setSubmitError(null);
 
     try {
-      const body = JSON.stringify(itemPayload(form));
+      const body = JSON.stringify(itemPayload(form, { provisionalInspectionId }));
       let savedItem: ItemRecord;
       if (isEdit && item) {
         savedItem = await apiFetch<ItemRecord>(`/api/inventory/items/${item.id}/`, { method: "PATCH", body });
@@ -493,6 +628,11 @@ export function ItemModal({
                 {submitError}
               </div>
             )}
+            {categorySetupMessage ? (
+              <div style={{ padding: "10px 14px", background: "var(--warning-weak)", border: "1px solid color-mix(in oklch, var(--warn) 30%, transparent)", borderRadius: "var(--radius)", color: "var(--text-1)", fontSize: 13 }}>
+                {categorySetupMessage}
+              </div>
+            ) : null}
 
             <Section n={1} title="Identity" sub="Core item details used throughout inventory records.">
               <div className="form-grid cols-2">
@@ -503,14 +643,21 @@ export function ItemModal({
                   <input value={form.code} onChange={e => set({ code: e.target.value.toUpperCase() })} placeholder="Enter item code" />
                 </Field>
                 <Field label="Subcategory" required error={errors.category} span={2} hint={categories.length === 0 ? "You need at least one subcategory before creating items." : "Tracking type is inherited from the selected subcategory."}>
-                  <select value={form.category} onChange={e => set({ category: e.target.value })} onBlur={() => setTouched(prev => new Set(prev).add("category"))} disabled={categories.length === 0}>
-                    <option value="">Select subcategory</option>
-                    {categories.map(category => (
-                      <option key={category.id} value={category.id}>
-                        {category.name} ({category.code}) - {formatItemLabel(category.resolved_tracking_type ?? category.tracking_type)}
-                      </option>
-                    ))}
-                  </select>
+                  <ThemedSelect
+                    value={form.category}
+                    onChange={value => {
+                      set({ category: value });
+                      setTouched(prev => new Set(prev).add("category"));
+                    }}
+                    placeholder="Select subcategory"
+                    ariaLabel="Subcategory"
+                    disabled={categories.length === 0}
+                    options={categories.map(category => ({
+                      value: String(category.id),
+                      label: category.name,
+                      meta: `${category.code} - ${formatItemLabel(category.resolved_tracking_type ?? category.tracking_type)}`,
+                    }))}
+                  />
                 </Field>
                 <Field label="Accounting unit" required error={errors.acct_unit}>
                   <input value={form.acct_unit} onChange={e => set({ acct_unit: e.target.value })} onBlur={() => setTouched(prev => new Set(prev).add("acct_unit"))} placeholder="pcs, units, meters" />
@@ -566,6 +713,9 @@ export function ItemModal({
 
 function ItemActions({
   item,
+  openHref,
+  openLabel,
+  openTitle,
   canEdit,
   canDelete,
   pageBusy,
@@ -574,6 +724,9 @@ function ItemActions({
   onDelete,
 }: {
   item: ItemRecord;
+  openHref: string;
+  openLabel: string;
+  openTitle: string;
   canEdit: boolean;
   canDelete: boolean;
   pageBusy: boolean;
@@ -583,9 +736,9 @@ function ItemActions({
 }) {
   return (
     <div className="row-actions">
-      <Link className="btn btn-xs btn-ghost row-action" href={`/items/${item.id}`} onClick={event => event.stopPropagation()} title="Open distribution">
+      <Link className="btn btn-xs btn-ghost row-action" href={openHref} onClick={event => event.stopPropagation()} title={openTitle}>
         <Ic d="M9 18l6-6-6-6" size={13} />
-        <span className="ra-label">Open</span>
+        <span className="ra-label">{openLabel}</span>
       </Link>
       {canEdit && (
         <button type="button" className="btn btn-xs btn-ghost row-action" onClick={event => { event.stopPropagation(); onEdit(); }} title="Edit item" disabled={pageBusy}>
@@ -645,7 +798,7 @@ function ItemCard({
       <div className="user-card-section">
         <div className="eyebrow">Tracking</div>
         <div className="group-cell">
-          <span className="chip">{formatItemLabel(String(item.tracking_type ?? ""))}</span>
+          <span className="chip">{formatTrackingTypeLabel(item.tracking_type, { compact: true })}</span>
         </div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 12 }}>
@@ -698,11 +851,15 @@ export function ItemListView() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [filterKey, setFilterKey] = useState<WorkspaceFilterKey>("all");
+  const [filterKey, setFilterKey] = useState<WorkspaceFilterKey>(() => parseItemsListSearch(new URLSearchParams(searchParams.toString())).filterKey);
+  const [alertFocus, setAlertFocus] = useState<ItemsAlertFocus | null>(() => parseItemsListSearch(new URLSearchParams(searchParams.toString())).alertFocus);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ItemRecord | null>(null);
   const [busyAction, setBusyAction] = useState<{ kind: "delete"; itemId: number } | null>(null);
   const [density, setDensity] = useState<Density>("balanced");
+  const [scopeOptions, setScopeOptions] = useState<ItemScopeOption[]>([]);
+  const [defaultScopeTokens, setDefaultScopeTokens] = useState<string[]>([]);
+  const [selectedScopeTokens, setSelectedScopeTokens] = useState<string[]>([]);
   const legacyWorkspaceState = useMemo(
     () => parseItemsWorkspaceSearch(new URLSearchParams(searchParams.toString())),
     [searchParams],
@@ -717,8 +874,17 @@ export function ItemListView() {
     if (showLoading) setIsLoading(true);
     setFetchError(null);
     try {
+      const scopeQuery = buildScopeQuery(selectedScopeTokens);
       const [itemsData, categoriesData] = await Promise.all([
-        apiFetch<Page<ItemRecord> | ItemRecord[]>("/api/inventory/items/?page_size=500"),
+        apiFetch<ItemScopeOptionsResponse>("/api/inventory/distribution/scope-options/")
+          .then(data => {
+            setScopeOptions(data.options);
+            setDefaultScopeTokens(data.default);
+            if (selectedScopeTokens.length === 0 && data.default.length > 0) {
+              setSelectedScopeTokens(data.default);
+            }
+            return apiFetch<Page<ItemRecord> | ItemRecord[]>(`/api/inventory/items/?page_size=500${scopeQuery ? `&${scopeQuery}` : ""}`);
+          }),
         canManageItems
           ? apiFetch<Page<CategoryRecord> | CategoryRecord[]>("/api/inventory/categories/?page_size=500")
           : Promise.resolve([] as CategoryRecord[]),
@@ -732,7 +898,7 @@ export function ItemListView() {
     } finally {
       if (showLoading) setIsLoading(false);
     }
-  }, [canManageItems]);
+  }, [canManageItems, selectedScopeTokens]);
 
   useEffect(() => {
     if (capsLoading) return;
@@ -755,6 +921,31 @@ export function ItemListView() {
       );
     }
   }, [legacyWorkspaceState.itemId, legacyWorkspaceState.locationId, legacyWorkspaceState.tab, router]);
+
+  useEffect(() => {
+    const nextSearchState = parseItemsListSearch(new URLSearchParams(searchParams.toString()));
+    setFilterKey(nextSearchState.filterKey);
+    setAlertFocus(nextSearchState.alertFocus);
+  }, [searchParams]);
+
+  const alertFocusConfig = useMemo(() => getItemsAlertFocusConfig(alertFocus), [alertFocus]);
+
+  const getItemOpenHref = useCallback((item: ItemRecord) => {
+    if (alertFocusConfig?.preferBatchesTab && canShowBatches(item.tracking_type, item.category_type)) {
+      return buildItemsWorkspaceHref({ itemId: item.id, tab: "batches" });
+    }
+    return `/items/${item.id}`;
+  }, [alertFocusConfig]);
+
+  const clearAlertFocus = useCallback(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("focus");
+    params.delete("stock");
+    params.delete("tracking");
+    setAlertFocus(null);
+    const query = params.toString();
+    router.replace(query ? `/items?${query}` : "/items", { scroll: false });
+  }, [router, searchParams]);
 
   const filteredItems = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -779,6 +970,20 @@ export function ItemListView() {
       return true;
     });
   }, [filterKey, items, search]);
+
+  const {
+    page,
+    totalPages,
+    pageItems: pagedItems,
+    pageStart,
+    pageEnd,
+    setPage,
+  } = useClientPagination(filteredItems, ITEMS_PAGE_SIZE, [search, filterKey]);
+
+  const effectiveScopeTokens = selectedScopeTokens.length ? selectedScopeTokens : defaultScopeTokens;
+  const handleScopeChange = (nextTokens: string[]) => {
+    setSelectedScopeTokens(nextTokens.length ? nextTokens : defaultScopeTokens);
+  };
 
   const openCreateModal = () => {
     setEditingItem(null);
@@ -858,6 +1063,35 @@ export function ItemListView() {
           </div>
         </div>
 
+        {alertFocusConfig ? (
+          <div
+            style={{
+              padding: "12px 16px",
+              borderRadius: 12,
+              border: alertFocusConfig.tone === "critical"
+                ? "1px solid color-mix(in oklch, var(--danger) 30%, transparent)"
+                : "1px solid color-mix(in oklch, var(--warn) 30%, transparent)",
+              background: alertFocusConfig.tone === "critical"
+                ? "var(--danger-weak)"
+                : "color-mix(in oklch, var(--warn) 10%, var(--surface))",
+              marginBottom: 16,
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+              gap: 12,
+            }}
+          >
+            <div>
+              <div className="eyebrow">Alert focus</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-1)", marginTop: 4 }}>{alertFocusConfig.title}</div>
+              <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: 4, maxWidth: 820 }}>{alertFocusConfig.message}</div>
+            </div>
+            <button type="button" className="btn btn-xs btn-ghost" onClick={clearAlertFocus}>
+              Clear
+            </button>
+          </div>
+        ) : null}
+
         <div className="filter-bar">
           <div className="filter-bar-left">
             <div className="search-input">
@@ -871,44 +1105,59 @@ export function ItemListView() {
               {search && <button type="button" className="clear-search" onClick={() => setSearch("")}>x</button>}
             </div>
 
-            <div className="chip-filter-group">
+            <div className="filter-select-group">
               <div className="chip-filter-label">Tracking</div>
-              <div className="chip-filter">
-                  {([
-                    { key: "all", label: "All" },
-                    { key: "individual", label: "Individual" },
-                    { key: "perishable", label: "Batches/Lots" },
-                  ]).map(option => (
-                    <button
-                      key={option.key}
-                      type="button"
-                      className={"chip-filter-btn" + (filterKey === option.key ? " active" : "")}
-                      onClick={() => setFilterKey(option.key as WorkspaceFilterKey)}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+              <div className="filter-select-wrap">
+                <ThemedSelect
+                  value={["individual", "perishable"].includes(filterKey) ? filterKey : "all"}
+                  onChange={value => {
+                    setFilterKey(value as WorkspaceFilterKey);
+                    setAlertFocus(null);
+                  }}
+                  size="compact"
+                  ariaLabel="Filter items by tracking"
+                  options={[
+                    { value: "all", label: "All tracking" },
+                    { value: "individual", label: "Individual" },
+                    { value: "perishable", label: "Batches/Lots" },
+                  ]}
+                />
               </div>
             </div>
 
-            <div className="chip-filter-group">
+            <div className="filter-select-group">
               <div className="chip-filter-label">Stock</div>
-              <div className="chip-filter">
-                  {([
-                    { key: "low", label: "Low stock" },
-                    { key: "out", label: "No stock" },
-                  ]).map(option => (
-                    <button
-                      key={option.key}
-                      type="button"
-                      className={"chip-filter-btn" + (filterKey === option.key ? " active" : "")}
-                      onClick={() => setFilterKey(option.key as WorkspaceFilterKey)}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+              <div className="filter-select-wrap">
+                <ThemedSelect
+                  value={["low", "out"].includes(filterKey) ? filterKey : "all"}
+                  onChange={value => {
+                    setFilterKey(value as WorkspaceFilterKey);
+                    setAlertFocus(null);
+                  }}
+                  size="compact"
+                  ariaLabel="Filter items by stock"
+                  options={[
+                    { value: "all", label: "All stock" },
+                    { value: "low", label: "Low stock" },
+                    { value: "out", label: "No stock" },
+                  ]}
+                />
               </div>
             </div>
+
+            {scopeOptions.length > 1 ? (
+              <div className="filter-select-group">
+                <div className="chip-filter-label">Scope</div>
+                <MultiSelectFilter
+                  options={scopeFilterOptions(scopeOptions)}
+                  value={effectiveScopeTokens}
+                  onChange={handleScopeChange}
+                  placeholder="All visible locations"
+                  searchPlaceholder="Search locations or stores..."
+                  minWidth={260}
+                />
+              </div>
+            ) : null}
           </div>
           <div className="filter-bar-right">
             <DensityToggle density={density} setDensity={setDensity} />
@@ -952,30 +1201,39 @@ export function ItemListView() {
               {isLoading ? (
                 <EmptyTableRow colSpan={9} message="Loading items..." />
               ) : filteredItems.length > 0 ? (
-                filteredItems.map(item => (
-                  <ItemListTableRow
-                    key={item.id}
-                    item={item}
-                    categoryPath={buildCategoryPath(item.category, categories, item.category_display)}
-                    canEdit={canManageItems}
-                    canDelete={canDeleteItems}
-                    pageBusy={pageBusy}
-                    deleteBusy={deleteBusyItemId === item.id}
-                    onOpen={() => router.push(`/items/${item.id}`)}
-                    onEdit={() => openEditModal(item)}
-                    onDelete={() => handleDelete(item)}
-                  />
-                ))
+                pagedItems.map(item => {
+                  const openHref = getItemOpenHref(item);
+                  return (
+                    <ItemListTableRow
+                      key={item.id}
+                      item={item}
+                      categoryPath={buildCategoryPath(item.category, categories, item.category_display)}
+                      canEdit={canManageItems}
+                      canDelete={canDeleteItems}
+                      pageBusy={pageBusy}
+                      deleteBusy={deleteBusyItemId === item.id}
+                      openHref={openHref}
+                      openLabel={alertFocusConfig?.openLabel ?? "Open"}
+                      openTitle={alertFocusConfig?.openTitle ?? "Open item workspace"}
+                      onOpen={() => router.push(openHref)}
+                      onEdit={() => openEditModal(item)}
+                      onDelete={() => handleDelete(item)}
+                    />
+                  );
+                })
               ) : (
                 <EmptyTableRow colSpan={9} message="No items match the current filters." />
               )}
               </tbody>
             </table>
           </div>
-          <div className="table-card-foot">
-            <div className="eyebrow">Click a row to open the item detail workspace</div>
-            <div className="pager"><span className="mono pager-current">1 / 1</span></div>
-          </div>
+          <ListPagination
+            summary={filteredItems.length === 0 ? "Showing 0 items" : `Showing ${pageStart}-${pageEnd} of ${filteredItems.length} items`}
+            page={page}
+            totalPages={totalPages}
+            onPrev={() => setPage(current => Math.max(1, current - 1))}
+            onNext={() => setPage(current => Math.min(totalPages, current + 1))}
+          />
         </div>
       </div>
     </div>
@@ -989,6 +1247,9 @@ function ItemListTableRow({
   canDelete,
   pageBusy,
   deleteBusy,
+  openHref,
+  openLabel,
+  openTitle,
   onOpen,
   onEdit,
   onDelete,
@@ -999,6 +1260,9 @@ function ItemListTableRow({
   canDelete: boolean;
   pageBusy: boolean;
   deleteBusy: boolean;
+  openHref: string;
+  openLabel: string;
+  openTitle: string;
   onOpen: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -1006,6 +1270,7 @@ function ItemListTableRow({
   const totalQuantity = toNumber(item.total_quantity);
   const standaloneLocationCount = toNumber(item.standalone_location_count);
   const statusTone = itemStatusTone(item);
+  const lastUpdated = item.updated_at ?? item.created_at;
 
   return (
     <tr className="clickable-table-row" onClick={onOpen}>
@@ -1020,7 +1285,7 @@ function ItemListTableRow({
           </div>
         </div>
       </td>
-      <td><span className="chip">{formatItemLabel(String(item.tracking_type ?? ""))}</span></td>
+      <td><span className="chip">{formatTrackingTypeLabel(item.tracking_type, { compact: true })}</span></td>
       <td className="mono">{formatQuantity(item.total_quantity)} {item.acct_unit ?? "unit"}</td>
       <td className="mono">{formatQuantity(item.available_quantity)}</td>
       <td className="mono">{formatQuantity(item.in_transit_quantity)}</td>
@@ -1032,14 +1297,14 @@ function ItemListTableRow({
         </div>
       </td>
       <td className="col-login">
-        <div className="login-cell">
-          <div>{formatItemDate(item.updated_at, "Unknown")}</div>
-          <div className="login-cell-sub mono">{formatItemDate(item.created_at, "Unknown")}</div>
-        </div>
+        <ItemTimestampCell value={lastUpdated} fallback="Unknown" />
       </td>
       <td className="col-actions">
         <ItemActions
           item={item}
+          openHref={openHref}
+          openLabel={openLabel}
+          openTitle={openTitle}
           canEdit={canEdit}
           canDelete={canDelete}
           pageBusy={pageBusy}
@@ -1592,9 +1857,20 @@ function WorkspaceSelectedItemPane({
   onNormalizeState: (state: ItemsWorkspaceState) => void;
 }) {
   const router = useRouter();
-  const { item, units, isLoading, fetchError, setFetchError, load } = useItemDistribution(itemId);
   const [locateOpen, setLocateOpen] = useState(false);
   const [jumpTarget, setJumpTarget] = useState<{ unitId: number; storeId?: number; nonce: number } | null>(null);
+  const [selectedScopeTokens, setSelectedScopeTokens] = useState<string[]>([]);
+  const {
+    item,
+    units,
+    scopeOptions,
+    defaultScopeTokens,
+    isLoading,
+    fetchError,
+    setFetchError,
+    load,
+  } = useItemDistribution(itemId, selectedScopeTokens);
+  const effectiveScopeTokens = selectedScopeTokens.length ? selectedScopeTokens : defaultScopeTokens;
 
   useEffect(() => {
     load();
@@ -1799,6 +2075,29 @@ function WorkspaceSelectedItemPane({
               );
             })()}
           </div>
+
+          {scopeOptions.length > 1 ? (
+            <div className="filter-bar">
+              <div className="filter-bar-left">
+                <div className="filter-select-group">
+                  <div className="chip-filter-label">Distribution scope</div>
+                  <MultiSelectFilter
+                    options={scopeFilterOptions(scopeOptions)}
+                    value={effectiveScopeTokens}
+                    onChange={tokens => setSelectedScopeTokens(tokens.length ? tokens : defaultScopeTokens)}
+                    placeholder="All visible locations"
+                    searchPlaceholder="Search locations or stores..."
+                    minWidth={300}
+                  />
+                </div>
+              </div>
+              <div className="filter-bar-right">
+                <button type="button" className="btn btn-xs btn-ghost" onClick={() => setSelectedScopeTokens(defaultScopeTokens)}>
+                  Reset
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           {isFixedAssetItem(item) ? (
             <div className="detail-kv-grid" style={{ marginTop: 12 }}>
@@ -2388,12 +2687,18 @@ function WorkspaceInstancesTab({
           <input placeholder="Search instance code, serial, location, assignee, or authority store..." value={search} onChange={event => setSearch(event.target.value)} />
           {search ? <button type="button" className="clear-search" onClick={() => setSearch("")}>x</button> : null}
         </div>
-        <label className="filter-select-wrap">
-          <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)} aria-label="Filter item instances by status">
-            <option value="all">All statuses</option>
-            {statusOptions.map(status => <option key={status} value={status}>{formatItemLabel(status)}</option>)}
-          </select>
-        </label>
+        <div className="filter-select-wrap">
+          <ThemedSelect
+            value={statusFilter}
+            onChange={setStatusFilter}
+            ariaLabel="Filter item instances by status"
+            size="compact"
+            options={[
+              { value: "all", label: "All statuses" },
+              ...statusOptions.map(status => ({ value: status, label: formatItemLabel(status) })),
+            ]}
+          />
+        </div>
       </div>
       <div className="table-card">
         <div className="table-card-head">
@@ -2624,23 +2929,31 @@ function ItemPageActions({ item }: { item: ItemRecord | null }) {
   );
 }
 
-function useItemDistribution(itemId: string) {
+function useItemDistribution(itemId: string, scopeTokens: string[] = EMPTY_SCOPE_TOKENS) {
   const [item, setItem] = useState<ItemRecord | null>(null);
   const [units, setUnits] = useState<ItemDistributionUnit[]>([]);
+  const [scopeOptions, setScopeOptions] = useState<ItemScopeOption[]>([]);
+  const [defaultScopeTokens, setDefaultScopeTokens] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const scopeKey = scopeTokens.join("|");
 
   const load = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
     if (!itemId) return false;
     if (showLoading) setIsLoading(true);
     setFetchError(null);
     try {
-      const [itemData, unitData] = await Promise.all([
-        apiFetch<ItemRecord>(`/api/inventory/items/${itemId}/`),
-        apiFetch<ItemDistributionUnit[]>(`/api/inventory/distribution/hierarchical/?item=${encodeURIComponent(itemId)}`),
+      const scopeQuery = buildScopeQuery(scopeKey ? scopeKey.split("|") : []);
+      const scopeSuffix = scopeQuery ? `&${scopeQuery}` : "";
+      const [itemData, unitData, scopeData] = await Promise.all([
+        apiFetch<ItemRecord>(`/api/inventory/items/${itemId}/${scopeQuery ? `?${scopeQuery}` : ""}`),
+        apiFetch<ItemDistributionUnit[]>(`/api/inventory/distribution/hierarchical/?item=${encodeURIComponent(itemId)}${scopeSuffix}`),
+        apiFetch<ItemScopeOptionsResponse>("/api/inventory/distribution/scope-options/"),
       ]);
       setItem(itemData);
       setUnits(unitData);
+      setScopeOptions(scopeData.options);
+      setDefaultScopeTokens(scopeData.default);
       return true;
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : "Failed to load item distribution");
@@ -2648,9 +2961,9 @@ function useItemDistribution(itemId: string) {
     } finally {
       if (showLoading) setIsLoading(false);
     }
-  }, [itemId]);
+  }, [itemId, scopeKey]);
 
-  return { item, units, isLoading, fetchError, setFetchError, load };
+  return { item, units, scopeOptions, defaultScopeTokens, isLoading, fetchError, setFetchError, load };
 }
 
 export function ItemDistributionView({ itemId }: { itemId: string }) {
@@ -2684,6 +2997,15 @@ export function ItemDistributionView({ itemId }: { itemId: string }) {
       return true;
     });
   }, [search, stockFilter, units]);
+
+  const {
+    page,
+    totalPages,
+    pageItems: pagedUnits,
+    pageStart,
+    pageEnd,
+    setPage,
+  } = useClientPagination(filteredUnits, ITEM_DISTRIBUTION_PAGE_SIZE, [search, stockFilter]);
 
   return (
     <div data-density={density}>
@@ -2774,7 +3096,7 @@ export function ItemDistributionView({ itemId }: { itemId: string }) {
                 <tbody>
                   {filteredUnits.length === 0 ? (
                     <EmptyTableRow colSpan={8} message="No standalone distribution matches the current filters." />
-                  ) : filteredUnits.map(unit => (
+                  ) : pagedUnits.map(unit => (
                     <tr key={unit.id} onClick={() => router.push(`/items/${itemId}/distribution/${unit.id}`)} style={{ cursor: "pointer" }}>
                       <td className="col-user">
                         <div className="identity-cell">
@@ -2801,10 +3123,13 @@ export function ItemDistributionView({ itemId }: { itemId: string }) {
             </div>
           )}
 
-          <div className="table-card-foot">
-            <div className="eyebrow">Distribution is scoped by your item permissions and assigned locations</div>
-            <div className="pager"><span className="mono pager-current">Standalone summary</span></div>
-          </div>
+          <ListPagination
+            summary={filteredUnits.length === 0 ? "Showing 0 standalone units" : `Showing ${pageStart}-${pageEnd} of ${filteredUnits.length} standalone units`}
+            page={page}
+            totalPages={totalPages}
+            onPrev={() => setPage(current => Math.max(1, current - 1))}
+            onNext={() => setPage(current => Math.min(totalPages, current + 1))}
+          />
         </div>
       </div>
     </div>
@@ -2848,6 +3173,15 @@ export function ItemStandaloneDistributionView({ itemId, standaloneId }: { itemI
       return true;
     });
   }, [details, kindFilter, search]);
+
+  const {
+    page,
+    totalPages,
+    pageItems: pagedDetails,
+    pageStart,
+    pageEnd,
+    setPage,
+  } = useClientPagination(filteredDetails, ITEM_DETAIL_ROWS_PAGE_SIZE, [search, kindFilter, standaloneId]);
 
   return (
     <div data-density={density}>
@@ -2917,14 +3251,20 @@ export function ItemStandaloneDistributionView({ itemId, standaloneId }: { itemI
             </div>
             <div className="filter-select-group">
               <div className="chip-filter-label">Type</div>
-              <label className="filter-select-wrap">
-                <select value={kindFilter} onChange={e => setKindFilter(e.target.value)} aria-label="Filter distribution detail by type">
-                  <option value="all">All rows</option>
-                  <option value="store">Stores</option>
-                  <option value="location">Non-store locations</option>
-                  <option value="person">Persons</option>
-                </select>
-              </label>
+              <div className="filter-select-wrap">
+                <ThemedSelect
+                  value={kindFilter}
+                  onChange={setKindFilter}
+                  ariaLabel="Filter distribution detail by type"
+                  size="compact"
+                  options={[
+                    { value: "all", label: "All rows" },
+                    { value: "store", label: "Stores" },
+                    { value: "location", label: "Non-store locations" },
+                    { value: "person", label: "Persons" },
+                  ]}
+                />
+              </div>
             </div>
           </div>
           <div className="filter-bar-right">
@@ -2969,7 +3309,7 @@ export function ItemStandaloneDistributionView({ itemId, standaloneId }: { itemI
                     <EmptyTableRow colSpan={10} message="This standalone location was not found in the current item distribution." />
                   ) : filteredDetails.length === 0 ? (
                     <EmptyTableRow colSpan={10} message="No detailed rows match the current filters." />
-                  ) : filteredDetails.map(row => (
+                  ) : pagedDetails.map(row => (
                     <tr key={row.id}>
                       <td className="col-user">
                         <div className="identity-cell">
@@ -3010,10 +3350,13 @@ export function ItemStandaloneDistributionView({ itemId, standaloneId }: { itemI
             </div>
           )}
 
-          <div className="table-card-foot">
-            <div className="eyebrow">Store rows are physical balances; person and non-store rows are active allocations</div>
-            <div className="pager"><span className="mono pager-current">Nested distribution</span></div>
-          </div>
+          <ListPagination
+            summary={filteredDetails.length === 0 ? "Showing 0 detail rows" : `Showing ${pageStart}-${pageEnd} of ${filteredDetails.length} detail rows`}
+            page={page}
+            totalPages={totalPages}
+            onPrev={() => setPage(current => Math.max(1, current - 1))}
+            onNext={() => setPage(current => Math.min(totalPages, current + 1))}
+          />
         </div>
       </div>
     </div>
@@ -3097,6 +3440,15 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
     });
   }, [records, search, statusFilter]);
 
+  const {
+    page,
+    totalPages,
+    pageItems: pagedRecords,
+    pageStart,
+    pageEnd,
+    setPage,
+  } = useClientPagination(filteredRecords, ITEM_RELATED_RECORDS_PAGE_SIZE, [search, statusFilter, itemId, locationId]);
+
   const showInstances = !item || canShowInstances(item.tracking_type);
 
   return (
@@ -3140,12 +3492,18 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
                 </div>
                 <div className="filter-select-group">
                   <div className="chip-filter-label">Status</div>
-                  <label className="filter-select-wrap">
-                    <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} aria-label="Filter item instances by status">
-                      <option value="all">All statuses</option>
-                      {statusOptions.map(status => <option key={status} value={status}>{formatItemLabel(status)}</option>)}
-                    </select>
-                  </label>
+                  <div className="filter-select-wrap">
+                    <ThemedSelect
+                      value={statusFilter}
+                      onChange={setStatusFilter}
+                      ariaLabel="Filter item instances by status"
+                      size="compact"
+                      options={[
+                        { value: "all", label: "All statuses" },
+                        ...statusOptions.map(status => ({ value: status, label: formatItemLabel(status) })),
+                      ]}
+                    />
+                  </div>
                 </div>
               </div>
               <div className="filter-bar-right">
@@ -3184,7 +3542,7 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
                     <tbody>
                       {filteredRecords.length === 0 ? (
                         <EmptyTableRow colSpan={7} message="No item instances match the current filters." />
-                      ) : filteredRecords.map(record => (
+                      ) : pagedRecords.map(record => (
                         <tr key={record.id} className="clickable-table-row" onClick={() => router.push(`/items/${itemId}/instances/${record.id}`)}>
                           <td className="col-user">
                             <div className="identity-cell">
@@ -3218,10 +3576,13 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
                   </table>
                 </div>
               )}
-              <div className="table-card-foot">
-                <div className="eyebrow">Instances are available only for individually tracked items</div>
-                <div className="pager"><span className="mono pager-current">Item instances</span></div>
-              </div>
+              <ListPagination
+                summary={filteredRecords.length === 0 ? "Showing 0 item instances" : `Showing ${pageStart}-${pageEnd} of ${filteredRecords.length} item instances`}
+                page={page}
+                totalPages={totalPages}
+                onPrev={() => setPage(current => Math.max(1, current - 1))}
+                onNext={() => setPage(current => Math.min(totalPages, current + 1))}
+              />
             </div>
           </>
         )}
@@ -3405,6 +3766,15 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
     });
   }, [records, search, statusFilter]);
 
+  const {
+    page,
+    totalPages,
+    pageItems: pagedRecords,
+    pageStart,
+    pageEnd,
+    setPage,
+  } = useClientPagination(filteredRecords, ITEM_RELATED_RECORDS_PAGE_SIZE, [search, statusFilter, itemId, locationId]);
+
   return (
     <div data-density={density}>
       <Topbar breadcrumb={["Inventory", "Items", item?.name ?? "Item", pluralBatchLabel]} />
@@ -3491,7 +3861,7 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
                 <tbody>
                   {filteredRecords.length === 0 ? (
                     <EmptyTableRow colSpan={isFixedAssetLotItem(item) ? 10 : 9} message={`No item ${pluralBatchLabel.toLowerCase()} match the current filters.`} />
-                  ) : filteredRecords.map(record => (
+                  ) : pagedRecords.map(record => (
                     <tr key={record.id}>
                       <td className="col-user">
                         <div className="identity-cell">
@@ -3514,10 +3884,13 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
               </table>
             </div>
           )}
-          <div className="table-card-foot">
-            <div className="eyebrow">{pluralBatchLabel} are quantity group records for this item</div>
-            <div className="pager"><span className="mono pager-current">Item {pluralBatchLabel.toLowerCase()}</span></div>
-          </div>
+          <ListPagination
+            summary={filteredRecords.length === 0 ? `Showing 0 ${pluralBatchLabel.toLowerCase()}` : `Showing ${pageStart}-${pageEnd} of ${filteredRecords.length} ${pluralBatchLabel.toLowerCase()}`}
+            page={page}
+            totalPages={totalPages}
+            onPrev={() => setPage(current => Math.max(1, current - 1))}
+            onNext={() => setPage(current => Math.min(totalPages, current + 1))}
+          />
         </div>
       </div>
     </div>

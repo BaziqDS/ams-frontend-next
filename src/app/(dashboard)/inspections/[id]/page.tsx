@@ -7,6 +7,7 @@ import { Topbar } from "@/components/Topbar";
 import {
   InspectionIcon,
   RejectInspectionModal,
+  ReturnInspectionModal,
 } from "@/components/inspections/InspectionDialogs";
 import {
   Stage1Form,
@@ -21,7 +22,14 @@ import {
   canResumeInspectionEditor,
   formatInspectionDate,
   formatInspectionDateShort,
+  getInspectionActiveRevisionRequest,
   getInspectionAuditEntries,
+  getInspectionItemSecondaryLine,
+  getInspectionRegisterCoverage,
+  getInspectionRegisterDetailRows,
+  getInspectionRegisterRefs,
+  getInspectionReturnActionLabel,
+  getInspectionStageDisplayLabel,
   getInspectionStageGuidance,
   getInspectionValueTotals,
   getInspectionWorkflowSteps,
@@ -64,7 +72,7 @@ function getDisplaySubtitle(inspection: InspectionRecord) {
   return (
     `Acceptance inspection of contract ${inspection.contract_no}, vendor ${inspection.contractor_name || "not recorded"}. ` +
     `${inspection.date_of_delivery ? `Delivery received on ${formatInspectionDate(inspection.date_of_delivery)}, ` : "Delivery date not recorded, "}` +
-    `currently under ${INSPECTION_STAGE_LABELS[inspection.stage].toLowerCase()}.`
+    `currently under ${getInspectionStageDisplayLabel(inspection).toLowerCase()}.`
   );
 }
 
@@ -109,8 +117,10 @@ function StageStatusPill({ inspection }: { inspection: InspectionRecord }) {
   const effectiveStage = inspection.stage === "REJECTED" ? inspection.rejection_stage : inspection.stage;
   const index = steps.findIndex(step => step.key === effectiveStage);
   const label = inspection.stage === "DRAFT" || index < 0
-    ? INSPECTION_STAGE_LABELS[inspection.stage]
-    : `Stage ${index + 1} of ${steps.length} - ${INSPECTION_STAGE_LABELS[effectiveStage ?? inspection.stage]}`;
+    ? getInspectionStageDisplayLabel(inspection)
+    : inspection.stage === "REJECTED"
+      ? `${getInspectionStageDisplayLabel(inspection)} at Stage ${index + 1} of ${steps.length} - ${INSPECTION_STAGE_LABELS[effectiveStage ?? inspection.stage]}`
+      : `Stage ${index + 1} of ${steps.length} - ${INSPECTION_STAGE_LABELS[effectiveStage ?? inspection.stage]}`;
 
   return (
     <span className={`pill pill-lg ${getStagePillClass(inspection.stage)}`}>
@@ -122,6 +132,7 @@ function StageStatusPill({ inspection }: { inspection: InspectionRecord }) {
 
 function WorkflowTracker({ inspection }: { inspection: InspectionRecord }) {
   const steps = visibleWorkflowSteps(inspection);
+  const rejectedStepLabel = inspection.status === "CANCELLED" ? "Cancelled at this step" : "Rejected at this step";
   return (
     <div className="inspection-workflow-strip" style={{ gridTemplateColumns: `repeat(${Math.max(steps.length, 1)}, minmax(0, 1fr))` }}>
       {steps.map((step, index) => (
@@ -133,7 +144,7 @@ function WorkflowTracker({ inspection }: { inspection: InspectionRecord }) {
             <div>
               <div className="inspection-workflow-label">{step.label}</div>
               <div className="inspection-workflow-status">
-                {step.state === "current" ? "Current hand-off" : step.state === "complete" ? "Completed workflow step" : step.state === "rejected" ? "Rejected at this step" : "Pending workflow step"}
+                {step.state === "current" ? "Current hand-off" : step.state === "complete" ? "Completed workflow step" : step.state === "rejected" ? rejectedStepLabel : "Pending workflow step"}
               </div>
             </div>
           </div>
@@ -216,6 +227,7 @@ function ItemsSummary({ inspection }: { inspection: InspectionRecord }) {
           <tbody>
             {inspection.items.map((item, index) => {
               const financials = getInspectionItemFinancials(item);
+              const secondaryLine = getInspectionItemSecondaryLine(item);
               const canViewDistribution =
                 inspection.stage === "COMPLETED" &&
                 item.item_tracking_type === "QUANTITY" &&
@@ -226,7 +238,9 @@ function ItemsSummary({ inspection }: { inspection: InspectionRecord }) {
                   <td className="idx">{index + 1}</td>
                   <td className="item-cell">
                     <div className="inspection-line-primary">{item.item_description || item.item_name || "Unnamed item"}</div>
-                    <div className="inspection-line-secondary">{item.item_specifications || item.item_code || "No specifications recorded"}</div>
+                    {secondaryLine ? (
+                      <div className="inspection-line-secondary">{secondaryLine}</div>
+                    ) : null}
                     {trackingBatch || canViewDistribution ? (
                       <div className="inspection-line-track" style={{ marginTop: 8 }}>
                         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
@@ -263,6 +277,113 @@ function ItemsSummary({ inspection }: { inspection: InspectionRecord }) {
             <div className="detail-total-block">
               <div className="detail-total-label">Rejected value</div>
               <div className="detail-total-value">PKR {formatCurrency(values.rejected)}</div>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </section>
+  );
+}
+
+function RegisterTrailCard({ inspection }: { inspection: InspectionRecord }) {
+  const coverage = getInspectionRegisterCoverage(inspection);
+  const rows = getInspectionRegisterDetailRows(inspection);
+  const stockRefs = getInspectionRegisterRefs(inspection.items, "stock");
+  const centralRefs = getInspectionRegisterRefs(inspection.items, "central");
+  const acceptedCount = rows.length;
+  const stockCoveredCount = rows.filter(row => Boolean(row.stockRegisterRef)).length;
+  const centralCoveredCount = rows.filter(row => Boolean(row.centralRegisterRef)).length;
+  const fullyLinkedCount = rows.filter(row => coverage.requiresStockStage ? Boolean(row.stockRegisterRef && row.centralRegisterRef) : Boolean(row.centralRegisterRef)).length;
+  const columnCount = coverage.requiresStockStage ? 5 : 3;
+
+  return (
+    <section className="detail-card">
+      <header className="detail-card-head">
+        <div>
+          <div className="eyebrow">Register trail</div>
+          <h2>Department and central register snapshot</h2>
+        </div>
+        <div className="detail-card-head-meta">{rows.length} accepted line{rows.length === 1 ? "" : "s"}</div>
+      </header>
+      <div className="detail-card-body">
+        <div className="inspection-lines-foot">
+          <div className="inspection-lines-foot-meta">
+            {coverage.requiresStockStage
+              ? "Departmental stock details show the register, page number, and recording date captured before the certificate moved to central register review."
+              : "Root-level inspections skip departmental stock details and only require central register references."}
+          </div>
+          <div className="inspection-lines-foot-totals">
+            {coverage.requiresStockStage ? (
+              <div className="detail-total-block">
+                <div className="detail-total-label">Dept. coverage</div>
+                <div className="detail-total-value">{stockCoveredCount} / {acceptedCount}</div>
+              </div>
+            ) : null}
+            <div className="detail-total-block">
+              <div className="detail-total-label">Central coverage</div>
+              <div className="detail-total-value">{centralCoveredCount} / {acceptedCount}</div>
+            </div>
+            <div className="detail-total-block">
+              <div className="detail-total-label">Fully linked</div>
+              <div className="detail-total-value">{fullyLinkedCount} / {acceptedCount}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="h-scroll">
+        <table className="inspection-line-table inspection-line-table-review">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th className="num center">Accepted</th>
+              {coverage.requiresStockStage ? (
+                <>
+                  <th>Department register</th>
+                  <th>Recorded on</th>
+                </>
+              ) : null}
+              <th>Central register</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length > 0 ? rows.map((row, index) => (
+              <tr key={`${row.itemLabel}-${index}`}>
+                <td className="item-cell">
+                  <div className="inspection-line-primary">{row.itemLabel}</div>
+                </td>
+                <td className="num center">{row.acceptedQuantity}</td>
+                {coverage.requiresStockStage ? (
+                  <>
+                    <td className="mono">{row.stockRegisterRef ?? "Pending"}</td>
+                    <td>{formatInspectionDate(row.stockEntryDate)}</td>
+                  </>
+                ) : null}
+                <td className="mono">{row.centralRegisterRef ?? "Pending"}</td>
+              </tr>
+            )) : (
+              <tr>
+                <td colSpan={columnCount}>
+                  <div className="detail-empty-copy">No accepted items require register tracking yet.</div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <footer className="detail-card-foot">
+        <div style={{ display: "grid", gap: 12, width: "100%" }}>
+          {coverage.requiresStockStage ? (
+            <div>
+              <div className="eyebrow">Department refs</div>
+              <div className="group-cell">
+                {stockRefs.length > 0 ? stockRefs.map(ref => <span key={ref} className="chip mono">{ref}</span>) : <span className="detail-muted-row">Department register pending</span>}
+              </div>
+            </div>
+          ) : null}
+          <div>
+            <div className="eyebrow">Central refs</div>
+            <div className="group-cell">
+              {centralRefs.length > 0 ? centralRefs.map(ref => <span key={ref} className="chip mono">{ref}</span>) : <span className="detail-muted-row">Central register pending</span>}
             </div>
           </div>
         </div>
@@ -325,10 +446,13 @@ function ActiveStageCard({
   canActStage2,
   canActStage3,
   canActStage4,
+  canReturn,
+  returnLabel,
   busyAction,
   onChange,
   onSave,
   onSubmit,
+  onReturn,
 }: {
   inspection: InspectionRecord;
   editableInspection: InspectionRecord;
@@ -337,10 +461,13 @@ function ActiveStageCard({
   canActStage2: boolean;
   canActStage3: boolean;
   canActStage4: boolean;
+  canReturn: boolean;
+  returnLabel: string | null;
   busyAction: string | null;
   onChange: (data: InspectionRecord) => void;
   onSave: () => void;
   onSubmit: () => void;
+  onReturn: () => void;
 }) {
   const readOnly = !canEdit || busyAction !== null;
   const actionLabel = inspection.stage === "DRAFT"
@@ -363,7 +490,7 @@ function ActiveStageCard({
       <header className="detail-card-head">
         <div>
           <div className="eyebrow">Active stage form</div>
-          <h2>{INSPECTION_STAGE_LABELS[inspection.stage]}</h2>
+          <h2>{getInspectionStageDisplayLabel(inspection)}</h2>
           <div className="detail-card-head-meta">{getInspectionStageGuidance(inspection)}</div>
         </div>
       </header>
@@ -384,9 +511,15 @@ function ActiveStageCard({
         <footer className="detail-card-foot">
           <div className="stage-action-foot">
             <div className="stage-action-foot-meta">
-              Save progress keeps the current stage open. The primary action saves first, then advances the workflow.
+              Save progress keeps the current stage open. Return asks for a revision reason and sends the certificate back one workflow step without clearing the recorded stage data — save current edits first if you need to keep them.
             </div>
             <div className="stage-action-foot-actions">
+              {canReturn && returnLabel ? (
+                <button type="button" className="btn btn-sm btn-ghost" onClick={onReturn} disabled={busyAction !== null}>
+                  <InspectionIcon d="M15 18l-6-6 6-6" size={14} />
+                  {returnLabel}
+                </button>
+              ) : null}
               <button type="button" className="btn btn-sm" onClick={onSave} disabled={readOnly}>
                 <InspectionIcon d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2zM17 21v-8H7v8M7 3v5h8" size={14} />
                 Save progress
@@ -531,7 +664,7 @@ function getTransitionPath(inspection: InspectionRecord) {
 export default function InspectionDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { can, hasInspectionStage, isLoading: capsLoading } = useCapabilities();
+  const { can, hasInspectionStage, isLoading: capsLoading, isSuperuser } = useCapabilities();
 
   const canView = can("inspections", "view");
   const canManage = can("inspections", "manage");
@@ -542,7 +675,8 @@ export default function InspectionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
-  const [rejectOpen, setRejectOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [returnOpen, setReturnOpen] = useState(false);
 
   const loadInspection = useCallback(async () => {
     setLoading(true);
@@ -570,12 +704,27 @@ export default function InspectionDetailPage() {
   }, [canView, capsLoading, loadInspection, router]);
 
   const canEdit = inspection ? canResumeInspectionEditor(inspection, canManage, hasInspectionStage) : false;
-  const canReject = Boolean(inspection && canManage && !["COMPLETED", "REJECTED", "DRAFT"].includes(inspection.stage));
   const canDelete = Boolean(inspection && canFull && inspection.stage === "DRAFT");
   const canActStage1 = Boolean(inspection && inspection.stage === "DRAFT" && hasInspectionStage("initiate_inspection"));
   const canActStage2 = Boolean(inspection && inspection.stage === "STOCK_DETAILS" && hasInspectionStage("fill_stock_details"));
   const canActStage3 = Boolean(inspection && inspection.stage === "CENTRAL_REGISTER" && hasInspectionStage("fill_central_register"));
   const canActStage4 = Boolean(inspection && inspection.stage === "FINANCE_REVIEW" && hasInspectionStage("review_finance"));
+  const returnLabel = inspection ? getInspectionReturnActionLabel(inspection) : null;
+  const canReturn = Boolean(
+    inspection
+      && returnLabel
+      && (
+        (inspection.stage === "STOCK_DETAILS" && canActStage2)
+        || (inspection.stage === "CENTRAL_REGISTER" && canActStage3)
+        || (inspection.stage === "FINANCE_REVIEW" && canActStage4)
+      )
+  );
+  const canCancel = Boolean(
+    inspection
+      && !["COMPLETED", "REJECTED", "DRAFT"].includes(inspection.stage)
+      && (isSuperuser || hasInspectionStage("review_finance"))
+  );
+  const activeRevisionRequest = inspection ? getInspectionActiveRevisionRequest(inspection) : null;
 
   const saveProgress = useCallback(async () => {
     if (!editableInspection) return;
@@ -614,23 +763,42 @@ export default function InspectionDetailPage() {
     }
   }, [editableInspection, loadInspection]);
 
-  const handleRejectConfirm = useCallback(async (reason: string) => {
+  const handleCancelConfirm = useCallback(async (reason: string) => {
     if (!inspection) return;
-    setBusyAction("reject");
+    setBusyAction("cancel");
     setError(null);
     try {
-      await apiFetch(`/api/inventory/inspections/${inspection.id}/reject/`, {
+      await apiFetch(`/api/inventory/inspections/${inspection.id}/cancel/`, {
         method: "POST",
         body: JSON.stringify({ reason }),
       });
-      setRejectOpen(false);
+      setCancelOpen(false);
       await loadInspection();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Reject failed");
+      setError(err instanceof ApiError ? err.message : "Cancellation failed");
     } finally {
       setBusyAction(null);
     }
   }, [inspection, loadInspection]);
+
+  const returnToPreviousStage = useCallback(async (reason: string) => {
+    if (!inspection || !returnLabel) return;
+
+    setBusyAction("return");
+    setError(null);
+    try {
+      await apiFetch(`/api/inventory/inspections/${inspection.id}/return_to_previous_stage/`, {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      });
+      setReturnOpen(false);
+      await loadInspection();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to return the inspection to the previous stage");
+    } finally {
+      setBusyAction(null);
+    }
+  }, [inspection, loadInspection, returnLabel]);
 
   const handleDelete = useCallback(async () => {
     if (!inspection) return;
@@ -653,12 +821,19 @@ export default function InspectionDetailPage() {
 
   const activeStageLabel = useMemo(() => {
     if (!inspection) return "Detail";
-    return INSPECTION_STAGE_LABELS[inspection.stage];
+    return getInspectionStageDisplayLabel(inspection);
   }, [inspection]);
 
   return (
     <div>
-      <RejectInspectionModal open={rejectOpen} onClose={() => setRejectOpen(false)} onConfirm={handleRejectConfirm} />
+      <RejectInspectionModal open={cancelOpen} onClose={() => setCancelOpen(false)} onConfirm={handleCancelConfirm} />
+      <ReturnInspectionModal
+        open={returnOpen}
+        onClose={() => setReturnOpen(false)}
+        onConfirm={returnToPreviousStage}
+        targetLabel={returnLabel ?? "Return to previous stage"}
+        submitting={busyAction === "return"}
+      />
       <Topbar breadcrumb={["Operations", "Inspection Certificates", inspection?.contract_no ?? activeStageLabel]} />
 
       <div className="page" id="page-ins" data-density="balanced">
@@ -697,10 +872,10 @@ export default function InspectionDetailPage() {
                   <InspectionIcon d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" size={14} />
                   Export PDF
                 </button>
-                {canReject ? (
-                  <button type="button" className="btn btn-sm btn-danger-ghost" onClick={() => setRejectOpen(true)} disabled={busyAction !== null}>
+                {canCancel ? (
+                  <button type="button" className="btn btn-sm btn-danger-ghost" onClick={() => setCancelOpen(true)} disabled={busyAction !== null}>
                     <InspectionIcon d={<><circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" /></>} size={14} />
-                    Reject & return
+                    Cancel inspection
                   </button>
                 ) : null}
                 {canDelete ? (
@@ -712,14 +887,28 @@ export default function InspectionDetailPage() {
               </div>
             </div>
 
+            {activeRevisionRequest ? (
+              <div className="detail-notice detail-notice-warn">
+                <InspectionIcon d={<><path d="M12 3v12" /><path d="M12 19h.01" /><path d="M10.3 4.8L3.86 16a2 2 0 001.74 3h12.8a2 2 0 001.74-3L13.7 4.8a2 2 0 00-3.4 0z" /></>} size={16} />
+                <div className="detail-notice-body">
+                  <div className="detail-notice-title">Revisions Requested</div>
+                  <div className="detail-notice-text">{activeRevisionRequest.reason}</div>
+                  <div className="detail-notice-text" style={{ marginTop: 6 }}>
+                    Returned from {INSPECTION_STAGE_LABELS[activeRevisionRequest.fromStage]} by {activeRevisionRequest.actor}
+                    {activeRevisionRequest.requestedAt ? ` on ${formatInspectionDateTime(activeRevisionRequest.requestedAt)}` : ""}.
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             <WorkflowTracker inspection={inspection} />
 
             {inspection.stage === "REJECTED" ? (
-              <div className="detail-notice detail-notice-danger" style={{ marginTop: 16 }}>
+              <div className="detail-notice detail-notice-danger">
                 <InspectionIcon d={<><circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" /></>} size={16} />
                 <div className="detail-notice-body">
-                  <div className="detail-notice-title">Workflow rejected</div>
-                  <div className="detail-notice-text">{inspection.rejection_reason || "This certificate was rejected."}</div>
+                  <div className="detail-notice-title">{inspection.status === "CANCELLED" ? "Workflow cancelled" : "Workflow rejected"}</div>
+                  <div className="detail-notice-text">{inspection.rejection_reason || (inspection.status === "CANCELLED" ? "This certificate was cancelled." : "This certificate was rejected.")}</div>
                 </div>
               </div>
             ) : null}
@@ -730,6 +919,7 @@ export default function InspectionDetailPage() {
                   <StageActionCue inspection={inspection} />
                   <CertificateInfoCard inspection={editableInspection} />
                   <ItemsSummary inspection={editableInspection} />
+                  <RegisterTrailCard inspection={editableInspection} />
                   <SupportingDocuments inspection={inspection} />
                 </div>
                 <ActiveStageCard
@@ -740,6 +930,8 @@ export default function InspectionDetailPage() {
                   canActStage2={canActStage2}
                   canActStage3={canActStage3}
                   canActStage4={canActStage4}
+                  canReturn={canReturn}
+                  returnLabel={returnLabel}
                   busyAction={busyAction}
                   onChange={next => {
                     setEditableInspection({
@@ -749,6 +941,7 @@ export default function InspectionDetailPage() {
                   }}
                   onSave={saveProgress}
                   onSubmit={submitStage}
+                  onReturn={() => setReturnOpen(true)}
                 />
               </main>
 

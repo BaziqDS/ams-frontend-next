@@ -8,14 +8,27 @@ export type InspectionLocationScopeLike = {
   id: number;
   is_standalone: boolean;
   hierarchy_level: number;
+  hierarchy_path?: string | null;
 };
 export type InspectionMainStoreLocationLike = {
   main_store_id?: number | string | null;
+};
+export type InspectionCentralStoreLocationLike = InspectionMainStoreLocationLike & {
+  hierarchy_level?: number | null;
+  root_main_store_id?: number | string | null;
 };
 
 export function parseInspectionQuantity(value: string) {
   const parsed = Number.parseInt(value || "0", 10);
   return Number.isFinite(parsed) ? Math.max(parsed, 0) : 0;
+}
+
+export function getDefaultFinanceCheckDate(value: string | null | undefined, now = new Date()) {
+  if (value) return value;
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export function normalizeStageItems(items: InspectionItemRecord[]) {
@@ -134,16 +147,55 @@ export function getInspectionMainStoreRegisters<T extends StockRegisterStoreLike
   return filterStockRegistersForInspectionStore(registers, location?.main_store_id);
 }
 
+export function getInspectionCentralStoreId(
+  location: InspectionCentralStoreLocationLike | null | undefined,
+) {
+  if (!location) return null;
+  if (location.root_main_store_id !== null && location.root_main_store_id !== undefined && location.root_main_store_id !== "") {
+    return location.root_main_store_id;
+  }
+  if (location.hierarchy_level === 0) {
+    return location.main_store_id ?? null;
+  }
+  return null;
+}
+
+export function getInspectionCentralStoreRegisters<T extends StockRegisterStoreLike>(
+  registers: T[],
+  location: InspectionCentralStoreLocationLike | null | undefined,
+) {
+  return filterStockRegistersForInspectionStore(registers, getInspectionCentralStoreId(location));
+}
+
 export function getScopedInspectionLocations<T extends InspectionLocationScopeLike>(
   locations: T[],
   assignedLocationIds: number[] | undefined,
-  isRootUser: boolean,
+  includeAllStandalones: boolean,
 ) {
   const standaloneLocations = locations.filter(location => location.is_standalone);
-  if (isRootUser) return standaloneLocations;
+  if (includeAllStandalones) return standaloneLocations;
 
   const assigned = new Set((assignedLocationIds ?? []).map(id => Number(id)));
-  return standaloneLocations.filter(location => assigned.has(location.id));
+  const assignedStandaloneIds = new Set<number>();
+  const assignedLocations = locations.filter(location => assigned.has(location.id));
+
+  assignedLocations.forEach(location => {
+    if (location.is_standalone) {
+      assignedStandaloneIds.add(location.id);
+      return;
+    }
+
+    const owner = standaloneLocations
+      .filter(standalone => {
+        if (!standalone.hierarchy_path || !location.hierarchy_path) return false;
+        return location.hierarchy_path === standalone.hierarchy_path
+          || location.hierarchy_path.startsWith(`${standalone.hierarchy_path}/`);
+      })
+      .sort((a, b) => (b.hierarchy_path?.length ?? 0) - (a.hierarchy_path?.length ?? 0))[0];
+    if (owner) assignedStandaloneIds.add(owner.id);
+  });
+
+  return standaloneLocations.filter(location => assignedStandaloneIds.has(location.id));
 }
 
 export function getAutoSelectedInspectionLocation<T extends { id: number }>(locations: T[]) {

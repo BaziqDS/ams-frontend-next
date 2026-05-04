@@ -45,6 +45,26 @@ const locations: StockEntryLocation[] = [
     main_store_id: 11,
   },
   {
+    id: 15,
+    name: "White House",
+    parent_location: 1,
+    is_store: true,
+    is_standalone: false,
+    is_main_store: false,
+    is_active: true,
+    hierarchy_level: 1,
+  },
+  {
+    id: 16,
+    name: "Admin Store",
+    parent_location: 1,
+    is_store: true,
+    is_standalone: false,
+    is_main_store: false,
+    is_active: true,
+    hierarchy_level: 1,
+  },
+  {
     id: 11,
     name: "CS Main Store",
     parent_location: 10,
@@ -174,16 +194,20 @@ const allocations: StockAllocationRecord[] = [
 ];
 
 describe("stock entry store transfer hierarchy", () => {
-  it("allows the central store to transfer only to standalone main stores", () => {
-    expect(destinationNames(2)).toEqual(["CS Main Store", "EE Main Store"]);
+  it("allows the central store to transfer to root-level stores and standalone main stores", () => {
+    expect(destinationNames(2)).toEqual(["White House", "Admin Store", "CS Main Store", "EE Main Store"]);
   });
 
   it("allows a standalone main store to transfer to central and non-main stores in the same standalone", () => {
     expect(destinationNames(11)).toEqual(["Central Store", "CS Lab 1 Store", "CS Lab 2 Store"]);
   });
 
-  it("allows a regular store to transfer to its own main store and peer regular stores only", () => {
+  it("allows a regular store to transfer to its own main store and peer stores in the same standalone", () => {
     expect(destinationNames(13)).toEqual(["CS Main Store", "CS Lab 2 Store"]);
+  });
+
+  it("allows a root-level regular store to transfer to the central store and peer root stores", () => {
+    expect(destinationNames(15)).toEqual(["Central Store", "Admin Store"]);
   });
 
   it("limits non-store allocation targets to the source store standalone scope", () => {

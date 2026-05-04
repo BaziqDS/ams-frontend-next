@@ -1,11 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ListPagination } from "@/components/ListPagination";
+import { ThemedSelect } from "@/components/ThemedSelect";
 import { Topbar } from "@/components/Topbar";
 import { CategoryModal, type CategoryRecord } from "@/components/CategoryModal";
 import { apiFetch, type Page } from "@/lib/api";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
+import { useClientPagination } from "@/lib/listPagination";
 import { relTime } from "@/lib/userUiShared";
 
 const Ic = ({ d, size = 16 }: { d: React.ReactNode | string; size?: number }) => (
@@ -15,6 +19,8 @@ const Ic = ({ d, size = 16 }: { d: React.ReactNode | string; size?: number }) =>
 );
 
 type CategoryListVariant = "root" | "children";
+
+const CATEGORIES_PAGE_SIZE = 15;
 
 interface CategoryListViewProps {
   variant: CategoryListVariant;
@@ -47,6 +53,22 @@ function DensityToggle({ density, setDensity }: { density: "compact" | "balanced
   );
 }
 
+function compactList(items: string[], max = 1) {
+  const shown = items.slice(0, max);
+  return { shown, rest: items.length - shown.length };
+}
+
+function SubcategorySummary({ names }: { names: string[] }) {
+  if (names.length === 0) return <span className="muted-note">No subcategories</span>;
+  const { shown, rest } = compactList(names, 1);
+  return (
+    <div className="group-cell">
+      {shown.map(name => <span key={name} className="chip">{name}</span>)}
+      {rest > 0 ? <span className="loc-more">+{rest}</span> : null}
+    </div>
+  );
+}
+
 function CategoryActions() {
   return <span className="muted-note mono">No actions</span>;
 }
@@ -75,7 +97,7 @@ function RowActions({ onEdit, onDelete, canEdit, canDelete, disabled = false, de
   );
 }
 
-function CategoryRow({ category, isChildrenView, childCount, trackingSummary, canEdit, canDelete, onOpen, onEdit, onDelete, disabled = false, deleteBusy = false }: { category: CategoryRecord; isChildrenView: boolean; childCount: number; trackingSummary: string; canEdit: boolean; canDelete: boolean; onOpen?: () => void; onEdit?: () => void; onDelete?: () => void; disabled?: boolean; deleteBusy?: boolean }) {
+function CategoryRow({ category, isChildrenView, childCount, childNames, trackingSummary, canEdit, canDelete, onOpen, onEdit, onDelete, disabled = false, deleteBusy = false }: { category: CategoryRecord; isChildrenView: boolean; childCount: number; childNames: string[]; trackingSummary: string; canEdit: boolean; canDelete: boolean; onOpen?: () => void; onEdit?: () => void; onDelete?: () => void; disabled?: boolean; deleteBusy?: boolean }) {
   const resolvedType = category.resolved_category_type ?? category.category_type;
   const resolvedTracking = category.resolved_tracking_type ?? category.tracking_type;
 
@@ -105,7 +127,7 @@ function CategoryRow({ category, isChildrenView, childCount, trackingSummary, ca
         </td>
       ) : (
         <>
-          <td className="mono">{childCount}</td>
+          <td><SubcategorySummary names={childNames} /></td>
           <td><span className="chip">{trackingSummary}</span></td>
         </>
       )}
@@ -123,7 +145,7 @@ function CategoryRow({ category, isChildrenView, childCount, trackingSummary, ca
   );
 }
 
-function CategoryCard({ category, childCount, trackingSummary, canEdit, canDelete, pageBusy, deleteBusy, onOpen, onEdit, onDelete }: { category: CategoryRecord; childCount: number; trackingSummary: string; canEdit: boolean; canDelete: boolean; pageBusy: boolean; deleteBusy: boolean; onOpen?: () => void; onEdit: () => void; onDelete: () => void }) {
+function CategoryCard({ category, childCount, childNames, trackingSummary, canEdit, canDelete, pageBusy, deleteBusy, onOpen, onEdit, onDelete }: { category: CategoryRecord; childCount: number; childNames: string[]; trackingSummary: string; canEdit: boolean; canDelete: boolean; pageBusy: boolean; deleteBusy: boolean; onOpen?: () => void; onEdit: () => void; onDelete: () => void }) {
   const resolvedType = category.resolved_category_type ?? category.category_type;
   const resolvedTracking = category.resolved_tracking_type ?? category.tracking_type;
 
@@ -143,9 +165,14 @@ function CategoryCard({ category, childCount, trackingSummary, canEdit, canDelet
       </div>
       <div className="user-card-section">
         <div className="eyebrow">Structure</div>
-        <div style={{ fontSize: 13, color: "var(--text-1)" }}>
-          {category.parent_category_display ?? `${childCount} direct subcategories`}
-        </div>
+        {category.parent_category_display ? (
+          <div style={{ fontSize: 13, color: "var(--text-1)" }}>{category.parent_category_display}</div>
+        ) : (
+          <div style={{ display: "grid", gap: 6 }}>
+            <SubcategorySummary names={childNames} />
+            <div className="muted-note mono">{childCount} direct subcategories</div>
+          </div>
+        )}
       </div>
       <div className="user-card-foot">
         <div>
@@ -273,6 +300,21 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
     return counts;
   }, [allCategories]);
 
+  const childNamesByCategory = useMemo(() => {
+    const grouped = new Map<number, string[]>();
+    allCategories
+      .filter(category => category.parent_category != null)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .forEach(category => {
+        const parentKey = category.parent_category;
+        if (parentKey == null) return;
+        const current = grouped.get(parentKey) ?? [];
+        current.push(category.name);
+        grouped.set(parentKey, current);
+      });
+    return grouped;
+  }, [allCategories]);
+
   const trackingSummaryByCategory = useMemo(() => {
     const summary = new Map<number, string>();
     allCategories
@@ -290,6 +332,15 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
       });
     return summary;
   }, [allCategories]);
+
+  const {
+    page,
+    totalPages,
+    pageItems: pagedCategories,
+    pageStart,
+    pageEnd,
+    setPage,
+  } = useClientPagination(filteredCategories, CATEGORIES_PAGE_SIZE, [search, typeFilter, statusFilter, variant, parentId]);
 
   const openCreateModal = useCallback(() => {
     setEditingCategory(null);
@@ -363,6 +414,12 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
       <Topbar breadcrumb={isChildrenView ? ["Inventory", "Categories", parentCategory?.name ?? "Details"] : ["Inventory", "Categories"]} />
 
       <div className="page">
+        {isChildrenView ? (
+          <Link className="detail-page-back" href="/categories">
+            <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
+            Back to Categories
+          </Link>
+        ) : null}
         {fetchError && (
           <div style={{ padding: "12px 16px", background: "var(--danger-weak)", border: "1px solid color-mix(in oklch, var(--danger) 30%, transparent)", borderRadius: "var(--radius)", color: "var(--danger)", fontSize: 13, marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
             <span>{fetchError}</span>
@@ -409,26 +466,34 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
 
             <div className="filter-select-group">
               <div className="chip-filter-label">Type</div>
-              <label className="filter-select-wrap">
-                <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} aria-label="Filter categories by type">
-                  <option value="all">All types</option>
-                  {typeOptions.map(type => (
-                    <option key={type} value={type}>
-                      {formatLabel(type)}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="filter-select-wrap">
+                <ThemedSelect
+                  value={typeFilter}
+                  onChange={setTypeFilter}
+                  size="compact"
+                  ariaLabel="Filter categories by type"
+                  options={[
+                    { value: "all", label: "All types" },
+                    ...typeOptions.map(type => ({ value: type, label: formatLabel(type) })),
+                  ]}
+                />
+              </div>
             </div>
 
-            <div className="chip-filter-group">
+            <div className="filter-select-group">
               <div className="chip-filter-label">Status</div>
-              <div className="chip-filter">
-                {[{ k: "all", label: "All" }, { k: "active", label: "Active" }, { k: "inactive", label: "Disabled" }].map(option => (
-                  <button key={option.k} type="button" className={"chip-filter-btn" + (statusFilter === option.k ? " active" : "")} onClick={() => setStatusFilter(option.k)}>
-                    {option.label}
-                  </button>
-                ))}
+              <div className="filter-select-wrap">
+                <ThemedSelect
+                  value={statusFilter}
+                  onChange={setStatusFilter}
+                  size="compact"
+                  ariaLabel="Filter categories by status"
+                  options={[
+                    { value: "all", label: "All statuses" },
+                    { value: "active", label: "Active" },
+                    { value: "inactive", label: "Disabled" },
+                  ]}
+                />
               </div>
             </div>
           </div>
@@ -495,12 +560,13 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
                       </td>
                     </tr>
                   ) : (
-                    filteredCategories.map(category => (
+                    pagedCategories.map(category => (
                       <CategoryRow
                         key={category.id}
                         category={category}
                         isChildrenView={isChildrenView}
                         childCount={childCountByCategory.get(category.id) ?? 0}
+                        childNames={childNamesByCategory.get(category.id) ?? []}
                         trackingSummary={trackingSummaryByCategory.get(category.id) ?? "No subcategories"}
                         canEdit={canManageCategories}
                         canDelete={canDeleteCategories}
@@ -517,20 +583,22 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
             </div>
           )}
 
-          <div className="table-card-foot">
-            <div className="eyebrow">Showing {filteredCategories.length} rows</div>
-            <div className="pager">
-              <span className="mono pager-current">{footerLabel}</span>
-            </div>
-          </div>
+          <ListPagination
+            summary={filteredCategories.length === 0 ? `Showing 0 ${isChildrenView ? "subcategories" : "categories"}` : `Showing ${pageStart}-${pageEnd} of ${filteredCategories.length} ${isChildrenView ? "subcategories" : "categories"}`}
+            page={page}
+            totalPages={totalPages}
+            onPrev={() => setPage(current => Math.max(1, current - 1))}
+            onNext={() => setPage(current => Math.min(totalPages, current + 1))}
+          />
         </div>
         ) : filteredCategories.length > 0 ? (
           <div className="users-grid">
-            {filteredCategories.map(category => (
+            {pagedCategories.map(category => (
               <CategoryCard
                 key={category.id}
                 category={category}
                 childCount={childCountByCategory.get(category.id) ?? 0}
+                childNames={childNamesByCategory.get(category.id) ?? []}
                 trackingSummary={trackingSummaryByCategory.get(category.id) ?? "No subcategories"}
                 canEdit={canManageCategories}
                 canDelete={canDeleteCategories}
@@ -549,6 +617,16 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
             </div>
           </div>
         )}
+        {mode === "grid" && filteredCategories.length > 0 ? (
+          <ListPagination
+            summary={`Showing ${pageStart}-${pageEnd} of ${filteredCategories.length} ${isChildrenView ? "subcategories" : "categories"}`}
+            page={page}
+            totalPages={totalPages}
+            onPrev={() => setPage(current => Math.max(1, current - 1))}
+            onNext={() => setPage(current => Math.min(totalPages, current + 1))}
+            standalone
+          />
+        ) : null}
 
         <CategoryModal
           open={modalOpen}

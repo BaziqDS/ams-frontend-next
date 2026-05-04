@@ -45,7 +45,7 @@ function isActiveStore(location: StockEntryLocation) {
 }
 
 function isCentralStore(location: StockEntryLocation) {
-  return isActiveStore(location) && location.hierarchy_level === 1;
+  return isActiveStore(location) && location.hierarchy_level === 1 && Boolean(location.is_main_store);
 }
 
 function getParentStandalone(location: StockEntryLocation, locationsById: Map<number, StockEntryLocation>) {
@@ -79,6 +79,28 @@ function getMainStoreForStandalone(
   )) ?? null;
 }
 
+function getContainingMainStore(
+  location: StockEntryLocation,
+  locationsById: Map<number, StockEntryLocation>,
+  locations: StockEntryLocation[],
+) {
+  if (isActiveStore(location) && Boolean(location.is_main_store)) return location;
+
+  const seen = new Set<number>();
+  let current = location.parent_location == null ? undefined : locationsById.get(location.parent_location);
+  while (current && !seen.has(current.id)) {
+    seen.add(current.id);
+    if (isActiveStore(current) && Boolean(current.is_main_store)) return current;
+    if (current.is_standalone && !current.is_store) {
+      return getMainStoreForStandalone(current, locationsById, locations);
+    }
+    current = current.parent_location == null ? undefined : locationsById.get(current.parent_location);
+  }
+
+  const parentStandalone = getParentStandalone(location, locationsById);
+  return parentStandalone ? getMainStoreForStandalone(parentStandalone, locationsById, locations) : null;
+}
+
 export function getTransferDestinationStores(
   sourceStoreId: string | number | null | undefined,
   locations: StockEntryLocation[],
@@ -94,15 +116,17 @@ export function getTransferDestinationStores(
   if (isCentralStore(sourceStore)) {
     return activeStores.filter(location => (
       location.id !== sourceStore.id &&
-      location.hierarchy_level === 2 &&
-      Boolean(location.is_main_store)
+      (
+        (location.hierarchy_level === 2 && Boolean(location.is_main_store)) ||
+        (location.hierarchy_level === 1 && !Boolean(location.is_main_store))
+      )
     ));
   }
 
   const sourceStandalone = getParentStandalone(sourceStore, locationsById);
   if (!sourceStandalone) return [];
 
-  const sourceMainStore = getMainStoreForStandalone(sourceStandalone, locationsById, locations);
+  const sourceMainStore = getContainingMainStore(sourceStore, locationsById, locations);
   const sourceIsMainStore = sourceMainStore?.id === sourceStore.id || Boolean(sourceStore.is_main_store);
 
   if (sourceIsMainStore) {

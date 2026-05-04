@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
+import { ListPagination } from "@/components/ListPagination";
 import { apiFetch, type Page } from "@/lib/api";
+import { useClientPagination } from "@/lib/listPagination";
 import {
   canSelectDependencyLevel,
   getDependencyMinimums,
@@ -44,7 +46,10 @@ interface Role {
   permissions_details?: PermissionDetail[];
   module_selections?: ModuleSelections;
   inspection_stages?: string[];
+  permission_count?: number;
+  user_count?: number;
   created_at?: string | null;
+  created_by_name?: string | null;
 }
 
 type RoleViewItem = {
@@ -70,6 +75,8 @@ const LEVEL_DESCRIPTIONS: Record<CapabilityLevel, string> = {
   manage: "Create and edit",
   full: "Create, edit, and delete",
 };
+
+const ROLES_PAGE_SIZE = 12;
 
 const LEVEL_COLUMNS: Array<{
   key: CapabilityLevel | null;
@@ -151,7 +158,7 @@ function csvEscape(value: string | number | null | undefined) {
 }
 
 function buildRoleCsv(rows: RoleViewItem[]) {
-  const headers = ["Role ID", "Role Name", "Module Assignments", "Permissions Count", "Permissions", "Codenames"];
+  const headers = ["Role ID", "Role Name", "Assigned Users", "Permissions Count", "Inspection Stages", "Module Assignments", "Permissions", "Codenames", "Created At"];
   const lines = [headers.map(csvEscape).join(",")];
 
   rows.forEach(({ role, permissions, selections }) => {
@@ -160,15 +167,19 @@ function buildRoleCsv(rows: RoleViewItem[]) {
       .map(([module, level]) => `${formatModule(module)}: ${formatLevel(level)}`);
     const permissionNames = permissions.map(permission => permission.name);
     const codenames = permissions.map(permission => permission.codename);
+    const stageSummary = (role.inspection_stages ?? []).map(stage => INSPECTION_STAGE_LABELS[stage] ?? stage);
 
     lines.push(
       [
         role.id,
         role.name,
+        role.user_count ?? 0,
+        role.permission_count ?? permissions.length,
+        stageSummary.join(" | "),
         moduleSummary.join(" | "),
-        permissions.length,
         permissionNames.join(" | "),
         codenames.join(" | "),
+        role.created_at ?? "",
       ].map(csvEscape).join(","),
     );
   });
@@ -204,15 +215,16 @@ function ModuleSelectionSummary({ selections }: { selections: ModuleSelections }
   );
 }
 
-function TimestampCell({ value, fallback }: { value: string | null | undefined; fallback: string }) {
+function TimestampCell({ value, fallback, subtitle }: { value: string | null | undefined; fallback: string; subtitle?: string | null }) {
   if (!value) {
-    return <div className="login-cell"><div>{fallback}</div></div>;
+    return <div className="login-cell"><div>{fallback}</div>{subtitle ? <div className="login-cell-sub mono">{subtitle}</div> : null}</div>;
   }
 
   return (
     <div className="login-cell">
       <div>{relTime(value)}</div>
       <div className="login-cell-sub mono">{new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</div>
+      {subtitle ? <div className="login-cell-sub mono">{subtitle}</div> : null}
     </div>
   );
 }
@@ -680,10 +692,20 @@ export default function RolesPage() {
           .map(([module, level]) => `${formatModule(module)} ${module} ${formatLevel(level)}`)
           .join(" ");
         const permissionText = permissions.map(permission => `${permission.name} ${permission.codename} ${permission.model}`).join(" ");
-        const hay = `${role.name} ${moduleText} ${permissionText}`.toLowerCase();
+        const stageText = (role.inspection_stages ?? []).map(stage => INSPECTION_STAGE_LABELS[stage] ?? stage).join(" ");
+        const hay = `${role.name} ${moduleText} ${permissionText} ${stageText}`.toLowerCase();
         return hay.includes(q);
       });
   }, [manifest, roles, search]);
+
+  const {
+    page,
+    totalPages,
+    pageItems: pagedRoleItems,
+    pageStart,
+    pageEnd,
+    setPage,
+  } = useClientPagination(filteredRoleItems, ROLES_PAGE_SIZE, [search]);
 
   const handleExport = useCallback(() => {
     downloadCsv("roles-export.csv", buildRoleCsv(filteredRoleItems));
@@ -759,28 +781,31 @@ export default function RolesPage() {
                 <thead>
                   <tr>
                     <th>Role</th>
-                    <th>Modules</th>
-                    <th>Created At</th>
+                    <th>Users</th>
+                    <th>Permissions</th>
                     <th>Module Assignments</th>
+                    <th>Created At</th>
                     <th style={{ textAlign: "right" }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRoleItems.length > 0 ? filteredRoleItems.map(({ role, selections }) => {
+                  {pagedRoleItems.length > 0 ? pagedRoleItems.map(({ role, selections, permissions }) => {
                     const grantedCount = Object.values(selections).filter(Boolean).length;
+                    const permissionCount = role.permission_count ?? permissions.length;
                     return (
                       <tr key={role.id}>
                         <td>
                           <div className="user-cell">
                             <div>
                               <div className="user-name">{role.name}</div>
-                              <div className="user-username mono">ID {role.id}</div>
+                              <div className="user-username mono">ID {role.id} · {grantedCount} module{grantedCount === 1 ? "" : "s"}</div>
                             </div>
                           </div>
                         </td>
-                        <td className="mono">{grantedCount}</td>
-                        <td><TimestampCell value={role.created_at} fallback="—" /></td>
+                        <td className="mono">{role.user_count ?? 0}</td>
+                        <td className="mono">{permissionCount}</td>
                         <td><ModuleSelectionSummary selections={selections} /></td>
+                        <td><TimestampCell value={role.created_at} fallback="—" subtitle={role.created_by_name ? `by ${role.created_by_name}` : null} /></td>
                         <td className="col-actions">
                           <RoleActions
                             onEdit={() => { if (canChangeRole) setEditingRole(role); }}
@@ -794,7 +819,7 @@ export default function RolesPage() {
                     );
                   }) : (
                     <tr>
-                      <td colSpan={5}>
+                      <td colSpan={6}>
                         <div style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>{isLoading ? "Loading roles…" : "No roles match your search."}</div>
                       </td>
                     </tr>
@@ -802,54 +827,71 @@ export default function RolesPage() {
                 </tbody>
               </table>
             </div>
-            <div className="table-card-foot">
-              <div className="eyebrow">{roles.length} total roles</div>
-              <div className="pager"><span className="mono pager-current">Grouped by module</span></div>
-            </div>
+            <ListPagination
+              summary={filteredRoleItems.length === 0 ? `Showing 0 of ${roles.length} roles` : `Showing ${pageStart}-${pageEnd} of ${filteredRoleItems.length} filtered roles`}
+              page={page}
+              totalPages={totalPages}
+              onPrev={() => setPage(current => Math.max(1, current - 1))}
+              onNext={() => setPage(current => Math.min(totalPages, current + 1))}
+            />
           </div>
         ) : filteredRoleItems.length > 0 ? (
-          <div className="users-grid">
-            {filteredRoleItems.map(({ role, selections }) => {
-              const grantedCount = Object.values(selections).filter(Boolean).length;
-              return (
-                <div key={role.id} className="user-card">
-                  <div className="user-card-head">
-                    <div className="user-cell">
-                      <div>
-                        <div className="user-name">{role.name}</div>
-                        <div className="user-username mono">ID {role.id}</div>
+          <>
+            <div className="users-grid">
+              {pagedRoleItems.map(({ role, selections, permissions }) => {
+                const grantedCount = Object.values(selections).filter(Boolean).length;
+                const permissionCount = role.permission_count ?? permissions.length;
+                return (
+                  <div key={role.id} className="user-card">
+                    <div className="user-card-head">
+                      <div className="user-cell">
+                        <div>
+                          <div className="user-name">{role.name}</div>
+                          <div className="user-username mono">ID {role.id}</div>
+                        </div>
+                      </div>
+                      <span className="pill pill-neutral">
+                        <span className="status-dot" />
+                        <span className="mono">{grantedCount}</span> modules
+                      </span>
+                    </div>
+                    <div className="user-card-section">
+                      <div className="eyebrow">Usage</div>
+                      <div className="group-cell">
+                        <span className="chip">{role.user_count ?? 0} users</span>
+                        <span className="chip">{permissionCount} permissions</span>
                       </div>
                     </div>
-                    <span className="pill pill-neutral">
-                      <span className="status-dot" />
-                      <span className="mono">{grantedCount}</span> modules
-                    </span>
-                  </div>
-                  <div className="user-card-section">
-                    <div className="eyebrow">Created At</div>
-                    <TimestampCell value={role.created_at} fallback="—" />
-                  </div>
-                  <div className="user-card-section">
-                    <div className="eyebrow">Module Assignments</div>
-                    <ModuleSelectionSummary selections={selections} />
-                  </div>
-                  <div className="user-card-foot">
-                    <div>
-                      <div className="eyebrow">Module count</div>
-                      <div className="user-card-last mono">{grantedCount} granted</div>
+                    <div className="user-card-section">
+                      <div className="eyebrow">Module Assignments</div>
+                      <ModuleSelectionSummary selections={selections} />
                     </div>
-                    <RoleActions
-                      onEdit={() => { if (canChangeRole) setEditingRole(role); }}
-                      onDelete={() => { if (canDeleteRole) handleDelete(role); }}
-                      canEdit={canChangeRole}
-                      canDelete={canDeleteRole}
-                      disabled={busyRoleId !== null}
-                    />
+                    <div className="user-card-foot">
+                      <div>
+                        <div className="eyebrow">Created At</div>
+                        <TimestampCell value={role.created_at} fallback="—" subtitle={role.created_by_name ? `by ${role.created_by_name}` : null} />
+                      </div>
+                      <RoleActions
+                        onEdit={() => { if (canChangeRole) setEditingRole(role); }}
+                        onDelete={() => { if (canDeleteRole) handleDelete(role); }}
+                        canEdit={canChangeRole}
+                        canDelete={canDeleteRole}
+                        disabled={busyRoleId !== null}
+                      />
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+            <ListPagination
+              summary={`Showing ${pageStart}-${pageEnd} of ${filteredRoleItems.length} filtered roles`}
+              page={page}
+              totalPages={totalPages}
+              onPrev={() => setPage(current => Math.max(1, current - 1))}
+              onNext={() => setPage(current => Math.min(totalPages, current + 1))}
+              standalone
+            />
+          </>
         ) : (
           <div className="table-card">
             <div style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>{isLoading ? "Loading roles…" : "No roles match your search."}</div>

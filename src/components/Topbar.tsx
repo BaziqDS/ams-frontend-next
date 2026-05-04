@@ -83,9 +83,11 @@ function NotificationFeedRow({ item, onNavigate }: { item: NotificationFeedItem;
   );
 }
 
+const PANEL_POLL_MS = 15_000;
+
 export function Topbar({ breadcrumb }: TopbarProps) {
   const { user } = useAuth();
-  const { summary, alerts, feed, isPanelLoading, loadPanelData, markRead, markAllRead } = useNotifications();
+  const { summary, alerts, feed, isPanelLoading, loadPanelData, refreshSummary, markRead, markAllRead, clearFeed } = useNotifications();
   const [panelOpen, setPanelOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"alerts" | "feed">("alerts");
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -121,9 +123,14 @@ export function Topbar({ breadcrumb }: TopbarProps) {
 
   useEffect(() => {
     if (!panelOpen) return;
-    setActiveTab((summary.open_alerts ?? 0) > 0 ? "alerts" : "feed");
-    void loadPanelData();
-  }, [loadPanelData, panelOpen, summary.open_alerts]);
+
+    const intervalId = window.setInterval(() => {
+      void loadPanelData();
+      void refreshSummary();
+    }, PANEL_POLL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [loadPanelData, panelOpen, refreshSummary]);
 
   useEffect(() => {
     if (!panelOpen) return;
@@ -145,6 +152,17 @@ export function Topbar({ breadcrumb }: TopbarProps) {
       document.removeEventListener("keydown", handleEscape);
     };
   }, [panelOpen]);
+
+  const handleTogglePanel = () => {
+    const nextPanelOpen = !panelOpen;
+    setPanelOpen(nextPanelOpen);
+
+    if (!nextPanelOpen) return;
+
+    setActiveTab((summary.open_alerts ?? 0) > 0 ? "alerts" : "feed");
+    void loadPanelData();
+    void refreshSummary();
+  };
 
   const handleFeedNavigate = (item: NotificationFeedItem) => {
     if (!item.is_read) {
@@ -176,7 +194,7 @@ export function Topbar({ breadcrumb }: TopbarProps) {
           <div className="tb-divider" />
 
           <div className="tb-notify" ref={panelRef}>
-            <button className="btn btn-ghost btn-icon tb-notify-trigger" title="Notifications and alerts" type="button" onClick={() => setPanelOpen(open => !open)} aria-expanded={panelOpen} aria-haspopup="dialog">
+            <button className="btn btn-ghost btn-icon tb-notify-trigger" title="Notifications and alerts" type="button" onClick={handleTogglePanel} aria-expanded={panelOpen} aria-haspopup="dialog">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>
               </svg>
@@ -224,9 +242,14 @@ export function Topbar({ breadcrumb }: TopbarProps) {
                     <>
                       <div className="tb-notify-feed-head">
                         <div className="tb-notify-feed-copy">Recent updates for the modules in your current scope.</div>
-                        <button type="button" className="btn btn-xs btn-ghost" onClick={() => void markAllRead()} disabled={summary.unread_notifications === 0}>
-                          Mark all read
-                        </button>
+                        <div className="tb-notify-feed-actions">
+                          <button type="button" className="btn btn-xs btn-ghost" onClick={() => void markAllRead()} disabled={summary.unread_notifications === 0}>
+                            Mark all read
+                          </button>
+                          <button type="button" className="btn btn-xs btn-ghost" onClick={() => void clearFeed()} disabled={feed.length === 0}>
+                            Clear updates
+                          </button>
+                        </div>
                       </div>
                       {feed.length > 0 ? (
                         <div className="tb-notify-list">
@@ -239,6 +262,11 @@ export function Topbar({ breadcrumb }: TopbarProps) {
                       )}
                     </>
                   )}
+                </div>
+                <div className="tb-notify-panel-foot">
+                  <Link href="/notifications" className="btn btn-xs btn-ghost" onClick={() => setPanelOpen(false)}>
+                    View all notifications
+                  </Link>
                 </div>
               </div>
             ) : null}

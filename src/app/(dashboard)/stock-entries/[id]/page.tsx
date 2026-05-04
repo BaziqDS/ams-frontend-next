@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { ThemedSelect } from "@/components/ThemedSelect";
 import { Topbar } from "@/components/Topbar";
 import { apiFetch, type Page } from "@/lib/api";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
@@ -1073,7 +1074,7 @@ function AsideSummaryCard({ entry, related }: { entry: StockEntryRecord; related
         {entry.cancellation_reason ? (
           <>
             <hr className="h-rule" />
-            <div className="notice notice-danger" style={{ marginBottom: 0 }}>
+            <div className="notice notice-danger">
               <div className="notice-body">
                 <div className="notice-title">Cancellation reason</div>
                 <div className="notice-text">{entry.cancellation_reason}</div>
@@ -1428,15 +1429,20 @@ function AckForm({ entry, related, registers, instances, onDone, onCancel }: { e
               <div className="stock-ack-grid">
                 <Field label={isReturn ? "Received Quantity" : "Accepted Quantity"}>
                   <input className="input" type="number" min="1" max={item.quantity} value={row.quantity} disabled={isReturn || itemInstances.length > 0} onChange={event => update(item.id, { quantity: Number(event.target.value) })} />
-                </Field>
-                <Field label="Register">
-                  <select value={row.ack_stock_register} onChange={event => update(item.id, { ack_stock_register: event.target.value })}>
-                    <option value="">Choose register</option>
-                    {ackRegisters.map(register => (
-                      <option key={register.id} value={register.id}>{register.register_number} - {register.store_name}</option>
-                    ))}
-                  </select>
-                  {!ackRegisters.length ? (
+                  </Field>
+                  <Field label="Register">
+                    <ThemedSelect
+                      value={row.ack_stock_register}
+                      onChange={value => update(item.id, { ack_stock_register: value })}
+                      placeholder="Choose register"
+                      ariaLabel="Register"
+                      options={ackRegisters.map(register => ({
+                        value: String(register.id),
+                        label: register.register_number,
+                        meta: register.store_name ?? "",
+                      }))}
+                    />
+                    {!ackRegisters.length ? (
                     <div className="login-cell-sub" style={{ marginTop: 6 }}>
                       No active register found for {entry.to_location_name ?? "this destination store"}.
                     </div>

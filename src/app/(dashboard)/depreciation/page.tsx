@@ -3,13 +3,17 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ListPagination } from "@/components/ListPagination";
+import { ThemedSelect } from "@/components/ThemedSelect";
 import { Topbar } from "@/components/Topbar";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
 import { apiFetch, type Page } from "@/lib/api";
+import { useClientPagination } from "@/lib/listPagination";
 import { formatItemDate, formatItemLabel, formatQuantity, toNumber, type DepreciationSummary } from "@/lib/itemUi";
 
 type DepreciationTab = "setup" | "capitalize" | "register" | "runs" | "adjustments";
 type Density = "compact" | "balanced" | "comfortable";
+type SetupViewMode = "grid" | "list";
 
 interface FixedAssetEntry {
   id: number;
@@ -125,11 +129,15 @@ interface DepreciationSetupRow {
 
 const TABS: Array<{ key: DepreciationTab; label: string }> = [
   { key: "setup", label: "Setup" },
-  { key: "capitalize", label: "To Capitalize" },
   { key: "register", label: "Register" },
   { key: "runs", label: "Year-End Runs" },
-  { key: "adjustments", label: "Adjustments" },
 ];
+
+const DEPRECIATION_SETUP_PAGE_SIZE = 10;
+const DEPRECIATION_CAPITALIZE_PAGE_SIZE = 10;
+const DEPRECIATION_REGISTER_PAGE_SIZE = 12;
+const DEPRECIATION_RUNS_PAGE_SIZE = 10;
+const DEPRECIATION_ADJUSTMENTS_PAGE_SIZE = 10;
 
 const ADJUSTMENT_TYPES = [
   "ADDITION",
@@ -146,6 +154,20 @@ const Icon = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
   </svg>
 );
 
+function Avatar({ name, tone = 0, size = 32 }: { name: string; tone?: number; size?: number }) {
+  const initials = name.split(" ").map(part => part[0]).slice(0, 2).join("").toUpperCase();
+  const bg = tone === 0
+    ? "linear-gradient(135deg, color-mix(in oklch, var(--primary) 82%, white), var(--primary))"
+    : tone === 1
+    ? "linear-gradient(135deg, #3b4052, #0e1116)"
+    : "linear-gradient(135deg, #8a7b60, #4d442f)";
+  return (
+    <div className="avatar" style={{ width: size, height: size, background: bg, fontSize: size <= 30 ? 11 : 12 }}>
+      {initials}
+    </div>
+  );
+}
+
 function DensityToggle({ density, setDensity }: { density: Density; setDensity: (density: Density) => void }) {
   return (
     <div className="seg">
@@ -154,6 +176,19 @@ function DensityToggle({ density, setDensity }: { density: Density; setDensity: 
           {option.charAt(0).toUpperCase() + option.slice(1)}
         </button>
       ))}
+    </div>
+  );
+}
+
+function ViewModeToggle({ value, onChange }: { value: SetupViewMode; onChange: (value: SetupViewMode) => void }) {
+  return (
+    <div className="seg" aria-label="Setup view mode">
+      <button type="button" className={"seg-btn icon-only" + (value === "grid" ? " active" : "")} onClick={() => onChange("grid")} aria-label="Grid view" title="Grid">
+        <Icon d={<><rect x="4" y="4" width="6" height="6" rx="1" /><rect x="14" y="4" width="6" height="6" rx="1" /><rect x="4" y="14" width="6" height="6" rx="1" /><rect x="14" y="14" width="6" height="6" rx="1" /></>} size={14} />
+      </button>
+      <button type="button" className={"seg-btn icon-only" + (value === "list" ? " active" : "")} onClick={() => onChange("list")} aria-label="List view" title="List">
+        <Icon d={<><path d="M8 6h12M8 12h12M8 18h12" /><path d="M4 6h.01M4 12h.01M4 18h.01" /></>} size={14} />
+      </button>
     </div>
   );
 }
@@ -175,6 +210,13 @@ function statusPillClass(status: string | null | undefined) {
   if (status === "DRAFT") return "pill pill-warning";
   if (status === "REVERSED" || status === "DISPOSED" || status === "LOST" || status === "JUNK") return "pill pill-danger";
   return "pill pill-neutral";
+}
+
+function SetupStatusPill({ row }: { row: DepreciationSetupRow }) {
+  if (!row.assetClass) return <span className="pill pill-warning">Needs setup</span>;
+  if (!row.assetClass.is_active) return <span className="pill pill-neutral">Inactive</span>;
+  if (row.currentRate) return <span className="pill pill-success">Active</span>;
+  return <span className="pill pill-warning">No rate</span>;
 }
 
 function depreciationProfileCode(category: InventoryCategory) {
@@ -290,6 +332,7 @@ export default function DepreciationPage() {
   const canFull = useCan("depreciation", "full");
   const canViewCategories = useCan("categories");
   const [density, setDensity] = useState<Density>("balanced");
+  const [setupViewMode, setSetupViewMode] = useState<SetupViewMode>("grid");
   const [activeTab, setActiveTab] = useState<DepreciationTab>("setup");
   const [assets, setAssets] = useState<FixedAssetEntry[]>([]);
   const [runs, setRuns] = useState<DepreciationRun[]>([]);
@@ -504,6 +547,11 @@ export default function DepreciationPage() {
     }
   };
 
+  const closePreviewModal = () => {
+    setPreviewRunId(null);
+    setPreviewRows([]);
+  };
+
   const postRun = async (runId: number) => {
     if (!canFull) return;
     setBusy(`post-${runId}`);
@@ -536,7 +584,7 @@ export default function DepreciationPage() {
   };
 
   const createRate = async () => {
-    if (!canFull || !rateForm.category || !rateForm.rate || !rateForm.effective_from) return;
+    if (!canManage || !rateForm.category || !rateForm.rate || !rateForm.effective_from) return;
     const category = fixedAssetCategories.find(row => row.id === Number(rateForm.category));
     if (!category) return;
     setBusy("create-rate");
@@ -634,6 +682,54 @@ export default function DepreciationPage() {
     [capitalizationForm.rowKey, uncapitalized],
   );
 
+  const {
+    page: setupPage,
+    totalPages: setupTotalPages,
+    pageItems: pagedSetupRows,
+    pageStart: setupPageStart,
+    pageEnd: setupPageEnd,
+    setPage: setSetupPage,
+  } = useClientPagination(depreciationSetupRows, DEPRECIATION_SETUP_PAGE_SIZE);
+
+  const {
+    page: capitalizePage,
+    totalPages: capitalizeTotalPages,
+    pageItems: pagedUncapitalized,
+    pageStart: capitalizePageStart,
+    pageEnd: capitalizePageEnd,
+    setPage: setCapitalizePage,
+  } = useClientPagination(uncapitalized, DEPRECIATION_CAPITALIZE_PAGE_SIZE);
+
+  const {
+    page: registerPage,
+    totalPages: registerTotalPages,
+    pageItems: pagedAssets,
+    pageStart: registerPageStart,
+    pageEnd: registerPageEnd,
+    setPage: setRegisterPage,
+  } = useClientPagination(filteredAssets, DEPRECIATION_REGISTER_PAGE_SIZE, [search]);
+
+  const {
+    page: runsPage,
+    totalPages: runsTotalPages,
+    pageItems: pagedRuns,
+    pageStart: runsPageStart,
+    pageEnd: runsPageEnd,
+    setPage: setRunsPage,
+  } = useClientPagination(runs, DEPRECIATION_RUNS_PAGE_SIZE);
+
+  const {
+    page: adjustmentsPage,
+    totalPages: adjustmentsTotalPages,
+    pageItems: pagedAdjustments,
+    pageStart: adjustmentsPageStart,
+    pageEnd: adjustmentsPageEnd,
+    setPage: setAdjustmentsPage,
+  } = useClientPagination(adjustments, DEPRECIATION_ADJUSTMENTS_PAGE_SIZE);
+
+  const previewRowsToShow = previewRows.slice(0, 10);
+  const previewRunRecord = runs.find(run => run.id === previewRunId) ?? null;
+
   return (
     <div data-density={density}>
       <Topbar breadcrumb={["Inventory", "Depreciation"]} />
@@ -718,7 +814,7 @@ export default function DepreciationPage() {
                     <tbody>
                       {filteredAssets.length === 0 ? (
                         <EmptyRow colSpan={10} message="No fixed asset register entries match the current filters." />
-                      ) : filteredAssets.map(asset => (
+                      ) : pagedAssets.map(asset => (
                         <tr key={asset.id}>
                           <td className="col-user">
                             <div className="identity-cell">
@@ -750,6 +846,13 @@ export default function DepreciationPage() {
                   </table>
                 </div>
               )}
+              <ListPagination
+                summary={filteredAssets.length === 0 ? "Showing 0 fixed asset register entries" : `Showing ${registerPageStart}-${registerPageEnd} of ${filteredAssets.length} fixed asset register entries`}
+                page={registerPage}
+                totalPages={registerTotalPages}
+                onPrev={() => setRegisterPage(current => Math.max(1, current - 1))}
+                onNext={() => setRegisterPage(current => Math.min(registerTotalPages, current + 1))}
+              />
             </div>
 
             {selectedAsset ? (
@@ -831,7 +934,7 @@ export default function DepreciationPage() {
                   <tbody>
                     {runs.length === 0 ? (
                       <EmptyRow colSpan={5} message="No year-end depreciation runs have been created." />
-                    ) : runs.map(run => (
+                    ) : pagedRuns.map(run => (
                       <tr key={run.id}>
                         <td className="mono">{run.fiscal_year_label ?? `${run.fiscal_year_start}-${String(run.fiscal_year_start + 1).slice(-2)}`}</td>
                         <td><span className={statusPillClass(run.status)}>{formatItemLabel(run.status)}</span></td>
@@ -857,114 +960,155 @@ export default function DepreciationPage() {
                   </tbody>
                 </table>
               </div>
+              <ListPagination
+                summary={runs.length === 0 ? "Showing 0 annual runs" : `Showing ${runsPageStart}-${runsPageEnd} of ${runs.length} annual runs`}
+                page={runsPage}
+                totalPages={runsTotalPages}
+                onPrev={() => setRunsPage(current => Math.max(1, current - 1))}
+                onNext={() => setRunsPage(current => Math.min(runsTotalPages, current + 1))}
+              />
             </div>
 
-            {previewRunId ? (
-              <div className="table-card">
-                <div className="table-card-head">
-                  <div className="table-card-head-left">
-                    <div className="eyebrow">Run preview</div>
-                    <div className="table-count"><span className="mono">{previewRows.length}</span><span>pending entries</span></div>
-                  </div>
-                </div>
-                <div className="h-scroll">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Asset</th>
-                        <th>Item</th>
-                        <th>Rate</th>
-                        <th>Opening WDV</th>
-                        <th>Depreciation</th>
-                        <th>Closing WDV</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {previewRows.length === 0 ? (
-                        <EmptyRow colSpan={6} message="No eligible assets remain for this fiscal-year run." />
-                      ) : previewRows.map((row, index) => (
-                        <tr key={`${row.asset_number}-${index}`}>
-                          <td className="mono">{row.asset_number}</td>
-                          <td>{row.item_name ?? "-"}</td>
-                          <td>{row.rate}%</td>
-                          <td>{formatMoney(row.opening_value)}</td>
-                          <td>{formatMoney(row.depreciation_amount)}</td>
-                          <td>{formatMoney(row.closing_value)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : null}
           </div>
         ) : null}
 
         {activeTab === "setup" ? (
           <div style={{ display: "grid", gap: 16 }}>
-            <div className="table-card">
-              <div className="table-card-head">
+            <div className="filter-bar">
+              <div className="filter-bar-left">
                 <div className="table-card-head-left">
                   <div className="eyebrow">Depreciation Setup</div>
                   <div className="table-count"><span className="mono">{depreciationSetupRows.length}</span><span>categories</span></div>
                 </div>
-                <div className="table-card-actions" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {canViewCategories ? <Link href="/categories" className="btn btn-sm btn-ghost">Open categories</Link> : null}
-                  {canFull ? (
-                    <button type="button" className="btn btn-sm btn-primary" onClick={() => openRateModal()}>
-                      <Icon d="M12 5v14M5 12h14" size={14} />
-                      Add rate
-                    </button>
-                  ) : null}
-                </div>
               </div>
-              <div className="h-scroll">
-                <table className="data-table">
-                  <thead><tr><th>Fixed asset category</th><th>Depreciation setup</th><th>Current rate</th><th>Effective period</th><th>Status</th><th>Actions</th></tr></thead>
-                  <tbody>
-                    {depreciationSetupRows.length === 0 ? <EmptyRow colSpan={6} message="No fixed asset categories are available for depreciation setup." /> : depreciationSetupRows.map(row => (
-                      <tr key={row.key}>
-                        <td style={{ textAlign: "left" }}>
-                          <div className="login-cell">
-                            <div>{row.categoryName}</div>
-                            <div className="login-cell-sub mono">{row.categoryCode}</div>
-                          </div>
-                        </td>
-                        <td>
-                          {row.assetClass ? (
-                            <div className="login-cell">
-                              <div>{row.assetClass.name}</div>
-                              <div className="login-cell-sub mono">{row.assetClass.code}</div>
-                            </div>
-                          ) : "Not configured"}
-                        </td>
-                        <td>{row.currentRate ? `${row.currentRate.rate}%` : "-"}</td>
-                        <td>
-                          {row.currentRate ? (
-                            <span>{formatItemDate(row.currentRate.effective_from)} to {row.currentRate.effective_to ? formatItemDate(row.currentRate.effective_to) : "Open"}</span>
-                          ) : "-"}
-                        </td>
-                        <td>
-                          {!row.assetClass ? <span className="pill pill-warning">Needs setup</span> : !row.assetClass.is_active ? <span className="pill pill-neutral">Inactive</span> : row.currentRate ? <span className="pill pill-success">Active</span> : <span className="pill pill-warning">No rate</span>}
-                        </td>
-                        <td className="col-actions">
-                          {row.assetClass ? (
-                            <button type="button" className="btn btn-xs btn-ghost row-action" onClick={() => { setHistoryClassId(row.assetClass?.id ?? null); setHistoryFilters({ from: "", to: "" }); }}>
-                              History
-                            </button>
-                          ) : null}
-                          {canFull && row.categoryId ? (
-                            <button type="button" className="btn btn-xs row-action" onClick={() => openRateModal(row.categoryId)}>
-                              {row.assetClass ? "Update rate" : "Set rate"}
-                            </button>
-                          ) : null}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="filter-bar-right">
+                <ViewModeToggle value={setupViewMode} onChange={setSetupViewMode} />
+                {canViewCategories ? <Link href="/categories" className="btn btn-sm btn-ghost">Open categories</Link> : null}
+                {canManage ? (
+                  <button type="button" className="btn btn-sm btn-primary" onClick={() => openRateModal()}>
+                    <Icon d="M12 5v14M5 12h14" size={14} />
+                    Add rate
+                  </button>
+                ) : null}
               </div>
             </div>
+
+            {setupViewMode === "grid" ? (
+              <>
+                {depreciationSetupRows.length === 0 ? (
+                  <div className="table-card"><div style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>No fixed asset categories are available for depreciation setup.</div></div>
+                ) : (
+                <div className="users-grid">
+                  {pagedSetupRows.map(row => (
+                    <div className="user-card" key={row.key}>
+                      <div className="user-card-head">
+                        <Avatar name={row.categoryName} size={44} tone={row.assetClass ? 0 : 2} />
+                        <SetupStatusPill row={row} />
+                      </div>
+                      <div className="user-card-name">{row.categoryName}</div>
+                      <div className="user-card-meta mono">{row.categoryCode}</div>
+                      <div className="user-card-eid mono">{row.assetClass?.code ?? "Not configured"}</div>
+                      <div className="user-card-section">
+                        <div className="eyebrow">Depreciation setup</div>
+                        <div className="login-cell">
+                          <div>{row.assetClass?.name ?? "Not configured"}</div>
+                          <div className="login-cell-sub mono">{row.assetClass?.code ?? row.categoryCode}</div>
+                        </div>
+                      </div>
+                      <div className="user-card-section">
+                        <div className="eyebrow">Current rate</div>
+                        <div style={{ fontSize: 13, color: "var(--text-1)" }}>{row.currentRate ? `${row.currentRate.rate}%` : "-"}</div>
+                      </div>
+                      <div className="user-card-section">
+                        <div className="eyebrow">Effective period</div>
+                        <div style={{ fontSize: 13, color: "var(--text-1)" }}>
+                          {row.currentRate ? `${formatItemDate(row.currentRate.effective_from)} to ${row.currentRate.effective_to ? formatItemDate(row.currentRate.effective_to) : "Open"}` : "-"}
+                        </div>
+                      </div>
+                      <div className="user-card-foot">
+                        <div>
+                          <div className="eyebrow">Rate history</div>
+                          <div className="user-card-last mono">{row.rateCount} rate{row.rateCount === 1 ? "" : "s"}</div>
+                        </div>
+                        <div className="row-actions">
+                          {row.assetClass ? (
+                            <button type="button" className="btn btn-xs btn-ghost row-action" onClick={() => { setHistoryClassId(row.assetClass?.id ?? null); setHistoryFilters({ from: "", to: "" }); }}>
+                              <Icon d="M3 12a9 9 0 109-9M3 3v6h6M12 7v5l3 2" size={13} />
+                              <span className="ra-label">History</span>
+                            </button>
+                          ) : null}
+                          {canManage && row.categoryId ? (
+                            <button type="button" className="btn btn-xs btn-ghost row-action" onClick={() => openRateModal(row.categoryId)}>
+                              <Icon d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" size={13} />
+                              <span className="ra-label">{row.assetClass ? "Update rate" : "Set rate"}</span>
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                )}
+                {depreciationSetupRows.length > 0 ? (
+                  <ListPagination
+                    summary={`Showing ${setupPageStart}-${setupPageEnd} of ${depreciationSetupRows.length} setup rows`}
+                    page={setupPage}
+                    totalPages={setupTotalPages}
+                    onPrev={() => setSetupPage(current => Math.max(1, current - 1))}
+                    onNext={() => setSetupPage(current => Math.min(setupTotalPages, current + 1))}
+                    standalone
+                  />
+                ) : null}
+              </>
+            ) : (
+              <div className="table-card">
+                <div className="h-scroll">
+                  <table className="data-table">
+                    <thead><tr><th>Fixed asset category</th><th>Current rate</th><th>Effective period</th><th>Status</th><th>Actions</th></tr></thead>
+                    <tbody>
+                      {depreciationSetupRows.length === 0 ? <EmptyRow colSpan={5} message="No fixed asset categories are available for depreciation setup." /> : pagedSetupRows.map(row => (
+                        <tr key={row.key}>
+                          <td style={{ textAlign: "left" }}>
+                            <div className="login-cell" style={{ textAlign: "left" }}>
+                              <div>{row.categoryName}</div>
+                              <div className="login-cell-sub mono">{row.categoryCode}</div>
+                            </div>
+                          </td>
+                          <td>{row.currentRate ? `${row.currentRate.rate}%` : "-"}</td>
+                          <td>
+                            {row.currentRate ? (
+                              <span>{formatItemDate(row.currentRate.effective_from)} to {row.currentRate.effective_to ? formatItemDate(row.currentRate.effective_to) : "Open"}</span>
+                            ) : "-"}
+                          </td>
+                          <td>
+                            {!row.assetClass ? <span className="pill pill-warning">Needs setup</span> : !row.assetClass.is_active ? <span className="pill pill-neutral">Inactive</span> : row.currentRate ? <span className="pill pill-success">Active</span> : <span className="pill pill-warning">No rate</span>}
+                          </td>
+                          <td className="col-actions">
+                            {row.assetClass ? (
+                              <button type="button" className="btn btn-xs btn-ghost row-action" onClick={() => { setHistoryClassId(row.assetClass?.id ?? null); setHistoryFilters({ from: "", to: "" }); }}>
+                                History
+                              </button>
+                            ) : null}
+                            {canManage && row.categoryId ? (
+                              <button type="button" className="btn btn-xs row-action" onClick={() => openRateModal(row.categoryId)}>
+                                {row.assetClass ? "Update rate" : "Set rate"}
+                              </button>
+                            ) : null}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <ListPagination
+                  summary={depreciationSetupRows.length === 0 ? "Showing 0 setup rows" : `Showing ${setupPageStart}-${setupPageEnd} of ${depreciationSetupRows.length} setup rows`}
+                  page={setupPage}
+                  totalPages={setupTotalPages}
+                  onPrev={() => setSetupPage(current => Math.max(1, current - 1))}
+                  onNext={() => setSetupPage(current => Math.min(setupTotalPages, current + 1))}
+                />
+              </div>
+            )}
           </div>
         ) : null}
 
@@ -987,9 +1131,9 @@ export default function DepreciationPage() {
                 <table className="data-table">
                   <thead><tr><th>Item</th><th>Type</th><th>Instance / Lot</th><th>Quantity</th><th>Setup</th><th>Actions</th></tr></thead>
                   <tbody>
-                    {uncapitalized.length === 0 ? <EmptyRow colSpan={6} message="No fixed assets are waiting for capitalization." /> : uncapitalized.map(row => (
+                    {uncapitalized.length === 0 ? <EmptyRow colSpan={6} message="No fixed assets are waiting for capitalization." /> : pagedUncapitalized.map(row => (
                       <tr key={`${row.target_type}-${row.instance ?? row.batch}`}>
-                        <td style={{ textAlign: "left" }}><div className="login-cell"><div>{row.item_name}</div><div className="login-cell-sub mono">{row.item_code}</div></div></td>
+                        <td style={{ textAlign: "left" }}><div className="login-cell" style={{ textAlign: "left" }}><div>{row.item_name}</div><div className="login-cell-sub mono">{row.item_code}</div></div></td>
                         <td><span className="chip">{row.target_type === "LOT" ? "Asset Lot" : "Instance"}</span></td>
                         <td>{row.batch_number ?? (row.instance ? `Instance #${row.instance}` : "-")}</td>
                         <td>{formatQuantity(row.quantity)}</td>
@@ -1006,6 +1150,13 @@ export default function DepreciationPage() {
                   </tbody>
                 </table>
               </div>
+              <ListPagination
+                summary={uncapitalized.length === 0 ? "Showing 0 assets waiting for capitalization" : `Showing ${capitalizePageStart}-${capitalizePageEnd} of ${uncapitalized.length} assets waiting for capitalization`}
+                page={capitalizePage}
+                totalPages={capitalizeTotalPages}
+                onPrev={() => setCapitalizePage(current => Math.max(1, current - 1))}
+                onNext={() => setCapitalizePage(current => Math.min(capitalizeTotalPages, current + 1))}
+              />
             </div>
           </div>
         ) : null}
@@ -1029,7 +1180,7 @@ export default function DepreciationPage() {
                 <table className="data-table">
                   <thead><tr><th>Asset</th><th>Item</th><th>Type</th><th>Date</th><th>Amount</th><th>Qty</th><th>Reason</th></tr></thead>
                   <tbody>
-                    {adjustments.length === 0 ? <EmptyRow colSpan={7} message="No asset value adjustments have been recorded." /> : adjustments.map(adjustment => (
+                    {adjustments.length === 0 ? <EmptyRow colSpan={7} message="No asset value adjustments have been recorded." /> : pagedAdjustments.map(adjustment => (
                       <tr key={adjustment.id}>
                         <td className="mono">{adjustment.asset_number ?? adjustment.asset}</td>
                         <td>{adjustment.item_name ?? "-"}</td>
@@ -1043,8 +1194,63 @@ export default function DepreciationPage() {
                   </tbody>
                 </table>
               </div>
+              <ListPagination
+                summary={adjustments.length === 0 ? "Showing 0 adjustments" : `Showing ${adjustmentsPageStart}-${adjustmentsPageEnd} of ${adjustments.length} adjustments`}
+                page={adjustmentsPage}
+                totalPages={adjustmentsTotalPages}
+                onPrev={() => setAdjustmentsPage(current => Math.max(1, current - 1))}
+                onNext={() => setAdjustmentsPage(current => Math.min(adjustmentsTotalPages, current + 1))}
+              />
             </div>
           </div>
+        ) : null}
+
+        {previewRunId ? (
+          <ModalShell
+            eyebrow="Run Preview"
+            title={previewRunRecord?.fiscal_year_label ?? (previewRunRecord ? `${previewRunRecord.fiscal_year_start}-${String(previewRunRecord.fiscal_year_start + 1).slice(-2)}` : "Depreciation Run")}
+            maxWidth="min(980px, calc(100vw - 32px))"
+            onClose={closePreviewModal}
+            footer={(
+              <>
+                <div className="modal-foot-meta mono">
+                  Showing {previewRowsToShow.length} of {previewRows.length} pending entr{previewRows.length === 1 ? "y" : "ies"}.
+                </div>
+                <div className="modal-foot-actions">
+                  <button type="button" className="btn btn-md" onClick={closePreviewModal}>Close</button>
+                </div>
+              </>
+            )}
+          >
+            <div className="h-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Asset</th>
+                    <th>Item</th>
+                    <th>Rate</th>
+                    <th>Opening WDV</th>
+                    <th>Depreciation</th>
+                    <th>Closing WDV</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {previewRows.length === 0 ? (
+                    <EmptyRow colSpan={6} message="No eligible assets remain for this fiscal-year run." />
+                  ) : previewRowsToShow.map((row, index) => (
+                    <tr key={`${row.asset_number}-${index}`}>
+                      <td className="mono">{row.asset_number}</td>
+                      <td>{row.item_name ?? "-"}</td>
+                      <td>{row.rate}%</td>
+                      <td>{formatMoney(row.opening_value)}</td>
+                      <td>{formatMoney(row.depreciation_amount)}</td>
+                      <td>{formatMoney(row.closing_value)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </ModalShell>
         ) : null}
 
         {rateModalOpen ? (
@@ -1068,14 +1274,17 @@ export default function DepreciationPage() {
           >
             <div className="stage-form-fields stage-form-fields-2">
               <Field label="Fixed asset category">
-                <select value={rateForm.category} onChange={event => setRateForm(prev => ({ ...prev, category: event.target.value }))}>
-                  <option value="">Select category</option>
-                  {fixedAssetCategories.map(category => (
-                    <option key={category.id} value={category.id}>
-                      {category.name} ({category.code}){configuredCategoryIds.has(category.id) ? "" : " - needs setup"}
-                    </option>
-                  ))}
-                </select>
+                <ThemedSelect
+                  value={rateForm.category}
+                  onChange={value => setRateForm(prev => ({ ...prev, category: value }))}
+                  placeholder="Select category"
+                  ariaLabel="Fixed asset category"
+                  options={fixedAssetCategories.map(category => ({
+                    value: String(category.id),
+                    label: category.name,
+                    meta: `${category.code}${configuredCategoryIds.has(category.id) ? "" : " - needs setup"}`,
+                  }))}
+                />
               </Field>
               <Field label="Rate %">
                 <input type="number" min={0} step="0.01" value={rateForm.rate} onChange={event => setRateForm(prev => ({ ...prev, rate: event.target.value }))} />
@@ -1167,13 +1376,20 @@ export default function DepreciationPage() {
           >
             <div className="stage-form-fields stage-form-fields-3">
               <Field label="Fixed asset">
-                <select value={capitalizationForm.rowKey} onChange={event => setCapitalizationForm(prev => ({ ...prev, rowKey: event.target.value }))}>
-                  <option value="">Select asset to capitalize</option>
-                  {uncapitalized.map(row => {
+                <ThemedSelect
+                  value={capitalizationForm.rowKey}
+                  onChange={value => setCapitalizationForm(prev => ({ ...prev, rowKey: value }))}
+                  placeholder="Select asset to capitalize"
+                  ariaLabel="Fixed asset"
+                  options={uncapitalized.map(row => {
                     const key = `${row.target_type}-${row.instance ?? row.batch}`;
-                    return <option key={key} value={key}>{row.item_name} / {row.target_type === "LOT" ? row.batch_number : `Instance #${row.instance}`}</option>;
+                    return {
+                      value: key,
+                      label: row.item_name || "Fixed asset",
+                      meta: row.target_type === "LOT" ? row.batch_number ?? "" : `Instance #${row.instance}`,
+                    };
                   })}
-                </select>
+                />
               </Field>
               <Field label="Cost">
                 <input type="number" min={0} step="0.01" value={capitalizationForm.original_cost} onChange={event => setCapitalizationForm(prev => ({ ...prev, original_cost: event.target.value }))} placeholder="0.00" />
@@ -1225,15 +1441,25 @@ export default function DepreciationPage() {
           >
             <div className="stage-form-fields stage-form-fields-3">
               <Field label="Asset">
-                <select value={adjustmentForm.asset} onChange={event => setAdjustmentForm(prev => ({ ...prev, asset: event.target.value }))}>
-                  <option value="">Select asset</option>
-                  {assets.map(asset => <option key={asset.id} value={asset.id}>{asset.asset_number} / {asset.item_name}</option>)}
-                </select>
+                <ThemedSelect
+                  value={adjustmentForm.asset}
+                  onChange={value => setAdjustmentForm(prev => ({ ...prev, asset: value }))}
+                  placeholder="Select asset"
+                  ariaLabel="Asset"
+                  options={assets.map(asset => ({
+                    value: String(asset.id),
+                    label: asset.asset_number,
+                    meta: asset.item_name ?? "",
+                  }))}
+                />
               </Field>
               <Field label="Type">
-                <select value={adjustmentForm.adjustment_type} onChange={event => setAdjustmentForm(prev => ({ ...prev, adjustment_type: event.target.value }))}>
-                  {ADJUSTMENT_TYPES.map(type => <option key={type} value={type}>{formatItemLabel(type)}</option>)}
-                </select>
+                <ThemedSelect
+                  value={adjustmentForm.adjustment_type}
+                  onChange={value => setAdjustmentForm(prev => ({ ...prev, adjustment_type: value }))}
+                  ariaLabel="Adjustment type"
+                  options={ADJUSTMENT_TYPES.map(type => ({ value: type, label: formatItemLabel(type) }))}
+                />
               </Field>
               <Field label="Effective date">
                 <input type="date" value={adjustmentForm.effective_date} onChange={event => setAdjustmentForm(prev => ({ ...prev, effective_date: event.target.value }))} />

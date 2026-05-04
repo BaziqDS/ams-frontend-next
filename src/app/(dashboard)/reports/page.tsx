@@ -26,43 +26,46 @@ export default function ReportsPage() {
           <div className="page-title-group">
             <div className="eyebrow">Operations</div>
             <h1>Reports</h1>
-            <div className="page-sub">Generate operational reports for the inventory modules available to your role.</div>
+            <div className="page-sub">The reports workspace is being refined into a fuller operational reporting module.</div>
           </div>
         </div>
 
-        <div className="table-card" style={{ padding: 24 }}>
-          <div className="table-card-head" style={{ padding: 0, marginBottom: 20 }}>
-            <div className="table-card-head-left">
-              <div>
-                <h3 style={{ margin: 0 }}>Available reports</h3>
-                <p style={{ margin: "6px 0 0", color: "var(--text-2)", fontSize: 14 }}>
-                  Start with the inventory position report for a store-level PDF snapshot.
-                </p>
+        <section className="reports-construction-card">
+          <div className="reports-construction-badge-wrap">
+            <span className="reports-construction-badge">Module under construction</span>
+          </div>
+
+          <div className="reports-construction-grid">
+            <div className="reports-construction-copy">
+              <div className="eyebrow">Reporting module</div>
+              <h2>We are building a more meaningful reports workspace.</h2>
+              <p>
+                Dashboards, printable summaries, and deeper operational reporting are still being assembled.
+                This area will expand into a fuller reporting surface in upcoming iterations.
+              </p>
+              <div className="reports-construction-meta">
+                <span>Preview state</span>
+                <span>Design pass in progress</span>
+              </div>
+            </div>
+
+            <div className="reports-construction-aside">
+              <div className="reports-construction-panel">
+                <div className="eyebrow">Available now</div>
+                <strong>Inventory Position Report</strong>
+                <p>Need a live store-level snapshot today? Open the inventory position report directly.</p>
+                <Link href="/reports/inventory-position" className="btn btn-sm btn-primary reports-construction-link">
+                  Open inventory position report
+                </Link>
+              </div>
+              <div className="reports-construction-scaffold" aria-hidden="true">
+                <span />
+                <span />
+                <span />
               </div>
             </div>
           </div>
-
-          <Link
-            href="/reports/inventory-position"
-            style={{
-              display: "block",
-              padding: 18,
-              border: "1px solid var(--line)",
-              borderRadius: "var(--radius-lg)",
-              textDecoration: "none",
-              color: "inherit",
-              background: "var(--panel)",
-            }}
-          >
-            <div className="eyebrow" style={{ marginBottom: 8 }}>Report</div>
-            <div style={{ fontSize: 18, fontWeight: 600, color: "var(--ink)", marginBottom: 6 }}>
-              Inventory Position Report
-            </div>
-            <div style={{ color: "var(--text-2)", fontSize: 14 }}>
-              Select a store and open its current inventory position PDF in a new tab.
-            </div>
-          </Link>
-        </div>
+        </section>
       </div>
     </div>
   );

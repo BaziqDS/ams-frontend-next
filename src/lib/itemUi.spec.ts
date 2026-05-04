@@ -4,6 +4,7 @@ import {
   canShowBatches,
   findDistributionUnit,
   flattenDistributionDetails,
+  formatTrackingTypeLabel,
   isLowStock,
   itemStatusTone,
   type ItemDistributionUnit,
@@ -88,6 +89,13 @@ describe("item UI helpers", () => {
       expect.objectContaining({ kind: "person", name: "Dr. A. Khan", quantity: 2 }),
       expect.objectContaining({ kind: "location", name: "CIS Lab B", quantity: 2, locationId: 102 }),
     ]);
+  });
+
+  it("supports compact tracking labels for narrow list columns", () => {
+    expect(formatTrackingTypeLabel("QUANTITY")).toBe("Quantity Based Tracking");
+    expect(formatTrackingTypeLabel("QUANTITY", { compact: true })).toBe("Quantity Based");
+    expect(formatTrackingTypeLabel("INDIVIDUAL", { compact: true })).toBe("Individual");
+    expect(formatTrackingTypeLabel(null, { compact: true, fallback: "Unknown" })).toBe("Unknown");
   });
 
   it("marks items as in stock only when total quantity is above zero", () => {

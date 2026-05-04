@@ -78,6 +78,19 @@ export interface ItemDistributionUnit {
   allocations: ItemDistributionAllocation[];
 }
 
+export interface ItemScopeOption {
+  id: string;
+  label: string;
+  kind: "all" | "root" | "standalone" | "store" | string;
+  location_id: number | null;
+}
+
+export interface ItemScopeOptionsResponse {
+  options: ItemScopeOption[];
+  default: string[];
+  is_root_scope: boolean;
+}
+
 export interface ItemDistributionDetailRow {
   id: string;
   kind: "store" | "person" | "location";
@@ -104,11 +117,27 @@ export function toNumber(value: number | string | null | undefined) {
   return 0;
 }
 
+function formatUiLabel(value: string) {
+  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
+export function formatTrackingTypeLabel(
+  value: TrackingType,
+  options: { compact?: boolean; fallback?: string } = {},
+) {
+  const fallback = options.fallback ?? "-";
+  if (!value) return fallback;
+  if (value === "INDIVIDUAL") return options.compact ? "Individual" : "Individual Tracking";
+  if (value === "QUANTITY") return options.compact ? "Quantity Based" : "Quantity Based Tracking";
+  return formatUiLabel(String(value));
+}
+
 export function formatItemLabel(value: string | null | undefined, fallback = "-") {
   if (!value) return fallback;
-  if (value === "INDIVIDUAL") return "Individual Tracking";
-  if (value === "QUANTITY") return "Quantity Based Tracking";
-  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  if (value === "INDIVIDUAL" || value === "QUANTITY") {
+    return formatTrackingTypeLabel(value, { fallback });
+  }
+  return formatUiLabel(value);
 }
 
 export function formatQuantity(value: number | string | null | undefined) {

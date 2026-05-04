@@ -2,13 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ListPagination } from "@/components/ListPagination";
+import { ThemedSelect } from "@/components/ThemedSelect";
 import { Topbar } from "@/components/Topbar";
 import { StockRegisterModal } from "@/components/StockRegisterModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
 import { apiFetch, type Page } from "@/lib/api";
-import { filterStockRegisters, getActiveStoreOptions } from "@/lib/stockRegisterUi";
+import { useClientPagination } from "@/lib/listPagination";
+import { filterStockRegisters, getCreatableStockRegisterStoreOptions } from "@/lib/stockRegisterUi";
 import { relTime, type LocationRecord, type StockRegisterRecord } from "@/lib/userUiShared";
+
+const STOCK_REGISTERS_PAGE_SIZE = 12;
 
 const Ic = ({ d, size = 16 }: { d: React.ReactNode | string; size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden="true" focusable="false">
@@ -508,7 +513,19 @@ export function StockRegisterListView() {
     [registers, search, typeFilter, statusFilter],
   );
 
-  const storeOptions = useMemo(() => getActiveStoreOptions(locations), [locations]);
+  const {
+    page,
+    totalPages,
+    pageItems: pagedRegisters,
+    pageStart,
+    pageEnd,
+    setPage,
+  } = useClientPagination(filteredRegisters, STOCK_REGISTERS_PAGE_SIZE, [search, typeFilter, statusFilter]);
+
+  const storeOptions = useMemo(
+    () => getCreatableStockRegisterStoreOptions(locations, user?.assigned_locations),
+    [locations, user?.assigned_locations],
+  );
   const pageBusy = busyAction !== null;
   const deleteBusyRegisterId = busyAction?.kind === "delete" ? busyAction.registerId : null;
 
@@ -551,23 +568,35 @@ export function StockRegisterListView() {
 
             <div className="filter-select-group">
               <div className="chip-filter-label">Type</div>
-              <label className="filter-select-wrap">
-                <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} aria-label="Filter stock registers by type">
-                  <option value="all">All types</option>
-                  <option value="CSR">Consumable</option>
-                  <option value="DSR">Dead Stock</option>
-                </select>
-              </label>
+              <div className="filter-select-wrap">
+                <ThemedSelect
+                  value={typeFilter}
+                  onChange={setTypeFilter}
+                  size="compact"
+                  ariaLabel="Filter stock registers by type"
+                  options={[
+                    { value: "all", label: "All types" },
+                    { value: "CSR", label: "Consumable" },
+                    { value: "DSR", label: "Dead Stock" },
+                  ]}
+                />
+              </div>
             </div>
 
-            <div className="chip-filter-group">
+            <div className="filter-select-group">
               <div className="chip-filter-label">Status</div>
-              <div className="chip-filter">
-                {[{ k: "all", label: "All" }, { k: "active", label: "Active" }, { k: "inactive", label: "Disabled" }].map((option) => (
-                  <button key={option.k} type="button" className={"chip-filter-btn" + (statusFilter === option.k ? " active" : "")} onClick={() => setStatusFilter(option.k)}>
-                    {option.label}
-                  </button>
-                ))}
+              <div className="filter-select-wrap">
+                <ThemedSelect
+                  value={statusFilter}
+                  onChange={setStatusFilter}
+                  size="compact"
+                  ariaLabel="Filter stock registers by status"
+                  options={[
+                    { value: "all", label: "All statuses" },
+                    { value: "active", label: "Active" },
+                    { value: "inactive", label: "Disabled" },
+                  ]}
+                />
               </div>
             </div>
           </div>
@@ -626,7 +655,7 @@ export function StockRegisterListView() {
                       </td>
                     </tr>
                   ) : (
-                    filteredRegisters.map((register) => (
+                    pagedRegisters.map((register) => (
                       <StockRegisterRow
                         key={register.id}
                         register={register}
@@ -644,16 +673,17 @@ export function StockRegisterListView() {
                 </tbody>
               </table>
             </div>
-            <div className="table-card-foot">
-              <div className="eyebrow">Showing {filteredRegisters.length} rows</div>
-              <div className="pager">
-                <span className="mono pager-current">Stock registers</span>
-              </div>
-            </div>
+            <ListPagination
+              summary={filteredRegisters.length === 0 ? "Showing 0 stock registers" : `Showing ${pageStart}-${pageEnd} of ${filteredRegisters.length} stock registers`}
+              page={page}
+              totalPages={totalPages}
+              onPrev={() => setPage(current => Math.max(1, current - 1))}
+              onNext={() => setPage(current => Math.min(totalPages, current + 1))}
+            />
           </div>
         ) : filteredRegisters.length > 0 ? (
           <div className="users-grid">
-            {filteredRegisters.map((register) => (
+            {pagedRegisters.map((register) => (
               <StockRegisterCard
                 key={register.id}
                 register={register}
@@ -675,6 +705,16 @@ export function StockRegisterListView() {
             </div>
           </div>
         )}
+        {mode === "grid" && filteredRegisters.length > 0 ? (
+          <ListPagination
+            summary={`Showing ${pageStart}-${pageEnd} of ${filteredRegisters.length} stock registers`}
+            page={page}
+            totalPages={totalPages}
+            onPrev={() => setPage(current => Math.max(1, current - 1))}
+            onNext={() => setPage(current => Math.min(totalPages, current + 1))}
+            standalone
+          />
+        ) : null}
 
         <StockRegisterModal
           open={modalOpen}

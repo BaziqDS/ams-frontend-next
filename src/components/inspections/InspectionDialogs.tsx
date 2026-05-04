@@ -1,7 +1,8 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch, type Page } from "@/lib/api";
+import { ThemedSelect } from "@/components/ThemedSelect";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   API_BASE,
@@ -12,12 +13,14 @@ import {
   type InspectionLocationOption,
   type InspectionRecord,
   type InspectionStage,
-  INSPECTION_STAGE_LABELS,
   INSPECTION_STAGE_PILL,
+  getInspectionStageDisplayLabel,
   type InspectionStockRegisterOption,
 } from "@/lib/inspectionUi";
 import {
   getAutoSelectedInspectionLocation,
+  getDefaultFinanceCheckDate,
+  getInspectionCentralStoreRegisters,
   getInspectionMainStoreRegisters,
   getInspectionQuantityError,
   getInspectionQuantityUpdateError,
@@ -42,11 +45,11 @@ export const InspectionIcon = ({ d, size = 16 }: { d: React.ReactNode | string; 
   </svg>
 );
 
-export function InspectionStagePill({ stage }: { stage: InspectionStage }) {
+export function InspectionStagePill({ stage, status }: { stage: InspectionStage; status?: string | null }) {
   return (
     <span className={`pill ${INSPECTION_STAGE_PILL[stage] ?? "pill-neutral"}`}>
       <span className="status-dot" />
-      {INSPECTION_STAGE_LABELS[stage] ?? stage}
+      {getInspectionStageDisplayLabel({ stage, status })}
     </span>
   );
 }
@@ -166,9 +169,9 @@ export function InspectionModal({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [previewFile, setPreviewFile] = useState<{ url: string; type: "image" | "pdf" | "other"; name: string } | null>(null);
-  const rootScopedUser = Boolean(user?.is_superuser) || locations.some(location => user?.assigned_locations?.includes(location.id) && location.hierarchy_level === 0);
-  const locationScopeHint = rootScopedUser
-    ? "Root-level access can create certificates for any standalone location."
+  const canCreateForAnyStandalone = Boolean(user?.is_superuser);
+  const locationScopeHint = canCreateForAnyStandalone
+    ? "Superusers can create certificates for any standalone location."
     : locations.length === 1
       ? "Your assigned standalone location was selected automatically."
       : "Only your assigned standalone locations are available.";
@@ -212,7 +215,9 @@ export function InspectionModal({
     ? locations.find(location => location.id === department)?.hierarchy_level ?? null
     : inspection?.department_hierarchy_level ?? null;
   const selectedInspectionLocation = locations.find(location => String(location.id) === String(department || inspection?.department || ""));
-  const scopedRegisterOptions = getInspectionMainStoreRegisters(stockRegisters, selectedInspectionLocation);
+  const departmentRegisterOptions = getInspectionMainStoreRegisters(stockRegisters, selectedInspectionLocation);
+  const centralRegisterOptions = getInspectionCentralStoreRegisters(stockRegisters, selectedInspectionLocation);
+  const singleCreateDepartment = mode === "create" && locations.length === 1 ? locations[0] : null;
 
   useEffect(() => {
     if (!open) return;
@@ -230,7 +235,7 @@ export function InspectionModal({
       setRemarks(inspection.remarks ?? "");
       setInspectedBy(inspection.inspected_by ?? "");
       setDateOfInspection(inspection.date_of_inspection ?? "");
-      setFinanceCheckDate(inspection.finance_check_date ?? "");
+      setFinanceCheckDate(isEditStage4 ? getDefaultFinanceCheckDate(inspection.finance_check_date) : (inspection.finance_check_date ?? ""));
       setConsigneeName(inspection.consignee_name ?? "");
       setConsigneeDesignation(inspection.consignee_designation ?? "");
       setItems(inspection.items.length > 0 ? inspection.items : [blankItem()]);
@@ -273,9 +278,8 @@ export function InspectionModal({
     ])
       .then(([loadedLocations, loadedItems, loadedRegisters]) => {
         const standaloneLocations = loadedLocations.filter(location => location.is_standalone);
-        const isRootUser = Boolean(user?.is_superuser) || loadedLocations.some(location => user?.assigned_locations?.includes(location.id) && location.hierarchy_level === 0);
         const scopedLocations = mode === "create"
-          ? getScopedInspectionLocations(loadedLocations, user?.assigned_locations, isRootUser)
+          ? getScopedInspectionLocations(loadedLocations, user?.assigned_locations, Boolean(user?.is_superuser))
           : standaloneLocations;
         setLocations(scopedLocations);
         if (mode === "create") {
@@ -496,7 +500,7 @@ export function InspectionModal({
 
   const title = mode === "create"
     ? "New Inspection Certificate"
-    : `${inspection?.contract_no ?? "Edit"} — ${INSPECTION_STAGE_LABELS[stage]}`;
+    : `${inspection?.contract_no ?? "Edit"} — ${getInspectionStageDisplayLabel({ stage, status: inspection?.status })}`;
 
   const imagePreview = previewFile && previewFile.type === "image" ? (
     <div className="doc-preview-overlay" onClick={closePreview}>
@@ -568,14 +572,18 @@ export function InspectionModal({
                   <input value={indentNo} onChange={event => setIndentNo(event.target.value)} placeholder="Indent no." disabled={!canEditBasic} />
                 </Field>
                 <Field label="Department" required={canEditBasic} error={touched ? errors.department : undefined} hint={!touched || !errors.department ? locationScopeHint : undefined}>
-                  <select value={department} onChange={event => setDepartment(event.target.value ? Number(event.target.value) : "")} disabled={!canEditBasic || refsLoading}>
-                    <option value="">Select department…</option>
-                    {locations.map(location => (
-                      <option key={location.id} value={location.id}>
-                        {location.name}
-                      </option>
-                    ))}
-                  </select>
+                  {singleCreateDepartment ? (
+                    <input value={singleCreateDepartment.name} readOnly disabled />
+                  ) : (
+                    <ThemedSelect
+                      value={department ? String(department) : ""}
+                      onChange={value => setDepartment(value ? Number(value) : "")}
+                      placeholder="Select department..."
+                      ariaLabel="Department"
+                      disabled={!canEditBasic || refsLoading}
+                      options={locations.map(location => ({ value: String(location.id), label: location.name }))}
+                    />
+                  )}
                 </Field>
                 <Field label="Date of Delivery">
                   <input type="date" value={dateOfDelivery} onChange={event => setDateOfDelivery(event.target.value)} disabled={!canEditBasic} />
@@ -598,150 +606,149 @@ export function InspectionModal({
                   <input value={consigneeDesignation} onChange={event => setConsigneeDesignation(event.target.value)} placeholder="Designation" disabled={!canEditBasic} />
                 </Field>
                 <Field label="Remarks" span={2}>
-                  <textarea value={remarks} onChange={event => setRemarks(event.target.value)} placeholder="Any remarks…" rows={2} disabled={!canEditBasic} />
+                  <textarea className="inspection-remarks-textarea" value={remarks} onChange={event => setRemarks(event.target.value)} placeholder="Any remarks…" rows={2} disabled={!canEditBasic} />
                 </Field>
               </div>
             </Section>
 
             <Section n={3} title="Items" sub={canEditItems ? "Add items received under this inspection." : "Items on this inspection certificate."}>
-              <div className="inspection-items-table-wrap">
-                <table className="inspection-items-table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: 36 }}>#</th>
-                      <th className="inspection-item-description-head">Description</th>
-                      <th style={{ width: 84 }}>Tendered</th>
-                      <th style={{ width: 84 }}>Accepted</th>
-                      <th style={{ width: 84 }}>Rejected</th>
-                      <th style={{ width: 150 }}>Unit Price</th>
-                      {showStockColumns && (
-                        <>
-                          <th>Stock Register</th>
-                          {showCentralColumns && <th>Central Register</th>}
-                        </>
-                      )}
-                      {showCentralColumns && <th>System Item</th>}
-                      {canEditItems && <th style={{ width: 40 }} />}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((item, index) => {
-                      const visibleColumnCount =
-                        6 + (showStockColumns ? 1 : 0) + (showCentralColumns ? 2 : 0) + (canEditItems ? 1 : 0);
-                      const canEditRejectionReason = canEditItems || canEditStage2 || canEditStage3 || canEditStage4;
-                      const showRejectionReason = Number(item.rejected_quantity || 0) > 0;
-                      const quantityError = quantityInputErrors[index] || (touched ? errors[`item_${index}_qty`] : "");
+              <div className="inspection-items-card-list">
+                {items.map((item, index) => {
+                  const canEditRejectionReason = canEditItems || canEditStage2 || canEditStage3 || canEditStage4;
+                  const showRejectionReason = Number(item.rejected_quantity || 0) > 0;
+                  const quantityError = quantityInputErrors[index] || (touched ? errors[`item_${index}_qty`] : "");
 
-                      return (
-                        <Fragment key={item.id ?? `new-${index}`}>
-                          <tr>
-                            <td className="mono" style={{ color: "var(--muted)", fontSize: 12 }}>{index + 1}</td>
-                            <td className="inspection-item-description-cell">
-                              <textarea
-                                className="inspection-item-description-input"
-                                rows={1}
-                                value={item.item_description}
-                                onChange={event => updateItemDescription(index, event.target.value, event.currentTarget)}
-                                placeholder="Item description"
-                                disabled={!canEditItems}
-                              />
-                              {touched && errors[`item_${index}_desc`] && <div className="field-error">{errors[`item_${index}_desc`]}</div>}
-                            </td>
-                            <td><input type="number" min={1} value={item.tendered_quantity} onChange={event => updateItemQuantity(index, "tendered_quantity", event.target.value)} disabled={!canEditItems} /></td>
-                            <td><input type="number" min={0} value={item.accepted_quantity} onChange={event => updateItemQuantity(index, "accepted_quantity", event.target.value)} disabled={!canEditRejectionReason} /></td>
-                            <td>
-                              <input type="number" min={0} value={item.rejected_quantity} onChange={event => updateItemQuantity(index, "rejected_quantity", event.target.value)} disabled={!canEditRejectionReason} />
-                              {quantityError ? <div className="field-error">{quantityError}</div> : null}
-                            </td>
-                            <td><input className="inspection-unit-price-input" type="number" step="0.01" value={item.unit_price} onChange={event => updateItem(index, { unit_price: event.target.value })} disabled={!canEditItems} /></td>
-                            {showStockColumns && (
-                              <td>
-                                <select
-                                  value={item.stock_register ?? ""}
-                                  onChange={event => {
-                                    const selectedId = event.target.value ? Number(event.target.value) : null;
-                                    const register = scopedRegisterOptions.find(option => option.id === selectedId);
+                  return (
+                    <div key={item.id ?? `new-${index}`} className="inspection-item-card">
+                      <div className="inspection-item-card-head">
+                        <span className="inspection-item-card-index mono">{index + 1}</span>
+                        <div className="inspection-item-card-desc">
+                          <textarea
+                            className="inspection-item-description-input"
+                            rows={1}
+                            value={item.item_description}
+                            onChange={event => updateItemDescription(index, event.target.value, event.currentTarget)}
+                            placeholder="Item description"
+                            disabled={!canEditItems}
+                          />
+                          {touched && errors[`item_${index}_desc`] && <div className="field-error">{errors[`item_${index}_desc`]}</div>}
+                        </div>
+                        {canEditItems && (
+                          <button type="button" className="btn btn-xs btn-danger-ghost" onClick={() => removeItem(index)} disabled={items.length <= 1} title="Remove item">
+                            <InspectionIcon d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12h6l1-12" size={12} />
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="inspection-item-card-fields">
+                        <Field label="Tendered">
+                          <input type="number" min={1} value={item.tendered_quantity} onChange={event => updateItemQuantity(index, "tendered_quantity", event.target.value)} disabled={!canEditItems} />
+                        </Field>
+                        <Field label="Accepted">
+                          <input type="number" min={0} value={item.accepted_quantity} onChange={event => updateItemQuantity(index, "accepted_quantity", event.target.value)} disabled={!canEditRejectionReason} />
+                        </Field>
+                        <Field label="Rejected">
+                          <input type="number" min={0} value={item.rejected_quantity} onChange={event => updateItemQuantity(index, "rejected_quantity", event.target.value)} disabled={!canEditRejectionReason} />
+                        </Field>
+                        <Field label="Unit Price (PKR)">
+                          <input className="inspection-unit-price-input" type="number" step="0.01" value={item.unit_price} onChange={event => updateItem(index, { unit_price: event.target.value })} disabled={!canEditItems} />
+                        </Field>
+                      </div>
+
+                      {quantityError ? <div className="field-error inspection-item-card-error">{quantityError}</div> : null}
+
+                      {showStockColumns || showCentralColumns ? (
+                        <div className="inspection-item-card-fields">
+                          {showStockColumns && (
+                            <>
+                              <Field label="Stock Register">
+                                <ThemedSelect
+                                  value={item.stock_register == null ? "" : String(item.stock_register)}
+                                  onChange={value => {
+                                    const selectedId = value ? Number(value) : null;
+                                    const register = departmentRegisterOptions.find(option => option.id === selectedId);
                                     updateItem(index, {
                                       stock_register: selectedId,
                                       stock_register_no: register?.register_number ?? "",
                                     });
                                   }}
+                                  placeholder="-"
+                                  ariaLabel="Stock register"
+                                  size="compact"
                                   disabled={!canEditStage2 && !canEditStage3 && !canEditStage4}
-                                >
-                                  <option value="">—</option>
-                                  {scopedRegisterOptions.map(register => (
-                                    <option key={register.id} value={register.id}>
-                                      {register.register_number}
-                                    </option>
-                                  ))}
-                                </select>
-                                <input value={item.stock_register_page_no} onChange={event => updateItem(index, { stock_register_page_no: event.target.value })} placeholder="Page #" disabled={!canEditStage2 && !canEditStage3 && !canEditStage4} style={{ marginTop: 4 }} />
-                              </td>
-                            )}
-                            {showCentralColumns && (
-                              <td>
-                                <select
-                                  value={item.central_register ?? ""}
-                                  onChange={event => {
-                                    const selectedId = event.target.value ? Number(event.target.value) : null;
-                                    const register = scopedRegisterOptions.find(option => option.id === selectedId);
+                                  options={departmentRegisterOptions.map(register => ({
+                                    value: String(register.id),
+                                    label: register.register_number,
+                                  }))}
+                                />
+                              </Field>
+                              <Field label="Stock Page #">
+                                <input value={item.stock_register_page_no} onChange={event => updateItem(index, { stock_register_page_no: event.target.value })} placeholder="Page #" disabled={!canEditStage2 && !canEditStage3 && !canEditStage4} />
+                              </Field>
+                            </>
+                          )}
+                          {showCentralColumns && (
+                            <>
+                              <Field label="Central Register">
+                                <ThemedSelect
+                                  value={item.central_register == null ? "" : String(item.central_register)}
+                                  onChange={value => {
+                                    const selectedId = value ? Number(value) : null;
+                                    const register = centralRegisterOptions.find(option => option.id === selectedId);
                                     updateItem(index, {
                                       central_register: selectedId,
                                       central_register_no: register?.register_number ?? "",
                                     });
                                   }}
+                                  placeholder="-"
+                                  ariaLabel="Central register"
+                                  size="compact"
                                   disabled={!canEditStage3 && !canEditStage4}
-                                >
-                                  <option value="">—</option>
-                                  {scopedRegisterOptions.map(register => (
-                                    <option key={register.id} value={register.id}>
-                                      {register.register_number}
-                                    </option>
-                                  ))}
-                                </select>
-                                <input value={item.central_register_page_no} onChange={event => updateItem(index, { central_register_page_no: event.target.value })} placeholder="Page #" disabled={!canEditStage3 && !canEditStage4} style={{ marginTop: 4 }} />
-                              </td>
-                            )}
-                            {showCentralColumns && (
-                              <td>
-                                <select value={item.item ?? ""} onChange={event => updateItem(index, { item: event.target.value ? Number(event.target.value) : null })} disabled={!canEditStage3 && !canEditStage4}>
-                                  <option value="">—</option>
-                                  {itemOptions.map(option => (
-                                    <option key={option.id} value={option.id}>
-                                      {option.code} — {option.name}
-                                    </option>
-                                  ))}
-                                </select>
-                              </td>
-                            )}
-                            {canEditItems && (
-                              <td>
-                                <button type="button" className="btn btn-xs btn-danger-ghost" onClick={() => removeItem(index)} disabled={items.length <= 1} title="Remove item">
-                                  <InspectionIcon d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12h6l1-12" size={12} />
-                                </button>
-                              </td>
-                            )}
-                          </tr>
-                          {showRejectionReason ? (
-                            <tr className="inspection-rejection-row">
-                              <td colSpan={visibleColumnCount}>
-                                <div className="inspection-rejection-reason">
-                                  <input
-                                    value={item.remarks || ""}
-                                    onChange={event => updateItem(index, { remarks: event.target.value })}
-                                    placeholder="Reason for rejected quantity"
-                                    disabled={!canEditRejectionReason}
-                                  />
-                                  {touched && errors[`item_${index}_reject_reason`] ? <div className="field-error">{errors[`item_${index}_reject_reason`]}</div> : null}
-                                </div>
-                              </td>
-                            </tr>
-                          ) : null}
-                        </Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                                  options={centralRegisterOptions.map(register => ({
+                                    value: String(register.id),
+                                    label: register.register_number,
+                                  }))}
+                                />
+                              </Field>
+                              <Field label="Central Page #">
+                                <input value={item.central_register_page_no} onChange={event => updateItem(index, { central_register_page_no: event.target.value })} placeholder="Page #" disabled={!canEditStage3 && !canEditStage4} />
+                              </Field>
+                              <Field label="System Item">
+                                <ThemedSelect
+                                  value={item.item == null ? "" : String(item.item)}
+                                  onChange={value => updateItem(index, { item: value ? Number(value) : null })}
+                                  placeholder="-"
+                                  ariaLabel="Catalog item"
+                                  size="compact"
+                                  disabled={!canEditStage3 && !canEditStage4}
+                                  options={itemOptions.map(option => ({
+                                    value: String(option.id),
+                                    label: option.name,
+                                    meta: option.code,
+                                  }))}
+                                />
+                              </Field>
+                            </>
+                          )}
+                        </div>
+                      ) : null}
+
+                      {showRejectionReason ? (
+                        <div className="inspection-rejection-reason">
+                          <Field label="Reason for rejection">
+                            <input
+                              value={item.remarks || ""}
+                              onChange={event => updateItem(index, { remarks: event.target.value })}
+                              placeholder="Reason for rejected quantity"
+                              disabled={!canEditRejectionReason}
+                            />
+                          </Field>
+                          {touched && errors[`item_${index}_reject_reason`] ? <div className="field-error">{errors[`item_${index}_reject_reason`]}</div> : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
               {canEditItems && (
                 <button type="button" className="btn btn-sm" onClick={addItem} style={{ marginTop: 8 }}>
@@ -842,7 +849,7 @@ export function InspectionModal({
                   )}
                   {inspection.rejected_by && (
                     <div className="audit-entry audit-rejected">
-                      <span className="audit-label">Rejected by</span>
+                      <span className="audit-label">{inspection.status === "CANCELLED" ? "Cancelled by" : "Rejected by"}</span>
                       <span className="mono">{inspection.rejected_by_name || `User #${inspection.rejected_by}`}</span>
                       <span className="audit-date">{formatInspectionDate(inspection.rejected_at)}</span>
                       {inspection.rejection_reason && <div className="audit-reason">{inspection.rejection_reason}</div>}
@@ -862,7 +869,7 @@ export function InspectionModal({
                   {issueCount} issue{issueCount > 1 ? "s" : ""} to resolve
                 </span>
               ) : (
-                <span className="foot-ok">{mode === "create" ? "Ready to create" : `Stage: ${INSPECTION_STAGE_LABELS[stage]}`}</span>
+                <span className="foot-ok">{mode === "create" ? "Ready to create" : `Stage: ${getInspectionStageDisplayLabel({ stage, status: inspection?.status })}`}</span>
               )}
             </div>
             <div className="modal-foot-actions">
@@ -913,27 +920,131 @@ export function RejectInspectionModal({
 
   return (
     <div className="modal-backdrop">
-      <div className="modal" style={{ maxWidth: 420 }}>
+      <div className="modal inspection-return-modal" role="dialog" aria-modal="true" aria-labelledby="inspection-cancel-title">
         <div className="modal-head">
           <div>
-            <div className="eyebrow" style={{ color: "var(--danger)" }}>Reject Inspection</div>
-            <h2>Confirm Rejection</h2>
+            <div className="eyebrow">Inspection Workflow</div>
+            <h2 id="inspection-cancel-title">Cancel Inspection</h2>
           </div>
-          <button type="button" className="modal-close" onClick={onClose} aria-label="Close rejection dialog">
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close cancellation dialog">
             <InspectionIcon d="M18 6L6 18M6 6l12 12" size={14} />
           </button>
         </div>
         <div className="modal-body">
-          <Field label="Rejection Reason" required error={touched && !reason.trim() ? "Required" : undefined}>
-            <textarea value={reason} onChange={event => setReason(event.target.value)} onBlur={() => setTouched(true)} placeholder="Explain why this inspection is being rejected…" rows={3} />
-          </Field>
+          <div className="inspection-return-body">
+            <div className="inspection-return-intro is-danger">
+              <div className="inspection-return-intro-icon">
+                <InspectionIcon d={<><circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" /></>} size={16} />
+              </div>
+              <div className="inspection-return-intro-copy">
+                <div className="inspection-return-intro-label">Cancellation</div>
+                <div className="inspection-return-intro-title">Close this inspection workflow</div>
+                <p>Use cancellation only when this certificate should stop entirely. The cancellation reason will be stored on the inspection record for audit history.</p>
+              </div>
+            </div>
+
+            <Field label="Cancellation Reason" required error={touched && !reason.trim() ? "Required" : undefined}>
+              <textarea
+                className="inspection-return-textarea inspection-return-textarea-danger"
+                value={reason}
+                onChange={event => setReason(event.target.value)}
+                onBlur={() => setTouched(true)}
+                placeholder="Explain why this inspection is being cancelled…"
+                rows={5}
+              />
+            </Field>
+          </div>
         </div>
         <footer className="modal-foot">
-          <div />
+          <div className="modal-foot-meta">This will close the inspection and record the supplied reason in the workflow history.</div>
           <div className="modal-foot-actions">
-            <button type="button" className="btn btn-md" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn btn-md" onClick={onClose}>Back</button>
             <button type="button" className="btn btn-md btn-danger" onClick={() => { setTouched(true); if (reason.trim()) onConfirm(reason.trim()); }} disabled={!reason.trim()}>
-              Reject
+              Cancel inspection
+            </button>
+          </div>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+export function ReturnInspectionModal({
+  open,
+  onClose,
+  onConfirm,
+  targetLabel,
+  submitting = false,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: (reason: string) => void;
+  targetLabel: string;
+  submitting?: boolean;
+}) {
+  const [reason, setReason] = useState("");
+  const [touched, setTouched] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setReason("");
+    setTouched(false);
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal inspection-return-modal" role="dialog" aria-modal="true" aria-labelledby="inspection-return-title">
+        <div className="modal-head">
+          <div>
+            <div className="eyebrow">Inspection Workflow</div>
+            <h2 id="inspection-return-title">Request Revisions</h2>
+          </div>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close return dialog" disabled={submitting}>
+            <InspectionIcon d="M18 6L6 18M6 6l12 12" size={14} />
+          </button>
+        </div>
+        <div className="modal-body">
+          <div className="inspection-return-body">
+            <div className="inspection-return-intro">
+              <div className="inspection-return-intro-icon">
+                <InspectionIcon d={<><path d="M12 3v12" /><path d="M12 19h.01" /><path d="M10.3 4.8L3.86 16a2 2 0 001.74 3h12.8a2 2 0 001.74-3L13.7 4.8a2 2 0 00-3.4 0z" /></>} size={16} />
+              </div>
+              <div className="inspection-return-intro-copy">
+                <div className="inspection-return-intro-label">Return target</div>
+                <div className="inspection-return-intro-title">{targetLabel}</div>
+                <p>Send the certificate back with a clear instruction. The earlier stage will reopen for correction while previously saved values remain available.</p>
+              </div>
+            </div>
+
+            <Field label="Revision Reason" required error={touched && !reason.trim() ? "Required" : undefined}>
+              <textarea
+                className="inspection-return-textarea"
+                value={reason}
+                onChange={event => setReason(event.target.value)}
+                onBlur={() => setTouched(true)}
+                placeholder="Explain what needs to be corrected before the workflow can move forward…"
+                rows={5}
+                disabled={submitting}
+              />
+            </Field>
+          </div>
+        </div>
+        <footer className="modal-foot">
+          <div className="modal-foot-meta">The officer reopening this certificate will see this revision request at the top of the detail page.</div>
+          <div className="modal-foot-actions">
+            <button type="button" className="btn btn-md" onClick={onClose} disabled={submitting}>Cancel</button>
+            <button
+              type="button"
+              className="btn btn-md btn-primary"
+              onClick={() => {
+                setTouched(true);
+                if (reason.trim()) onConfirm(reason.trim());
+              }}
+              disabled={!reason.trim() || submitting}
+            >
+              {submitting ? "Returning..." : targetLabel}
             </button>
           </div>
         </footer>

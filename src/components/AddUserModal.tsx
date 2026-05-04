@@ -404,7 +404,7 @@ function validate(
   f: FormState,
   touched: Set<string>,
   isEditMode: boolean,
-  options: { requireLocation?: boolean } = {},
+  options: { requireLocation?: boolean; requireStockEntryStore?: boolean; hasAssignedStore?: boolean } = {},
 ): Record<string, string> {
   const e: Record<string, string> = {};
   if (touched.has("first_name") && !f.first_name.trim()) e.first_name = "First name is required.";
@@ -421,8 +421,13 @@ function validate(
   }
   if (touched.has("groups") && f.groups.length === 0)
     e.groups = "Assign at least one role / group.";
-  if (touched.has("locations") && options.requireLocation && f.locations.length === 0)
-    e.locations = "Select at least one location within your assigned scope.";
+  if (touched.has("locations")) {
+    if (options.requireStockEntryStore && !options.hasAssignedStore) {
+      e.locations = "Select at least one store because the selected role can create stock entries.";
+    } else if (options.requireLocation && f.locations.length === 0) {
+      e.locations = "Select at least one location within your assigned scope.";
+    }
+  }
   return e;
 }
 
@@ -572,8 +577,28 @@ export function AddUserModal({
   const canCreateGlobalLocationScope =
     !!currentUser?.is_superuser ||
     locations.some(location => location.parent_id === null && location.depth === 0);
-  const requireLocationAssignment = canAssignLocations && !canCreateGlobalLocationScope && !selfAssignmentLocked;
-  const errors = validate(form, touched, isEditMode, { requireLocation: requireLocationAssignment });
+  const requireLocationAssignment = (
+    mode === "create"
+      ? canAssignLocations && !selfAssignmentLocked
+      : canAssignLocations && !canCreateGlobalLocationScope && !selfAssignmentLocked
+  );
+  const selectedGroups = useMemo(
+    () => groups.filter(group => form.groups.includes(group.id)),
+    [form.groups, groups],
+  );
+  const requiresStockEntryStoreAssignment = selectedGroups.some(group =>
+    group.permissions_details.some(permission => permission.codename === "create_stock_entries")
+  );
+  const assignedLocationById = useMemo(
+    () => new Map(locations.map(location => [location.id, location])),
+    [locations],
+  );
+  const hasAssignedStore = form.locations.some(locationId => assignedLocationById.get(locationId)?.is_store);
+  const errors = validate(form, touched, isEditMode, {
+    requireLocation: requireLocationAssignment,
+    requireStockEntryStore: requiresStockEntryStoreAssignment,
+    hasAssignedStore,
+  });
   const set = (patch: Partial<FormState>) => setForm(f => ({ ...f, ...patch }));
   const blur = (k: string) => setTouched(t => new Set(t).add(k));
   const canSave = !submitting && !userLoading && !userLoadError;
@@ -606,7 +631,11 @@ export function AddUserModal({
     if (canAssignLocations) allTouched.add("locations");
     if (canAssignRoles) allTouched.add("groups");
     setTouched(allTouched);
-    const errs = validate(form, allTouched, isEditMode, { requireLocation: requireLocationAssignment });
+    const errs = validate(form, allTouched, isEditMode, {
+      requireLocation: requireLocationAssignment,
+      requireStockEntryStore: requiresStockEntryStoreAssignment,
+      hasAssignedStore,
+    });
     if (Object.keys(errs).length > 0) return;
     setSubmitting(true);
     setSubmitError(null);
@@ -731,9 +760,11 @@ export function AddUserModal({
                     {selfAssignmentLocked
                       ? "Your own location assignments are locked."
                       : canAssignLocations
-                      ? canCreateGlobalLocationScope
-                        ? "Select standalone locations and optional sub-locations. Leave empty only for a global user."
-                        : "Select the standalone location first, then choose optional sub-locations under it."
+                      ? mode === "create"
+                        ? "Select at least one standalone location, then choose any optional sub-locations under it."
+                        : canCreateGlobalLocationScope
+                          ? "Select standalone locations and optional sub-locations."
+                          : "Select the standalone location first, then choose optional sub-locations under it."
                       : "You can view this user's assigned locations, but you need location-assignment permission to change them."}
                   </div>
                 </div>
@@ -762,6 +793,11 @@ export function AddUserModal({
                       readOnly={selfAssignmentLocked}
                       autoSelectSingleStandalone={!isEditMode}
                     />
+                    {requiresStockEntryStoreAssignment && !selfAssignmentLocked && (
+                      <div className="field-hint" style={{ marginTop: 8 }}>
+                        The selected stock-entry role requires a directly assigned store.
+                      </div>
+                    )}
                     {errors.locations && <div className="field-error" style={{ marginTop: 8 }}>{errors.locations}</div>}
                   </div>
                 )}

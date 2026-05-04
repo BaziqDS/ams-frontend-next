@@ -5,7 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
 import { AddUserModal } from "@/components/AddUserModal";
+import { ListPagination } from "@/components/ListPagination";
+import { ThemedSelect } from "@/components/ThemedSelect";
 import { tierMeta, relTime, type User } from "@/lib/userUiShared";
+import { useClientPagination } from "@/lib/listPagination";
 import { shouldLoadUserAssignmentSelectors } from "@/lib/userAssignmentSelectors";
 import { apiFetch, type Page } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
@@ -82,6 +85,7 @@ function StatusPill({ active }: { active: boolean }) {
 
 const unavailableActionStyle = { opacity: 0.55, cursor: "not-allowed" } as const;
 const busyActionStyle = { opacity: 0.75, cursor: "wait" } as const;
+const USERS_PAGE_SIZE = 12;
 
 function RowActions({
   onEdit,
@@ -381,6 +385,15 @@ export default function UsersPage() {
     });
   }, [allUsers, search, tierFilter, statusFilter]);
 
+  const {
+    page,
+    totalPages,
+    pageItems: pagedUsers,
+    pageStart,
+    pageEnd,
+    setPage,
+  } = useClientPagination(filtered, USERS_PAGE_SIZE, [search, tierFilter, statusFilter]);
+
   return (
     <div data-density={density}>
       <AddUserModal
@@ -445,22 +458,39 @@ export default function UsersPage() {
             </div>
 
             {/* Tier filter */}
-            <div className="chip-filter-group">
+            <div className="filter-select-group">
               <div className="chip-filter-label">Tier</div>
-              <div className="chip-filter">
-                {[{ k: "all", label: "All" }, { k: "0", label: "Global" }, { k: "1", label: "Scoped" }, { k: "3", label: "Personal" }].map(o => (
-                  <button type="button" key={o.k} className={"chip-filter-btn" + (tierFilter === o.k ? " active" : "")} onClick={() => setTierFilter(o.k)}>{o.label}</button>
-                ))}
+              <div className="filter-select-wrap">
+                <ThemedSelect
+                  value={tierFilter}
+                  onChange={setTierFilter}
+                  size="compact"
+                  ariaLabel="Filter users by tier"
+                  options={[
+                    { value: "all", label: "All tiers" },
+                    { value: "0", label: "Global" },
+                    { value: "1", label: "Scoped" },
+                    { value: "3", label: "Personal" },
+                  ]}
+                />
               </div>
             </div>
 
             {/* Status filter */}
-            <div className="chip-filter-group">
+            <div className="filter-select-group">
               <div className="chip-filter-label">Status</div>
-              <div className="chip-filter">
-                {[{ k: "all", label: "All" }, { k: "active", label: "Active" }, { k: "inactive", label: "Disabled" }].map(o => (
-                  <button type="button" key={o.k} className={"chip-filter-btn" + (statusFilter === o.k ? " active" : "")} onClick={() => setStatusFilter(o.k)}>{o.label}</button>
-                ))}
+              <div className="filter-select-wrap">
+                <ThemedSelect
+                  value={statusFilter}
+                  onChange={setStatusFilter}
+                  size="compact"
+                  ariaLabel="Filter users by status"
+                  options={[
+                    { value: "all", label: "All statuses" },
+                    { value: "active", label: "Active" },
+                    { value: "inactive", label: "Disabled" },
+                  ]}
+                />
               </div>
             </div>
           </div>
@@ -518,7 +548,7 @@ export default function UsersPage() {
                   </tr>
                 </thead>
                 <tbody>
-              {filtered.map(u => (
+              {pagedUsers.map(u => (
                   <UserRow
                     key={u.id}
                     u={u}
@@ -535,18 +565,17 @@ export default function UsersPage() {
                 </tbody>
               </table>
             </div>
-            <div className="table-card-foot">
-              <div className="eyebrow">Showing {filtered.length} rows</div>
-              <div className="pager">
-                <button type="button" className="btn btn-xs" disabled title="Pagination is not implemented" style={unavailableActionStyle}>‹ Prev</button>
-                <span className="mono pager-current">1 / 1</span>
-                <button type="button" className="btn btn-xs" disabled title="Pagination is not implemented" style={unavailableActionStyle}>Next ›</button>
-              </div>
-            </div>
+            <ListPagination
+              summary={filtered.length === 0 ? "Showing 0 users" : `Showing ${pageStart}-${pageEnd} of ${filtered.length} users`}
+              page={page}
+              totalPages={totalPages}
+              onPrev={() => setPage(current => Math.max(1, current - 1))}
+              onNext={() => setPage(current => Math.min(totalPages, current + 1))}
+            />
           </div>
         ) : (
           <div className="users-grid">
-            {filtered.map(u => (
+            {pagedUsers.map(u => (
                 <UserCard
                   key={u.id}
                   u={u}
@@ -562,6 +591,16 @@ export default function UsersPage() {
               ))}
           </div>
         )}
+        {mode === "grid" && filtered.length > 0 ? (
+          <ListPagination
+            summary={`Showing ${pageStart}-${pageEnd} of ${filtered.length} users`}
+            page={page}
+            totalPages={totalPages}
+            onPrev={() => setPage(current => Math.max(1, current - 1))}
+            onNext={() => setPage(current => Math.min(totalPages, current + 1))}
+            standalone
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -603,7 +642,7 @@ function UserRow({
       </td>
       <td className="col-eid mono">{u.employee_id}</td>
       <td><TimestampCell value={u.created_at} fallback="—" /></td>
-      <td><LocationChips locs={u.assigned_locations_display} power_level={u.power_level} /></td>
+      <td className="users-location-cell"><LocationChips locs={u.assigned_locations_display} power_level={u.power_level} max={1} /></td>
       <td>
         <div className="group-cell">
           {(u.groups_display || []).slice(0, 2).map((g) => <span key={g} className="chip">{g}</span>)}

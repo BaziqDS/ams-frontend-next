@@ -96,6 +96,11 @@ export interface InspectionRecord {
   finance_reviewed_by_name: string | null;
   finance_reviewed_at: string | null;
   finance_check_date: string | null;
+  revision_requested_by: number | null;
+  revision_requested_by_name: string | null;
+  revision_requested_at: string | null;
+  revision_requested_reason: string | null;
+  revision_requested_from_stage: InspectionStage | null;
   rejected_by: number | null;
   rejected_by_name?: string | null;
   rejected_at: string | null;
@@ -108,19 +113,27 @@ export interface InspectionRecord {
 export interface InspectionLocationOption {
   id: number;
   name: string;
+  parent_location?: number | null;
+  hierarchy_path?: string | null;
   hierarchy_level: number;
   is_standalone: boolean;
   main_store_id?: number | null;
   main_store_display?: string | null;
   main_store_code?: string | null;
+  root_main_store_id?: number | null;
+  root_main_store_display?: string | null;
 }
 
 export interface InspectionItemOption {
   id: number;
   name: string;
   code: string;
+  category_display?: string | null;
   category_type?: string | null;
   tracking_type?: string | null;
+  description?: string | null;
+  acct_unit?: string | null;
+  specifications?: string | null;
 }
 
 export interface InspectionStockRegisterOption {
@@ -146,6 +159,22 @@ export interface InspectionRegisterCoverage {
   stockCoveredItems: number;
   centralCoveredItems: number;
   requiresStockStage: boolean;
+}
+
+export interface InspectionRegisterDetailRow {
+  itemLabel: string;
+  acceptedQuantity: number;
+  stockRegisterRef: string | null;
+  stockEntryDate: string | null;
+  centralRegisterRef: string | null;
+}
+
+export interface InspectionActiveRevisionRequest {
+  actor: string;
+  reason: string;
+  requestedAt: string | null;
+  fromStage: InspectionStage;
+  toStage: InspectionStage;
 }
 
 export type InspectionAuditTone = "default" | "pending" | "danger";
@@ -214,6 +243,65 @@ export function getCreateInspectionSubmitLabel(departmentHierarchyLevel: number 
   return departmentHierarchyLevel === 0
     ? "Submit to Central Register"
     : "Submit to Stock Details";
+}
+
+export function getInspectionStageDisplayLabel(
+  inspection: Pick<InspectionRecord, "stage" | "status"> | { stage: InspectionStage; status?: string | null },
+) {
+  if (inspection.stage === "REJECTED" && inspection.status === "CANCELLED") {
+    return "Cancelled";
+  }
+  return INSPECTION_STAGE_LABELS[inspection.stage];
+}
+
+export function getInspectionPreviousStage(
+  inspection: Pick<InspectionRecord, "stage" | "department_hierarchy_level">,
+): InspectionStage | null {
+  if (inspection.stage === "FINANCE_REVIEW") return "CENTRAL_REGISTER";
+  if (inspection.stage === "CENTRAL_REGISTER") {
+    return requiresDepartmentalStockStage(inspection) ? "STOCK_DETAILS" : "DRAFT";
+  }
+  if (inspection.stage === "STOCK_DETAILS") return "DRAFT";
+  return null;
+}
+
+export function getInspectionReturnActionLabel(
+  inspection: Pick<InspectionRecord, "stage" | "department_hierarchy_level">,
+) {
+  const previousStage = getInspectionPreviousStage(inspection);
+  return previousStage ? `Return to ${INSPECTION_STAGE_LABELS[previousStage]}` : null;
+}
+
+export function getInspectionActiveRevisionRequest(
+  inspection: Pick<
+    InspectionRecord,
+    | "stage"
+    | "department_hierarchy_level"
+    | "revision_requested_by"
+    | "revision_requested_by_name"
+    | "revision_requested_at"
+    | "revision_requested_reason"
+    | "revision_requested_from_stage"
+  >,
+): InspectionActiveRevisionRequest | null {
+  const reason = inspection.revision_requested_reason?.trim();
+  const fromStage = inspection.revision_requested_from_stage;
+  if (!reason || !fromStage) return null;
+
+  const toStage = getInspectionPreviousStage({
+    stage: fromStage,
+    department_hierarchy_level: inspection.department_hierarchy_level,
+  });
+
+  if (!toStage || inspection.stage !== toStage) return null;
+
+  return {
+    actor: getWorkflowActor(inspection.revision_requested_by_name, inspection.revision_requested_by) ?? "Pending",
+    reason,
+    requestedAt: inspection.revision_requested_at,
+    fromStage,
+    toStage,
+  };
 }
 
 export function getInspectionWorkflowSteps(
@@ -302,6 +390,11 @@ export function getInspectionStageGuidance(inspection: InspectionRecord) {
   if (inspection.stage === "COMPLETED") {
     return "This certificate is complete. The record is now part of the downstream stock flow.";
   }
+  if (inspection.status === "CANCELLED") {
+    return inspection.rejection_reason
+      ? `This certificate was cancelled. Reason: ${inspection.rejection_reason}`
+      : "This certificate was cancelled before completion.";
+  }
   return inspection.rejection_reason
     ? `This certificate was rejected. Reason: ${inspection.rejection_reason}`
     : "This certificate was rejected before completion.";
@@ -315,6 +408,50 @@ export function getInspectionTotals(inspection: Pick<InspectionRecord, "items">)
     totals.rejected += item.rejected_quantity || 0;
     return totals;
   }, { lines: 0, tendered: 0, accepted: 0, rejected: 0 });
+}
+
+function trimInspectionText(value: string | null | undefined) {
+  const next = value?.trim();
+  return next ? next : null;
+}
+
+function buildInspectionRegisterRef(
+  primary: string | null | undefined,
+  fallback: string | null | undefined,
+  page: string | null | undefined,
+) {
+  const register = trimInspectionText(primary) ?? trimInspectionText(fallback);
+  if (!register) return null;
+  const pageValue = trimInspectionText(page);
+  return pageValue ? `${register} / p.${pageValue}` : register;
+}
+
+export function getInspectionItemSecondaryLine(
+  item: Pick<InspectionItemRecord, "item_specifications" | "item_code">,
+) {
+  return trimInspectionText(item.item_specifications) ?? trimInspectionText(item.item_code) ?? null;
+}
+
+export function getInspectionRegisterDetailRows(
+  inspection: Pick<InspectionRecord, "items">,
+) {
+  return inspection.items
+    .filter(item => Number(item.accepted_quantity || 0) > 0)
+    .map<InspectionRegisterDetailRow>(item => ({
+      itemLabel: trimInspectionText(item.item_description) ?? trimInspectionText(item.item_name) ?? "Unnamed item",
+      acceptedQuantity: Number(item.accepted_quantity || 0),
+      stockRegisterRef: buildInspectionRegisterRef(
+        item.stock_register_name,
+        item.stock_register_no,
+        item.stock_register_page_no,
+      ),
+      stockEntryDate: trimInspectionText(item.stock_entry_date),
+      centralRegisterRef: buildInspectionRegisterRef(
+        item.central_register_name,
+        item.central_register_no,
+        item.central_register_page_no,
+      ),
+    }));
 }
 
 export function getInspectionRegisterRefs(
@@ -332,14 +469,9 @@ export function getInspectionRegisterRefs(
   kind: InspectionRegisterKind,
 ) {
   const refs = items
-    .map(item => {
-      const register = kind === "stock"
-        ? item.stock_register_name || item.stock_register_no
-        : item.central_register_name || item.central_register_no;
-      const page = kind === "stock" ? item.stock_register_page_no : item.central_register_page_no;
-      if (!register) return null;
-      return page ? `${register} / p.${page}` : register;
-    })
+    .map(item => kind === "stock"
+      ? buildInspectionRegisterRef(item.stock_register_name, item.stock_register_no, item.stock_register_page_no)
+      : buildInspectionRegisterRef(item.central_register_name, item.central_register_no, item.central_register_page_no))
     .filter((value): value is string => Boolean(value));
 
   return Array.from(new Set(refs));
@@ -459,6 +591,7 @@ export function getInspectionAuditEntries(
   inspection: Pick<
     InspectionRecord,
     | "stage"
+    | "status"
     | "department_hierarchy_level"
     | "created_at"
     | "initiated_at"
@@ -526,12 +659,13 @@ export function getInspectionAuditEntries(
   });
 
   if (inspection.stage === "REJECTED") {
+    const wasCancelled = inspection.status === "CANCELLED";
     entries.push({
       key: "rejected",
-      label: "Rejected",
+      label: wasCancelled ? "Cancelled" : "Rejected",
       actor: getAuditActor(inspection.rejected_by_name, inspection.rejected_by),
       when: inspection.rejected_at,
-      note: inspection.rejection_reason || "No rejection reason recorded",
+      note: inspection.rejection_reason || (wasCancelled ? "No cancellation reason recorded" : "No rejection reason recorded"),
       tone: "danger",
     });
   }

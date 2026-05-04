@@ -2,11 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ListPagination } from "@/components/ListPagination";
+import { ThemedSelect } from "@/components/ThemedSelect";
 import { Topbar } from "@/components/Topbar";
 import { LocationModal } from "@/components/LocationModal";
 import { apiFetch, type Page } from "@/lib/api";
 import { LOCATION_TYPE_LABELS, locationTypeLabel, relTime, type LocationRecord } from "@/lib/userUiShared";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
+import { useClientPagination } from "@/lib/listPagination";
+
+const LOCATIONS_PAGE_SIZE = 15;
 
 const Ic = ({ d, size = 16 }: { d: React.ReactNode | string; size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden="true" focusable="false">
@@ -333,6 +338,15 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
   const modalLockedParent = isChildrenView ? parentLocation : rootLocation;
   const openLocation = isChildrenView ? undefined : (location: LocationRecord) => router.push(`/locations/${location.id}`);
 
+  const {
+    page,
+    totalPages,
+    pageItems: pagedLocations,
+    pageStart,
+    pageEnd,
+    setPage,
+  } = useClientPagination(filteredLocations, LOCATIONS_PAGE_SIZE, [search, typeFilter, statusFilter, variant, parentId]);
+
   return (
     <div data-density={density}>
       <LocationModal
@@ -386,26 +400,34 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
 
             <div className="filter-select-group">
               <div className="chip-filter-label">Type</div>
-              <label className="filter-select-wrap">
-                <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} aria-label="Filter locations by type">
-                  <option value="all">All types</option>
-                  {typeOptions.map(type => (
-                    <option key={type} value={type}>
-                      {locationTypeLabel(type)}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="filter-select-wrap">
+                <ThemedSelect
+                  value={typeFilter}
+                  onChange={setTypeFilter}
+                  size="compact"
+                  ariaLabel="Filter locations by type"
+                  options={[
+                    { value: "all", label: "All types" },
+                    ...typeOptions.map(type => ({ value: type, label: locationTypeLabel(type) })),
+                  ]}
+                />
+              </div>
             </div>
 
-            <div className="chip-filter-group">
+            <div className="filter-select-group">
               <div className="chip-filter-label">Status</div>
-              <div className="chip-filter">
-                {[{ k: "all", label: "All" }, { k: "active", label: "Active" }, { k: "inactive", label: "Disabled" }].map(option => (
-                  <button key={option.k} type="button" className={"chip-filter-btn" + (statusFilter === option.k ? " active" : "")} onClick={() => setStatusFilter(option.k)}>
-                    {option.label}
-                  </button>
-                ))}
+              <div className="filter-select-wrap">
+                <ThemedSelect
+                  value={statusFilter}
+                  onChange={setStatusFilter}
+                  size="compact"
+                  ariaLabel="Filter locations by status"
+                  options={[
+                    { value: "all", label: "All statuses" },
+                    { value: "active", label: "Active" },
+                    { value: "inactive", label: "Disabled" },
+                  ]}
+                />
               </div>
             </div>
           </div>
@@ -465,7 +487,7 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
                       </td>
                     </tr>
                   ) : (
-                    filteredLocations.map(location => (
+                    pagedLocations.map(location => (
                       <LocationRow
                         key={location.id}
                         location={location}
@@ -482,16 +504,17 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
                 </tbody>
               </table>
             </div>
-            <div className="table-card-foot">
-              <div className="eyebrow">Showing {filteredLocations.length} rows</div>
-              <div className="pager">
-                <span className="mono pager-current">{footerLabel}</span>
-              </div>
-            </div>
+            <ListPagination
+              summary={filteredLocations.length === 0 ? `Showing 0 ${isChildrenView ? "sub-locations" : "locations"}` : `Showing ${pageStart}-${pageEnd} of ${filteredLocations.length} ${isChildrenView ? "sub-locations" : "locations"}`}
+              page={page}
+              totalPages={totalPages}
+              onPrev={() => setPage(current => Math.max(1, current - 1))}
+              onNext={() => setPage(current => Math.min(totalPages, current + 1))}
+            />
           </div>
         ) : filteredLocations.length > 0 ? (
           <div className="users-grid">
-            {filteredLocations.map(location => (
+            {pagedLocations.map(location => (
               <LocationCard
                 key={location.id}
                 location={location}
@@ -512,6 +535,16 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
             </div>
           </div>
         )}
+        {mode === "grid" && filteredLocations.length > 0 ? (
+          <ListPagination
+            summary={`Showing ${pageStart}-${pageEnd} of ${filteredLocations.length} ${isChildrenView ? "sub-locations" : "locations"}`}
+            page={page}
+            totalPages={totalPages}
+            onPrev={() => setPage(current => Math.max(1, current - 1))}
+            onNext={() => setPage(current => Math.min(totalPages, current + 1))}
+            standalone
+          />
+        ) : null}
       </div>
     </div>
   );
