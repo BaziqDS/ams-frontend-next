@@ -7859,7 +7859,7 @@ button:active,
   color: var(--ink);
 }
 .inspection-finance-fields {
-  align-items: end;
+  align-items: start;
 }
 .inspection-finance-select-wrap {
   position: relative;
@@ -8343,4 +8343,304 @@ button:active,
   #page-ins .kv-grid { grid-template-columns: 1fr; }
   #page-ins .ins-item-head,
   #page-ins .ins-item-foot { flex-direction: column; align-items: flex-start; }
+}
+
+/* ============================================================
+   Desktop responsive hardening
+   Baseline: clean 100% zoom layouts for 1366px+ desktop viewports.
+   Keep this scoped: listing tables and row actions keep their page-local layout.
+   ============================================================ */
+
+:root {
+  --desktop-min-width: 1366px;
+  --desktop-lg-width: 1440px;
+  --desktop-xl-width: 1536px;
+  --desktop-2xl-width: 1920px;
+  --page-inline-pad: clamp(16px, 1.55vw, 28px);
+  --page-block-pad: clamp(14px, 1.25vw, 24px);
+  --form-col-min: 220px;
+  --form-col-min-wide: 260px;
+}
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.app-frame,
+.main-col,
+.topbar,
+.topbar-inner,
+.page-shell,
+.dashboard-page,
+.detail-page,
+.inspection-detail-page,
+.claude-inspection-detail-page,
+.card,
+.section-card,
+.detail-card,
+.modal,
+.modal-body {
+  min-width: 0;
+}
+
+.main-col {
+  min-height: 100dvh;
+  height: 100dvh;
+  overflow-x: hidden;
+}
+
+.sidebar {
+  height: 100dvh;
+  max-height: 100dvh;
+}
+
+.topbar-inner {
+  padding-inline: var(--page-inline-pad);
+}
+
+.tb-breadcrumb,
+.tb-title-block,
+.tb-actions,
+.page-head,
+.page-head-detail,
+.page-head-actions,
+.section-card-head,
+.section-card-actions,
+.table-card-head,
+.table-card-head-left,
+.table-card-head-actions,
+.filter-bar,
+.filter-bar-left,
+.filter-bar-right,
+.stage-action-foot,
+.stage-action-foot-actions,
+.inspection-finance-section-head,
+.inspection-finance-card-head,
+.reports-construction-meta,
+.notifications-section-head,
+.notifications-section-actions {
+  min-width: 0;
+}
+
+.tb-actions,
+.page-head-actions,
+.section-card-actions,
+.stage-action-foot-actions,
+.inspection-finance-card-metrics,
+.reports-construction-meta,
+.notifications-section-actions {
+  flex-wrap: wrap;
+}
+
+.tb-crumb,
+.tb-title-block h1,
+.page-head h1,
+.page-head-detail h1,
+.table-card-head-left h2,
+.section-card-head h2 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.filter-select-group {
+  min-width: 0;
+}
+
+.filter-select-wrap {
+  min-width: min(180px, 100%);
+  max-width: 100%;
+}
+
+.search-input {
+  flex: 1 1 260px;
+  min-width: min(220px, 100%);
+}
+
+.modal-foot {
+  flex-wrap: wrap;
+  row-gap: 10px;
+}
+
+.h-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+.data-table th,
+.inspection-line-table th {
+  white-space: nowrap;
+}
+
+.kpi-strip,
+.snapshot-metrics-grid,
+.inspection-workflow-meta-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+}
+
+.kv-grid-cols-2,
+.kv-grid-cols-3,
+.kv-grid-cols-4,
+.detail-kv-grid,
+.inspection-summary-grid,
+#page-ins .kv-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--form-col-min)), 1fr));
+}
+
+.detail-kv-grid-compact {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+}
+
+.stage-form-fields-2,
+.stage-form-fields-3,
+.stage-form-register-fields,
+.inspection-finance-fields,
+.inspection-item-card-fields,
+.stock-entry-fields,
+.role-modal-fields,
+.user-modal-fields,
+.depreciation-form-fields {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--form-col-min)), 1fr));
+}
+
+.stage-form-field,
+.field,
+.form-field,
+.kv,
+.detail-kv,
+.inspection-finance-field,
+.inspection-item-card-field {
+  min-width: 0;
+}
+
+.stage-form-field input,
+.stage-form-field select,
+.stage-form-field textarea,
+.field input,
+.field select,
+.field textarea,
+.form-field input,
+.form-field select,
+.form-field textarea {
+  min-width: 0;
+}
+
+.stage-form-help,
+.field-help,
+.form-help,
+.kv-sub,
+.detail-kv-sub,
+.muted-note,
+.inspection-finance-suggestion,
+.inspection-finance-field-note {
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.stage3-master-grid,
+.item-instance-detail-grid,
+.detail-bottom-grid,
+.reports-construction-grid,
+.inspection-detail-review-top {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+}
+
+.stage3-link-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(88px, 120px);
+}
+
+.detail-bottom-aside,
+.item-instance-qr-card {
+  position: static;
+}
+
+.modal-backdrop {
+  padding: 16px;
+}
+
+.modal {
+  width: min(100%, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+}
+
+.modal-lg,
+.inspection-modal,
+.stock-line-modal,
+.stock-ack-modal,
+.stock-correction-modal {
+  max-width: min(1120px, calc(100vw - 32px));
+}
+
+.modal-head,
+.modal-foot {
+  padding-inline: clamp(16px, 1.65vw, 24px);
+}
+
+.modal-body {
+  overflow: auto;
+}
+
+@media (max-width: 1460px) {
+  :root {
+    --form-col-min: 230px;
+  }
+
+  .sidebar {
+    width: 232px;
+  }
+
+  .app-frame[data-sidebar-collapsed="true"] .sidebar,
+  .sidebar.is-collapsed {
+    width: 68px;
+  }
+
+  .topbar-inner {
+    gap: 18px;
+  }
+
+  .stage-form-fields-3,
+  .inspection-finance-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .kv-grid-cols-4,
+  .detail-kv-grid,
+  #page-ins .kv-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+}
+
+@media (min-width: 1536px) {
+  :root {
+    --form-col-min: 250px;
+  }
+}
+
+@media (min-width: 1920px) {
+  :root {
+    --form-col-min: 280px;
+  }
+}
+
+@media (max-width: 1365px) {
+  .sidebar {
+    width: 220px;
+  }
+
+  .topbar-inner {
+    gap: 14px;
+  }
+
+  .kv-grid-cols-3,
+  .kv-grid-cols-4,
+  .detail-kv-grid,
+  #page-ins .kv-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

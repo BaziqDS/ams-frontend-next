@@ -913,7 +913,8 @@ export function Stage4Form({ data, onChange, readOnly }: StageFormProps) {
   useEffect(() => {
     if (readOnly || fixedAssetRows.length === 0) return;
 
-    const seededDate = data.finance_check_date || data.date_of_inspection || data.date || getDefaultFinanceCheckDate(null);
+    const seededFinanceDate = data.finance_check_date || getDefaultFinanceCheckDate(null);
+    const seededDate = seededFinanceDate || data.date_of_inspection || data.date || getDefaultFinanceCheckDate(null);
     let changed = false;
     const nextItems = (data.items || []).map((item, index) => {
       if (!isFixedAssetInspectionItem(item) || Number(item.accepted_quantity || 0) <= 0 || item.capitalization_date) {
@@ -934,7 +935,7 @@ export function Stage4Form({ data, onChange, readOnly }: StageFormProps) {
     });
 
     if (changed) {
-      onChange({ ...data, items: nextItems });
+      onChange({ ...data, finance_check_date: seededFinanceDate, items: nextItems });
     }
   }, [data, fixedAssetRows, onChange, readOnly]);
 
@@ -1047,7 +1048,7 @@ export function Stage4Form({ data, onChange, readOnly }: StageFormProps) {
                         disabled={readOnly}
                       />
                     </Field>
-                    <Field label="Capitalized cost" hint={`Suggested value ${defaultCost.toFixed(2)} based on accepted quantity × unit price.`}>
+                    <Field label="Capitalized cost" hint={`Suggested: ${defaultCost.toFixed(2)}`}>
                       <input
                         className="inspection-finance-input"
                         type="number"

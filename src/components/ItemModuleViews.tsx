@@ -43,7 +43,7 @@ import {
 import { relTime } from "@/lib/userUiShared";
 import workspaceStyles from "./ItemWorkspace.module.css";
 
-const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
+export const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden="true" focusable="false">
     {typeof d === "string" ? <path d={d} /> : d}
   </svg>
@@ -136,7 +136,7 @@ const ITEM_DETAIL_ROWS_PAGE_SIZE = 12;
 const ITEM_RELATED_RECORDS_PAGE_SIZE = 12;
 const EMPTY_SCOPE_TOKENS: string[] = [];
 
-type WorkspaceLocationPanelState = {
+export type WorkspaceLocationPanelState = {
   key: string;
   unitId: number;
   eyebrow: string;
@@ -151,7 +151,7 @@ type WorkspaceLocationPanelState = {
   allocations: ItemDistributionAllocation[];
 };
 
-function workspaceTrackingIcon(trackingType: string | null | undefined) {
+export function workspaceTrackingIcon(trackingType: string | null | undefined) {
   if (trackingType === "INDIVIDUAL") {
     return <Ic d={<><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="M3.3 7 12 12l8.7-5M12 22V12" /></>} size={14} />;
   }
@@ -161,7 +161,7 @@ function workspaceTrackingIcon(trackingType: string | null | undefined) {
   return <Ic d={<><path d="M9 2v6L4 20a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2L15 8V2" /><path d="M8 2h8M7 14h10" /></>} size={14} />;
 }
 
-function workspaceLocationIcon(kind: "unit" | "store" | "person" | "location" | "repair") {
+export function workspaceLocationIcon(kind: "unit" | "store" | "person" | "location" | "repair") {
   if (kind === "unit") {
     return <Ic d={<><rect x="4" y="2" width="16" height="20" rx="1" /><path d="M9 6h6M9 10h6M9 14h6M9 18h2" /></>} size={14} />;
   }
@@ -177,13 +177,13 @@ function workspaceLocationIcon(kind: "unit" | "store" | "person" | "location" | 
   return <Ic d={<><path d="M12 21s-7-6.5-7-12a7 7 0 1 1 14 0c0 5.5-7 12-7 12Z" /><circle cx="12" cy="9" r="2.5" /></>} size={14} />;
 }
 
-function workspaceTrackingTone(trackingType: string | null | undefined) {
+export function workspaceTrackingTone(trackingType: string | null | undefined) {
   if (trackingType === "INDIVIDUAL") return "individual";
   if (trackingType === "QUANTITY") return "quantity";
   return "perishable";
 }
 
-function workspaceLastUpdate(item: Pick<ItemRecord, "updated_at" | "created_at">) {
+export function workspaceLastUpdate(item: Pick<ItemRecord, "updated_at" | "created_at">) {
   return formatItemDate(item.updated_at ?? item.created_at, "Unknown");
 }
 
@@ -205,7 +205,7 @@ function ItemTimestampCell({ value, fallback }: { value: string | null | undefin
   );
 }
 
-function buildUnitPanelState(item: ItemRecord, unit: ItemDistributionUnit): WorkspaceLocationPanelState {
+export function buildUnitPanelState(item: ItemRecord, unit: ItemDistributionUnit): WorkspaceLocationPanelState {
   return {
     key: `unit-${unit.id}`,
     unitId: unit.id,
@@ -222,7 +222,7 @@ function buildUnitPanelState(item: ItemRecord, unit: ItemDistributionUnit): Work
   };
 }
 
-function buildStorePanelState(item: ItemRecord, unit: ItemDistributionUnit, store: ItemDistributionStore): WorkspaceLocationPanelState {
+export function buildStorePanelState(item: ItemRecord, unit: ItemDistributionUnit, store: ItemDistributionStore): WorkspaceLocationPanelState {
   return {
     key: `store-${store.id}`,
     unitId: unit.id,
@@ -239,7 +239,7 @@ function buildStorePanelState(item: ItemRecord, unit: ItemDistributionUnit, stor
   };
 }
 
-function buildAllocationPanelState(item: ItemRecord, unit: ItemDistributionUnit, allocation: ItemDistributionAllocation): WorkspaceLocationPanelState {
+export function buildAllocationPanelState(item: ItemRecord, unit: ItemDistributionUnit, allocation: ItemDistributionAllocation): WorkspaceLocationPanelState {
   return {
     key: `allocation-${allocation.id}`,
     unitId: unit.id,
@@ -256,7 +256,7 @@ function buildAllocationPanelState(item: ItemRecord, unit: ItemDistributionUnit,
   };
 }
 
-function buildCategoryPath(categoryId: number | string | null | undefined, categories: CategoryRecord[], fallback?: string | null) {
+export function buildCategoryPath(categoryId: number | string | null | undefined, categories: CategoryRecord[], fallback?: string | null) {
   const parsed = Number(categoryId);
   if (!Number.isFinite(parsed) || !categories.length) return fallback ?? null;
 
@@ -337,7 +337,7 @@ type ItemBatchRecord = {
   depreciation_summary?: DepreciationSummary | null;
 };
 
-function normalizeList<T>(data: Page<T> | T[]) {
+export function normalizeList<T>(data: Page<T> | T[]) {
   return Array.isArray(data) ? data : data.results;
 }
 
@@ -346,7 +346,7 @@ function buildScopeQuery(scopeTokens: string[]) {
   return scopeTokens.map(token => `scope=${encodeURIComponent(token)}`).join("&");
 }
 
-function scopeFilterOptions(options: ItemScopeOption[]): MultiSelectFilterOption[] {
+export function scopeFilterOptions(options: ItemScopeOption[]): MultiSelectFilterOption[] {
   return options.map(option => ({
     id: option.id,
     label: option.label,
@@ -359,7 +359,7 @@ function getMediaHref(file: string | null | undefined) {
   return file.startsWith("http") ? file : `${API_BASE}${file}`;
 }
 
-function Alert({ children, onDismiss, action }: { children: ReactNode; onDismiss?: () => void; action?: ReactNode }) {
+export function Alert({ children, onDismiss, action }: { children: ReactNode; onDismiss?: () => void; action?: ReactNode }) {
   return (
     <div style={{ padding: "12px 16px", background: "var(--danger-weak)", border: "1px solid color-mix(in oklch, var(--danger) 30%, transparent)", borderRadius: "var(--radius)", color: "var(--danger)", fontSize: 13, marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
       <span>{children}</span>
@@ -416,7 +416,7 @@ function EmptyTableRow({ colSpan, message }: { colSpan: number; message: string 
   );
 }
 
-function DetailKV({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
+export function DetailKV({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
   return (
     <div className="detail-kv">
       <div className="detail-kv-label">{label}</div>
@@ -490,20 +490,20 @@ function itemPayload(form: ItemFormState, options?: { provisionalInspectionId?: 
   };
 }
 
-function isFixedAssetItem(item: Pick<ItemRecord, "category_type"> | null | undefined) {
+export function isFixedAssetItem(item: Pick<ItemRecord, "category_type"> | null | undefined) {
   return item?.category_type === "FIXED_ASSET";
 }
 
-function isFixedAssetLotItem(item: Pick<ItemRecord, "category_type" | "tracking_type"> | null | undefined) {
+export function isFixedAssetLotItem(item: Pick<ItemRecord, "category_type" | "tracking_type"> | null | undefined) {
   return item?.category_type === "FIXED_ASSET" && item.tracking_type === "QUANTITY";
 }
 
-function batchLabelForItem(item: Pick<ItemRecord, "category_type" | "tracking_type"> | null | undefined, plural = true) {
+export function batchLabelForItem(item: Pick<ItemRecord, "category_type" | "tracking_type"> | null | undefined, plural = true) {
   if (isFixedAssetLotItem(item)) return plural ? "Asset Lots" : "Asset Lot";
   return plural ? "Batches" : "Batch";
 }
 
-function formatMoneyValue(value: number | string | null | undefined) {
+export function formatMoneyValue(value: number | string | null | undefined) {
   return new Intl.NumberFormat("en-PK", {
     style: "currency",
     currency: "PKR",
@@ -2619,7 +2619,7 @@ function WorkspaceActivityTab({ item }: { item: ItemRecord }) {
   );
 }
 
-function WorkspaceInstancesTab({
+export function WorkspaceInstancesTab({
   itemId,
   selectedLocationId,
   onClearSelectedLocation,
@@ -2770,7 +2770,7 @@ function WorkspaceInstancesTab({
   );
 }
 
-function WorkspaceBatchesTab({
+export function WorkspaceBatchesTab({
   itemId,
   selectedLocationId,
   onClearSelectedLocation,
@@ -2929,7 +2929,7 @@ function ItemPageActions({ item }: { item: ItemRecord | null }) {
   );
 }
 
-function useItemDistribution(itemId: string, scopeTokens: string[] = EMPTY_SCOPE_TOKENS) {
+export function useItemDistribution(itemId: string, scopeTokens: string[] = EMPTY_SCOPE_TOKENS) {
   const [item, setItem] = useState<ItemRecord | null>(null);
   const [units, setUnits] = useState<ItemDistributionUnit[]>([]);
   const [scopeOptions, setScopeOptions] = useState<ItemScopeOption[]>([]);

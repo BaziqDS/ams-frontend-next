@@ -20,7 +20,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (isLoading) {
     return (
       <div className="app-frame">
-        <div style={{ width: 248, background: "var(--card)", borderRight: "1px solid var(--hairline)", height: "100vh" }} />
+        <div style={{ width: 248, background: "var(--card)", borderRight: "1px solid var(--hairline)", height: "100dvh" }} />
         <div style={{ flex: 1, padding: 24 }}>
           {[1, 2, 3].map(i => (
             <div key={i} style={{ height: 40, background: "var(--surface-2)", borderRadius: 6, marginBottom: 12, animation: "pulse 1.5s infinite" }} />

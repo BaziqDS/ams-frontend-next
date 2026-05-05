@@ -999,10 +999,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
                           value={row.stock_register}
                           onChange={value => updateRow(index, { stock_register: value })}
                           disabled={!selectedSourceStoreId || sourceRegisterOptions.length === 0}
-                          options={[
-                            { value: "", label: "No register" },
-                            ...sourceRegisterOptions.map(register => ({ value: String(register.id), label: register.register_number, meta: register.store_name ?? undefined })),
-                          ]}
+                          options={sourceRegisterOptions.map(register => ({ value: String(register.id), label: register.register_number, meta: register.store_name ?? undefined }))}
                           ariaLabel="Select source register"
                         />
                       </Field>
@@ -1061,7 +1058,7 @@ export function StockEntriesView() {
   const [refsLoading, setRefsLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
   const [typeFilter, setTypeFilter] = useState(() => {
     const typeParam = searchParams.get("type");
     return typeParam && ["ISSUE", "RECEIPT", "RETURN"].includes(typeParam) ? typeParam : "all";
@@ -1176,6 +1173,7 @@ export function StockEntriesView() {
       setStatusFilter("all");
     }
 
+    setSearch(searchParams.get("search") ?? "");
     setStoreScope(searchParams.get("store") ?? "all");
 
     const replacementFor = searchParams.get("replacement_for");

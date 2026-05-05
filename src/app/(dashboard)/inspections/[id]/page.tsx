@@ -27,7 +27,6 @@ import {
   getInspectionItemSecondaryLine,
   getInspectionRegisterCoverage,
   getInspectionRegisterDetailRows,
-  getInspectionRegisterRefs,
   getInspectionReturnActionLabel,
   getInspectionStageDisplayLabel,
   getInspectionStageGuidance,
@@ -288,8 +287,6 @@ function ItemsSummary({ inspection }: { inspection: InspectionRecord }) {
 function RegisterTrailCard({ inspection }: { inspection: InspectionRecord }) {
   const coverage = getInspectionRegisterCoverage(inspection);
   const rows = getInspectionRegisterDetailRows(inspection);
-  const stockRefs = getInspectionRegisterRefs(inspection.items, "stock");
-  const centralRefs = getInspectionRegisterRefs(inspection.items, "central");
   const acceptedCount = rows.length;
   const stockCoveredCount = rows.filter(row => Boolean(row.stockRegisterRef)).length;
   const centralCoveredCount = rows.filter(row => Boolean(row.centralRegisterRef)).length;
@@ -370,24 +367,6 @@ function RegisterTrailCard({ inspection }: { inspection: InspectionRecord }) {
           </tbody>
         </table>
       </div>
-      <footer className="detail-card-foot">
-        <div style={{ display: "grid", gap: 12, width: "100%" }}>
-          {coverage.requiresStockStage ? (
-            <div>
-              <div className="eyebrow">Department refs</div>
-              <div className="group-cell">
-                {stockRefs.length > 0 ? stockRefs.map(ref => <span key={ref} className="chip mono">{ref}</span>) : <span className="detail-muted-row">Department register pending</span>}
-              </div>
-            </div>
-          ) : null}
-          <div>
-            <div className="eyebrow">Central refs</div>
-            <div className="group-cell">
-              {centralRefs.length > 0 ? centralRefs.map(ref => <span key={ref} className="chip mono">{ref}</span>) : <span className="detail-muted-row">Central register pending</span>}
-            </div>
-          </div>
-        </div>
-      </footer>
     </section>
   );
 }
