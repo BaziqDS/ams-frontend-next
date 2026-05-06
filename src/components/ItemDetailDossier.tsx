@@ -72,6 +72,15 @@ interface ItemStockEntryRecord {
 
 type TransactionTone = "positive" | "negative" | "neutral";
 
+interface DistributionPanelRow {
+  id: string;
+  name: string;
+  allocated: number;
+  available: number;
+  total: number;
+  badge?: string;
+}
+
 const TAB_TO_SECTION: Record<ItemsWorkspaceTab, SectionKey> = {
   distribution: "distribution",
   instances: "instances",
@@ -453,6 +462,7 @@ function ItemOverviewLayout({
   const [recentEntries, setRecentEntries] = useState<ItemStockEntryRecord[]>([]);
   const [transactionsLoading, setTransactionsLoading] = useState(true);
   const [transactionsError, setTransactionsError] = useState<string | null>(null);
+  const [distributionOpen, setDistributionOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -524,6 +534,10 @@ function ItemOverviewLayout({
           <button type="button" className="btn btn-primary" onClick={onAddStock}>
             <Ic d={<><circle cx="12" cy="12" r="9" /><path d="M12 8v8M8 12h8" /></>} size={14} />
             Add Stock
+          </button>
+          <button type="button" className="btn" onClick={() => setDistributionOpen(true)}>
+            <Ic d="M4 7h16M4 12h16M4 17h16M8 7v10M16 7v10" size={14} />
+            View Distribution
           </button>
           <button type="button" className="btn" onClick={onLocate}>
             <Ic d="M12 12h.01M18 12h.01M6 12h.01" size={16} />
@@ -671,6 +685,13 @@ function ItemOverviewLayout({
           </section>
         </aside>
       </div>
+      <DistributionDrawer
+        open={distributionOpen}
+        item={item}
+        units={units}
+        acctUnit={acctUnit}
+        onClose={() => setDistributionOpen(false)}
+      />
     </div>
   );
 }
@@ -700,6 +721,180 @@ function AccordionRow({ label, count, onClick }: { label: string; count?: number
       <Ic d="M6 9l6 6 6-6" size={14} />
     </button>
   );
+}
+
+function DistributionDrawer({
+  open,
+  item,
+  units,
+  acctUnit,
+  onClose,
+}: {
+  open: boolean;
+  item: ItemRecord;
+  units: ItemDistributionUnit[];
+  acctUnit: string;
+  onClose: () => void;
+}) {
+  const [selectedUnitId, setSelectedUnitId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setSelectedUnitId(current => {
+      if (current != null && units.some(unit => unit.id === current)) return current;
+      return units[0]?.id ?? null;
+    });
+  }, [open, units]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, open]);
+
+  const standaloneRows = useMemo(() => buildStandaloneDistributionRows(units), [units]);
+  const selectedUnit = units.find(unit => unit.id === selectedUnitId) ?? units[0] ?? null;
+  const subRows = useMemo(() => (selectedUnit ? buildSubDistributionRows(selectedUnit) : []), [selectedUnit]);
+
+  if (!open) return null;
+
+  return (
+    <div className={styles.distributionDrawerLayer}>
+      <button type="button" className={styles.distributionDrawerBackdrop} aria-label="Close distribution panel" onClick={onClose} />
+      <aside className={styles.distributionDrawer} role="dialog" aria-modal="true" aria-label="Location-wise distribution">
+        <header className={styles.distributionDrawerHead}>
+          <div>
+            <h2>Location-wise Distribution</h2>
+            <p>View stock distribution across all locations and sublocations.</p>
+          </div>
+          <button type="button" className={styles.distributionClose} aria-label="Close distribution panel" onClick={onClose}>
+            <Ic d="M18 6 6 18M6 6l12 12" size={18} />
+          </button>
+        </header>
+
+        <div className={styles.distributionDrawerBody}>
+          <DistributionDrawerSection
+            title="Standalone Locations"
+            columnLabel="Location"
+            rows={standaloneRows}
+            selectedId={selectedUnit?.id ? `unit-${selectedUnit.id}` : null}
+            onSelect={row => setSelectedUnitId(Number(row.id.replace("unit-", "")))}
+          />
+
+          <DistributionDrawerSection
+            title="Sub Locations"
+            titleSuffix={selectedUnit ? `(Under ${selectedUnit.name})` : undefined}
+            columnLabel="Sub Location"
+            rows={subRows}
+            emptyLabel={selectedUnit ? "No sub-location stock rows are recorded under this location." : "No location is selected."}
+          />
+        </div>
+
+        <footer className={styles.distributionDrawerFoot}>
+          <button type="button" className="btn" onClick={() => exportDistributionCsv(item, units, acctUnit)}>
+            <Ic d="M12 3v12M7 10l5 5 5-5M5 21h14" size={16} />
+            Export Distribution
+          </button>
+        </footer>
+      </aside>
+    </div>
+  );
+}
+
+function DistributionDrawerSection({
+  title,
+  titleSuffix,
+  columnLabel,
+  rows,
+  selectedId,
+  onSelect,
+  emptyLabel = "No distribution rows are available.",
+}: {
+  title: string;
+  titleSuffix?: string;
+  columnLabel: string;
+  rows: DistributionPanelRow[];
+  selectedId?: string | null;
+  onSelect?: (row: DistributionPanelRow) => void;
+  emptyLabel?: string;
+}) {
+  return (
+    <section className={styles.distributionSectionPanel}>
+      <h3>
+        {title}
+        {titleSuffix ? <span> {titleSuffix}</span> : null}
+      </h3>
+      <div className={styles.distributionHeaderRow}>
+        <span>{columnLabel}</span>
+        <span>Allocated</span>
+        <span>Available</span>
+        <span>Total</span>
+      </div>
+      <div className={styles.distributionRows}>
+        {rows.length ? rows.map(row => (
+          <DistributionDrawerRow
+            key={row.id}
+            row={row}
+            selected={selectedId === row.id}
+            onSelect={onSelect}
+          />
+        )) : (
+          <div className={styles.distributionEmpty}>{emptyLabel}</div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function DistributionDrawerRow({
+  row,
+  selected,
+  onSelect,
+}: {
+  row: DistributionPanelRow;
+  selected: boolean;
+  onSelect?: (row: DistributionPanelRow) => void;
+}) {
+  const allocatedPct = distributionPercent(row.allocated, row.total);
+  const availablePct = row.total > 0 ? Math.max(0, 100 - allocatedPct) : 0;
+  const rowBody = (
+    <>
+      <div className={styles.distributionMainLine}>
+        <span className={styles.distributionLocation}>
+          {row.name}
+          {row.badge ? <em>{row.badge}</em> : null}
+        </span>
+        <strong>{formatQuantity(row.allocated)}</strong>
+        <strong>{formatQuantity(row.available)}</strong>
+        <strong>{formatQuantity(row.total)}</strong>
+      </div>
+      <div className={styles.distributionProgress} aria-hidden="true">
+        <span style={{ width: `${allocatedPct}%` }} />
+      </div>
+      <div className={styles.distributionPercents}>
+        <span>{allocatedPct}% allocated</span>
+        <span>{availablePct}% available</span>
+      </div>
+    </>
+  );
+
+  if (onSelect) {
+    return (
+      <button
+        type="button"
+        className={styles.distributionDataRow}
+        data-selected={selected ? "true" : "false"}
+        onClick={() => onSelect(row)}
+      >
+        {rowBody}
+      </button>
+    );
+  }
+
+  return <div className={styles.distributionDataRow}>{rowBody}</div>;
 }
 
 function formatItemDateTime(value: string | null | undefined) {
@@ -761,6 +956,116 @@ function stockEntryLocation(entry: ItemStockEntryRecord) {
   const person = entry.issued_to_name?.trim();
   if (from && to) return `${from} to ${to}`;
   return to || person || from || "-";
+}
+
+function buildStandaloneDistributionRows(units: ItemDistributionUnit[]): DistributionPanelRow[] {
+  return units.map((unit, index) => {
+    const available = toNumber(unit.availableQuantity);
+    const allocated = Math.max(toNumber(unit.allocatedQuantity), toNumber(unit.totalQuantity) - available, 0);
+    const total = normalizeDistributionTotal(unit.totalQuantity, allocated, available);
+    return {
+      id: `unit-${unit.id}`,
+      name: unit.name,
+      allocated,
+      available,
+      total,
+      badge: index === 0 ? "Default" : undefined,
+    };
+  });
+}
+
+function buildSubDistributionRows(unit: ItemDistributionUnit): DistributionPanelRow[] {
+  const storeRows = aggregateStoreDistributionRows(unit);
+  if (storeRows.length) return storeRows;
+
+  const allocationGroups = new Map<string, DistributionPanelRow>();
+  unit.allocations.forEach(allocation => {
+    const key = `${allocation.targetType}-${allocation.targetName}`;
+    const current = allocationGroups.get(key) ?? {
+      id: `allocation-${key}`,
+      name: allocation.targetName,
+      allocated: 0,
+      available: 0,
+      total: 0,
+      badge: formatItemLabel(allocation.targetType, "Allocated"),
+    };
+    const quantity = toNumber(allocation.quantity);
+    current.allocated += quantity;
+    current.total += quantity;
+    allocationGroups.set(key, current);
+  });
+  return Array.from(allocationGroups.values());
+}
+
+function aggregateStoreDistributionRows(unit: ItemDistributionUnit): DistributionPanelRow[] {
+  const groups = new Map<number, DistributionPanelRow>();
+  unit.stores.forEach(store => {
+    const current = groups.get(store.locationId) ?? {
+      id: `store-${store.locationId}`,
+      name: store.locationName,
+      allocated: 0,
+      available: 0,
+      total: 0,
+    };
+    const available = toNumber(store.availableQuantity);
+    const allocated = Math.max(toNumber(store.allocatedTotal), toNumber(store.quantity) - available, 0);
+    current.available += available;
+    current.allocated += allocated;
+    current.total += normalizeDistributionTotal(store.quantity, allocated, available);
+    groups.set(store.locationId, current);
+  });
+  return Array.from(groups.values());
+}
+
+function normalizeDistributionTotal(total: number | string | null | undefined, allocated: number, available: number) {
+  return Math.max(toNumber(total), allocated + available, 0);
+}
+
+function distributionPercent(value: number, total: number) {
+  if (total <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round((value / total) * 100)));
+}
+
+function exportDistributionCsv(item: ItemRecord, units: ItemDistributionUnit[], acctUnit: string) {
+  const rows = [
+    ["Section", "Parent Location", "Location", "Allocated", "Available", "Total", "Unit"],
+    ...buildStandaloneDistributionRows(units).map(row => [
+      "Standalone Location",
+      "",
+      row.name,
+      formatQuantity(row.allocated),
+      formatQuantity(row.available),
+      formatQuantity(row.total),
+      acctUnit,
+    ]),
+    ...units.flatMap(unit => buildSubDistributionRows(unit).map(row => [
+      "Sub Location",
+      unit.name,
+      row.name,
+      formatQuantity(row.allocated),
+      formatQuantity(row.available),
+      formatQuantity(row.total),
+      acctUnit,
+    ])),
+  ];
+  const csv = rows.map(row => row.map(csvCell).join(",")).join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${safeFilename(item.code || item.name)}-distribution.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function csvCell(value: string) {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function safeFilename(value: string) {
+  return value.trim().replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "item";
 }
 
 /* ============================================================
