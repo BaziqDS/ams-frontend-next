@@ -924,8 +924,13 @@ kbd {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
+  flex-wrap: wrap;
   margin-bottom: 20px;
   gap: 20px;
+}
+.page-title-group {
+  flex: 1 1 320px;
+  min-width: 0;
 }
 .page-title-group h1 {
   margin: 0;
@@ -945,7 +950,13 @@ kbd {
   font-size: 13px;
   color: var(--muted);
 }
-.page-head-actions { display: flex; gap: 8px; align-items: center; }
+.page-head-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex: 0 1 auto;
+  max-width: 100%;
+}
 /* ============================================================
    NED AMS — Login page styles
    ============================================================ */
@@ -2185,153 +2196,6 @@ tr:hover .row-action { opacity: 1; }
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger) 12%, transparent);
 }
 
-.reports-construction-card {
-  position: relative;
-  padding: 28px 24px 24px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
-  background: linear-gradient(180deg, color-mix(in oklch, var(--surface) 88%, white), var(--card));
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
-}
-
-.reports-construction-badge-wrap {
-  position: absolute;
-  top: 0;
-  right: 28px;
-  display: flex;
-  justify-content: center;
-}
-
-.reports-construction-badge-wrap::before,
-.reports-construction-badge-wrap::after {
-  content: "";
-  width: 2px;
-  height: 18px;
-  background: color-mix(in oklch, var(--primary) 22%, transparent);
-}
-
-.reports-construction-badge-wrap::before { margin-right: 18px; }
-.reports-construction-badge-wrap::after { margin-left: 18px; }
-
-.reports-construction-badge {
-  margin-top: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 30px;
-  padding: 0 14px;
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--primary) 12%, white);
-  border: 1px solid color-mix(in oklch, var(--primary) 20%, transparent);
-  color: var(--primary);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.reports-construction-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.85fr);
-  gap: 20px;
-  align-items: start;
-}
-
-.reports-construction-copy {
-  display: grid;
-  gap: 10px;
-  min-width: 0;
-}
-
-.reports-construction-copy h2 {
-  margin: 0;
-  max-width: 18ch;
-  font-size: clamp(28px, 4vw, 42px);
-  line-height: 0.98;
-  letter-spacing: -0.04em;
-  color: var(--ink);
-}
-
-.reports-construction-copy p {
-  margin: 0;
-  max-width: 58ch;
-  font-size: 13.5px;
-  line-height: 1.65;
-  color: var(--ink-2);
-}
-
-.reports-construction-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 6px;
-}
-
-.reports-construction-meta span {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid var(--hairline);
-  background: var(--card);
-  color: var(--muted);
-  font-size: 11.5px;
-}
-
-.reports-construction-aside {
-  display: grid;
-  gap: 12px;
-}
-
-.reports-construction-panel {
-  display: grid;
-  gap: 8px;
-  padding: 16px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-md);
-  background: var(--card);
-}
-
-.reports-construction-panel strong {
-  font-size: 15px;
-  font-weight: 650;
-  color: var(--ink);
-  letter-spacing: -0.015em;
-}
-
-.reports-construction-panel p {
-  margin: 0;
-  font-size: 12.5px;
-  line-height: 1.55;
-  color: var(--ink-2);
-}
-
-.reports-construction-link {
-  width: fit-content;
-}
-
-.reports-construction-scaffold {
-  display: grid;
-  gap: 8px;
-  padding: 16px;
-  border: 1px dashed var(--hairline);
-  border-radius: var(--radius-md);
-  background: color-mix(in oklch, var(--surface) 82%, white);
-}
-
-.reports-construction-scaffold span {
-  display: block;
-  height: 10px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, color-mix(in oklch, var(--primary) 8%, white), color-mix(in oklch, var(--primary) 18%, white));
-}
-
-.reports-construction-scaffold span:nth-child(1) { width: 72%; }
-.reports-construction-scaffold span:nth-child(2) { width: 88%; }
-.reports-construction-scaffold span:nth-child(3) { width: 56%; }
 
 .detail-stat-strip.notifications-summary-strip {
   margin-top: 16px;
@@ -3400,6 +3264,7 @@ button:active,
   border-right: 1px solid color-mix(in oklch, var(--hairline) 92%, #ddd6cc);
   background: color-mix(in oklch, #fffdfa 94%, white);
   text-align: center;
+  height: 1px;
 }
 .module-access-table tbody tr:last-child th,
 .module-access-table tbody tr:last-child td { border-bottom: 0; }
@@ -3524,6 +3389,9 @@ button:active,
   display: flex;
   align-items: flex-start;
   gap: 5px;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
   min-height: 38px;
   padding: 9px 7px;
   cursor: pointer;
@@ -3570,6 +3438,9 @@ button:active,
 }
 .module-access-option.unavailable {
   justify-content: center;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
   min-height: 38px;
   padding: 0 7px;
   cursor: default;
@@ -3935,16 +3806,22 @@ button:active,
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 24px;
   margin-bottom: 16px;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--hairline);
+}
+.page-head-detail .page-title-group {
+  flex: 1 1 420px;
+  min-width: 0;
 }
 .page-head-detail .page-back {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   width: fit-content;
+  max-width: 100%;
   padding: 6px 10px;
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
@@ -3954,6 +3831,7 @@ button:active,
   font-weight: 600;
   color: var(--ink-2);
   text-decoration: none;
+  white-space: normal;
   margin-bottom: 8px;
 }
 .page-head-detail .page-back:hover {
@@ -5071,6 +4949,8 @@ button:active,
   align-items: center;
   gap: 6px;
   width: fit-content;
+  max-width: 100%;
+  margin-bottom: 14px;
   padding: 6px 10px;
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
@@ -5080,6 +4960,7 @@ button:active,
   font-weight: 600;
   color: var(--ink-2);
   text-decoration: none;
+  white-space: normal;
 }
 .detail-page-back:hover {
   color: var(--ink);
@@ -5090,6 +4971,7 @@ button:active,
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 24px;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--hairline);
@@ -5681,6 +5563,7 @@ button:active,
   align-items: center;
   gap: 6px;
   width: fit-content;
+  max-width: 100%;
   margin-bottom: 10px;
   padding: 6px 10px;
   border: 1px solid var(--hairline);
@@ -5691,6 +5574,7 @@ button:active,
   font-size: 12px;
   font-weight: 600;
   text-decoration: none;
+  white-space: normal;
 }
 
 .stock-page-back-inline:hover {
@@ -5719,10 +5603,10 @@ button:active,
 
 .stock-voucher-head .page-head-actions {
   padding-top: 0;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   justify-content: flex-end;
   margin-left: auto;
-  max-width: calc(100% - 186px);
+  max-width: 100%;
 }
 
 .stock-voucher-head .page-head-actions .btn {
@@ -8216,8 +8100,7 @@ button:active,
   .kv-grid-cols-3,
   .kv-grid-cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .stage-form-fields-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .stage3-master-grid,
-  .reports-construction-grid {
+  .stage3-master-grid {
     grid-template-columns: 1fr;
   }
   .stage3-link-grid {
@@ -8258,21 +8141,8 @@ button:active,
     align-items: stretch;
   }
   .inspection-finance-card-metrics,
-  .reports-construction-meta,
   .notifications-section-actions {
     width: 100%;
-  }
-  .reports-construction-badge-wrap {
-    position: static;
-    justify-content: flex-start;
-    margin-bottom: 12px;
-  }
-  .reports-construction-badge-wrap::before,
-  .reports-construction-badge-wrap::after {
-    display: none;
-  }
-  .reports-construction-badge {
-    margin-top: 0;
   }
   .stage-action-foot { flex-direction: column; align-items: stretch; }
   .stage-action-foot-actions { justify-content: flex-end; }
@@ -8459,7 +8329,6 @@ body {
 .stage-action-foot-actions,
 .inspection-finance-section-head,
 .inspection-finance-card-head,
-.reports-construction-meta,
 .notifications-section-head,
 .notifications-section-actions {
   min-width: 0;
@@ -8470,7 +8339,6 @@ body {
 .section-card-actions,
 .stage-action-foot-actions,
 .inspection-finance-card-metrics,
-.reports-construction-meta,
 .notifications-section-actions {
   flex-wrap: wrap;
 }
@@ -8493,6 +8361,18 @@ body {
 .filter-select-wrap {
   min-width: min(180px, 100%);
   max-width: 100%;
+}
+
+@media (max-width: 1100px) {
+  .page-head,
+  .page-head-detail {
+    align-items: flex-start;
+  }
+
+  .page-head-actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
 }
 
 .search-input {
@@ -8586,7 +8466,6 @@ body {
 .stage3-master-grid,
 .item-instance-detail-grid,
 .detail-bottom-grid,
-.reports-construction-grid,
 .inspection-detail-review-top {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
 }

@@ -44,9 +44,6 @@ export const ADMIN_PERMISSIONS = {
     change: "inventory.edit_stock_registers",
     delete: "inventory.delete_stock_registers",
   },
-  reports: {
-    view: "inventory.view_reports",
-  },
   inspections: {
     view: "inventory.view_inspectioncertificate",
     add: "inventory.add_inspectioncertificate",
@@ -72,7 +69,6 @@ export const PROTECTED_ADMIN_ROUTES = {
   "/items": ADMIN_PERMISSIONS.items.view,
   "/stock-entries": ADMIN_PERMISSIONS.stockEntries.view,
   "/stock-registers": ADMIN_PERMISSIONS.stockRegisters.view,
-  "/reports": ADMIN_PERMISSIONS.reports.view,
   "/inspections": ADMIN_PERMISSIONS.inspections.view,
   "/maintenance": ADMIN_PERMISSIONS.maintenance.view,
 } as const;
