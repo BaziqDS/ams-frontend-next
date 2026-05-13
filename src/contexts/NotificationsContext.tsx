@@ -2,6 +2,13 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { apiFetch, type Page } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+  buildVisibleAlertModuleCounts,
+  getActiveSeenAlertKeys,
+  getSeenAlertKeysAfterViewing,
+  getSeenAlertKeysAfterViewingModule,
+} from "@/lib/notificationAlertVisibility";
 
 export interface NotificationModuleSummary {
   count: number;
@@ -57,6 +64,7 @@ interface NotificationsContextValue {
   markAllRead: () => Promise<void>;
   clearFeed: () => Promise<void>;
   getModuleCount: (module: string) => number;
+  markModuleAlertsViewed: (module: string) => void;
 }
 
 const EMPTY_SUMMARY: NotificationSummary = {
@@ -67,6 +75,7 @@ const EMPTY_SUMMARY: NotificationSummary = {
 
 const NotificationsContext = createContext<NotificationsContextValue | null>(null);
 const SUMMARY_POLL_MS = 15_000;
+const SEEN_ALERT_KEYS_STORAGE_KEY_PREFIX = "ams.sidebar.seen-alert-keys.v1";
 
 function normalizeList<T>(data: Page<T> | T[]) {
   return Array.isArray(data) ? data : data.results;
@@ -90,14 +99,56 @@ function buildSummaryFromAlerts(alerts: NotificationAlertRecord[], unreadNotific
   };
 }
 
+function readStoredSeenAlertKeys(storageKey: string) {
+  if (typeof window === "undefined") return new Set<string>();
+
+  try {
+    const rawValue = window.localStorage.getItem(storageKey);
+    const parsedValue = rawValue ? JSON.parse(rawValue) : [];
+    return new Set(Array.isArray(parsedValue) ? parsedValue.filter((key): key is string => typeof key === "string") : []);
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function storeSeenAlertKeys(storageKey: string, seenAlertKeys: ReadonlySet<string>) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(storageKey, JSON.stringify([...seenAlertKeys]));
+}
+
 export function NotificationsProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  const seenAlertKeysStorageKey = `${SEEN_ALERT_KEYS_STORAGE_KEY_PREFIX}.${user?.id ?? "anonymous"}`;
   const [summary, setSummary] = useState<NotificationSummary>(EMPTY_SUMMARY);
   const [alerts, setAlerts] = useState<NotificationAlertRecord[]>([]);
   const [feed, setFeed] = useState<NotificationFeedItem[]>([]);
+  const [seenAlertKeys, setSeenAlertKeys] = useState<Set<string>>(() => readStoredSeenAlertKeys(seenAlertKeysStorageKey));
+  const [hasLoadedAlerts, setHasLoadedAlerts] = useState(false);
   const [isSummaryLoading, setIsSummaryLoading] = useState(true);
   const [isPanelLoading, setIsPanelLoading] = useState(false);
   const [isPanelRefreshing, setIsPanelRefreshing] = useState(false);
   const hasLoadedPanelDataRef = useRef(false);
+  const viewedModulesRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    setSeenAlertKeys(readStoredSeenAlertKeys(seenAlertKeysStorageKey));
+  }, [seenAlertKeysStorageKey]);
+
+  const applyAlerts = useCallback((nextAlerts: NotificationAlertRecord[], markViewed: boolean) => {
+    setAlerts(nextAlerts);
+    setHasLoadedAlerts(true);
+    setSeenAlertKeys(prev => {
+      const activeSeenAlertKeys = getActiveSeenAlertKeys(prev, nextAlerts);
+      let nextSeenAlertKeys = markViewed
+        ? getSeenAlertKeysAfterViewing(activeSeenAlertKeys, nextAlerts)
+        : activeSeenAlertKeys;
+      viewedModulesRef.current.forEach(module => {
+        nextSeenAlertKeys = getSeenAlertKeysAfterViewingModule(nextSeenAlertKeys, nextAlerts, module);
+      });
+      storeSeenAlertKeys(seenAlertKeysStorageKey, nextSeenAlertKeys);
+      return nextSeenAlertKeys;
+    });
+  }, [seenAlertKeysStorageKey]);
 
   const refreshSummary = useCallback(async () => {
     try {
@@ -129,7 +180,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         apiFetch<Page<NotificationFeedItem> | NotificationFeedItem[]>("/api/notifications/feed/?page_size=200"),
       ]);
       const nextAlerts = alertsData ?? [];
-      setAlerts(nextAlerts);
+      applyAlerts(nextAlerts, true);
       setFeed(normalizeList(feedData));
       setSummary(prev => buildSummaryFromAlerts(nextAlerts, prev.unread_notifications ?? 0));
       setIsSummaryLoading(false);
@@ -143,14 +194,24 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         setIsPanelRefreshing(false);
       }
     }
-  }, []);
+  }, [applyAlerts]);
 
   useEffect(() => {
     void refreshSummary();
+    apiFetch<NotificationAlertRecord[]>("/api/notifications/alerts/")
+      .then(nextAlerts => applyAlerts(nextAlerts ?? [], false))
+      .catch(() => {
+        // The server summary remains available if the richer alert list cannot load yet.
+      });
 
     const intervalId = window.setInterval(() => {
       if (document.visibilityState === "visible") {
         void refreshSummary();
+        apiFetch<NotificationAlertRecord[]>("/api/notifications/alerts/")
+          .then(nextAlerts => applyAlerts(nextAlerts ?? [], false))
+          .catch(() => {
+            // Keep the last alert list during transient polling errors.
+          });
       }
     }, SUMMARY_POLL_MS);
 
@@ -170,7 +231,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [refreshSummary]);
+  }, [applyAlerts, refreshSummary]);
 
   const markRead = useCallback(async (notificationId: number) => {
     setFeed(prev => prev.map(item => item.id === notificationId ? { ...item, is_read: true, read_at: item.read_at ?? new Date().toISOString() } : item));
@@ -228,7 +289,25 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     }
   }, [feed, loadPanelData, refreshSummary, summary]);
 
-  const getModuleCount = useCallback((module: string) => summary.modules?.[module]?.count ?? 0, [summary.modules]);
+  const visibleAlertModuleCounts = useMemo(
+    () => hasLoadedAlerts ? buildVisibleAlertModuleCounts(alerts, seenAlertKeys) : {},
+    [alerts, hasLoadedAlerts, seenAlertKeys],
+  );
+
+  const getModuleCount = useCallback((module: string) => (
+    hasLoadedAlerts ? visibleAlertModuleCounts[module]?.count ?? 0 : summary.modules?.[module]?.count ?? 0
+  ), [hasLoadedAlerts, summary.modules, visibleAlertModuleCounts]);
+
+  const markModuleAlertsViewed = useCallback((module: string) => {
+    viewedModulesRef.current.add(module);
+    setSeenAlertKeys(prev => {
+      if (!hasLoadedAlerts) return prev;
+      const activeSeenAlertKeys = getActiveSeenAlertKeys(prev, alerts);
+      const nextSeenAlertKeys = getSeenAlertKeysAfterViewingModule(activeSeenAlertKeys, alerts, module);
+      storeSeenAlertKeys(seenAlertKeysStorageKey, nextSeenAlertKeys);
+      return nextSeenAlertKeys;
+    });
+  }, [alerts, hasLoadedAlerts, seenAlertKeysStorageKey]);
 
   const value = useMemo<NotificationsContextValue>(() => ({
     summary,
@@ -243,7 +322,8 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     markAllRead,
     clearFeed,
     getModuleCount,
-  }), [summary, alerts, feed, isSummaryLoading, isPanelLoading, isPanelRefreshing, refreshSummary, loadPanelData, markRead, markAllRead, clearFeed, getModuleCount]);
+    markModuleAlertsViewed,
+  }), [summary, alerts, feed, isSummaryLoading, isPanelLoading, isPanelRefreshing, refreshSummary, loadPanelData, markRead, markAllRead, clearFeed, getModuleCount, markModuleAlertsViewed]);
 
   return <NotificationsContext.Provider value={value}>{children}</NotificationsContext.Provider>;
 }

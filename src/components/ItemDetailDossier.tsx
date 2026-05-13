@@ -72,11 +72,12 @@ interface ItemStockEntryRecord {
 
 type TransactionTone = "positive" | "negative" | "neutral";
 
-interface DistributionPanelRow {
+export interface DistributionPanelRow {
   id: string;
   name: string;
   allocated: number;
   available: number;
+  inTransit: number;
   total: number;
   badge?: string;
 }
@@ -379,14 +380,12 @@ export function ItemDetailDossierView({ itemId }: { itemId: string }) {
           canManageItems={canManageItems}
           onBack={() => router.push("/items")}
           onEdit={() => openEditModal(item)}
-          onAddStock={() => router.push(`/stock-entries?item=${itemId}`)}
           onViewTransactions={() => router.push(`/stock-entries?search=${encodeURIComponent(item.name)}`)}
           onLocate={() => setLocateOpen(true)}
-          onShowInstances={() => onPickSection("instances")}
-          onShowBatches={() => onPickSection("batches")}
+          onShowInstances={() => router.push(`/items/${itemId}/instances`)}
+          onShowBatches={() => router.push(`/items/${itemId}/batches`)}
           showInstances={showInstances}
           showBatches={showBatches}
-          isFixedLot={isFixedAssetLotItem(item)}
         />
       </div>
 
@@ -422,14 +421,12 @@ function ItemOverviewLayout({
   canManageItems,
   onBack,
   onEdit,
-  onAddStock,
   onViewTransactions,
   onLocate,
   onShowInstances,
   onShowBatches,
   showInstances,
   showBatches,
-  isFixedLot,
 }: {
   item: ItemRecord;
   units: ItemDistributionUnit[];
@@ -446,19 +443,16 @@ function ItemOverviewLayout({
   canManageItems: boolean;
   onBack: () => void;
   onEdit: () => void;
-  onAddStock: () => void;
   onViewTransactions: () => void;
   onLocate: () => void;
   onShowInstances: () => void;
   onShowBatches: () => void;
   showInstances: boolean;
   showBatches: boolean;
-  isFixedLot: boolean;
 }) {
   const allocatedPct = totalQuantity > 0 ? Math.round((allocatedQuantity / totalQuantity) * 100) : 0;
   const availablePct = totalQuantity > 0 ? Math.round((availableQuantity / totalQuantity) * 100) : 0;
   const lastUpdated = formatItemDateTime(item.updated_at ?? item.created_at);
-  const defaultUnit = units[0] ?? null;
   const [recentEntries, setRecentEntries] = useState<ItemStockEntryRecord[]>([]);
   const [transactionsLoading, setTransactionsLoading] = useState(true);
   const [transactionsError, setTransactionsError] = useState<string | null>(null);
@@ -531,10 +525,6 @@ function ItemOverviewLayout({
               Edit Item
             </button>
           ) : null}
-          <button type="button" className="btn btn-primary" onClick={onAddStock}>
-            <Ic d={<><circle cx="12" cy="12" r="9" /><path d="M12 8v8M8 12h8" /></>} size={14} />
-            Add Stock
-          </button>
           <button type="button" className="btn" onClick={() => setDistributionOpen(true)}>
             <Ic d="M4 7h16M4 12h16M4 17h16M8 7v10M16 7v10" size={14} />
             View Distribution
@@ -572,12 +562,6 @@ function ItemOverviewLayout({
                   <p>Distribution shown here is limited to the current permission scope.</p>
                 </div>
               </div>
-              <div className={styles.sideDivider} />
-              <span className={styles.powerLabel}>Default Location</span>
-              <button type="button" className={styles.locationPill} onClick={onLocate}>
-                <Ic d={<><path d="M12 21s-7-6.5-7-12a7 7 0 1 1 14 0c0 5.5-7 12-7 12Z" /><circle cx="12" cy="9" r="2.5" /></>} size={14} />
-                {defaultUnit ? defaultUnit.name : "No location"}
-              </button>
               <div className={styles.sideDivider} />
               <span className={styles.powerLabel}>Created By</span>
               <div className={styles.createdBy}>
@@ -670,18 +654,12 @@ function ItemOverviewLayout({
           <section className={styles.detailPanel}>
             <h2>Quick Actions</h2>
             <div className={styles.quickGrid}>
-              <button type="button" onClick={onAddStock}><Ic d="M12 3v14M7 12l5 5 5-5" size={16} />Add Stock</button>
-              <button type="button" onClick={onLocate}><Ic d="M17 7H3m0 0 4-4M3 7l4 4M7 17h14m0 0-4-4m4 4-4 4" size={16} />Transfer Stock</button>
-              <button type="button" onClick={showInstances ? onShowInstances : onShowBatches}><Ic d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6" size={16} />New Request</button>
-              <button type="button" onClick={() => window.print()}><Ic d={<><path d="M6 9V2h12v7" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 14h12v8H6z" /></>} size={16} />Print Label</button>
+              {showInstances ? (
+                <button type="button" onClick={onShowInstances}><Ic d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6" size={16} />View instances</button>
+              ) : showBatches ? (
+                <button type="button" onClick={onShowBatches}><Ic d="M4 7h16M4 12h16M4 17h16M8 7v10M16 7v10" size={16} />View batches</button>
+              ) : null}
             </div>
-          </section>
-
-          <section className={styles.accordionPanel}>
-            <AccordionRow label="Specifications" onClick={showBatches ? onShowBatches : undefined} />
-            <AccordionRow label="Dimensions" />
-            <AccordionRow label={showInstances ? "Instances" : isFixedLot ? "Asset lots" : "Attachments"} count={showInstances ? totalQuantity : units.length} onClick={showInstances ? onShowInstances : onShowBatches} />
-            <AccordionRow label="Notes" />
           </section>
         </aside>
       </div>
@@ -711,15 +689,6 @@ function StockMetric({ label, value, unit, tone }: { label: string; value: numbe
       <span>{label}</span>
       <strong data-tone={tone ?? ""}>{formatQuantity(value)} <em>{unit}</em></strong>
     </div>
-  );
-}
-
-function AccordionRow({ label, count, onClick }: { label: string; count?: number; onClick?: () => void }) {
-  return (
-    <button type="button" className={styles.accordionLine} onClick={onClick}>
-      <span>{label}{typeof count === "number" ? <em>{count}</em> : null}</span>
-      <Ic d="M6 9l6 6 6-6" size={14} />
-    </button>
   );
 }
 
@@ -831,6 +800,7 @@ function DistributionDrawerSection({
         <span>{columnLabel}</span>
         <span>Allocated</span>
         <span>Available</span>
+        <span>In transit</span>
         <span>Total</span>
       </div>
       <div className={styles.distributionRows}>
@@ -859,7 +829,8 @@ function DistributionDrawerRow({
   onSelect?: (row: DistributionPanelRow) => void;
 }) {
   const allocatedPct = distributionPercent(row.allocated, row.total);
-  const availablePct = row.total > 0 ? Math.max(0, 100 - allocatedPct) : 0;
+  const availablePct = distributionPercent(row.available, row.total);
+  const inTransitPct = distributionPercent(row.inTransit, row.total);
   const rowBody = (
     <>
       <div className={styles.distributionMainLine}>
@@ -869,14 +840,17 @@ function DistributionDrawerRow({
         </span>
         <strong>{formatQuantity(row.allocated)}</strong>
         <strong>{formatQuantity(row.available)}</strong>
+        <strong>{formatQuantity(row.inTransit)}</strong>
         <strong>{formatQuantity(row.total)}</strong>
       </div>
       <div className={styles.distributionProgress} aria-hidden="true">
         <span style={{ width: `${allocatedPct}%` }} />
+        <span style={{ width: `${inTransitPct}%` }} />
       </div>
       <div className={styles.distributionPercents}>
         <span>{allocatedPct}% allocated</span>
         <span>{availablePct}% available</span>
+        <span>{inTransitPct}% in transit</span>
       </div>
     </>
   );
@@ -958,23 +932,24 @@ function stockEntryLocation(entry: ItemStockEntryRecord) {
   return to || person || from || "-";
 }
 
-function buildStandaloneDistributionRows(units: ItemDistributionUnit[]): DistributionPanelRow[] {
-  return units.map((unit, index) => {
+export function buildStandaloneDistributionRows(units: ItemDistributionUnit[]): DistributionPanelRow[] {
+  return units.map(unit => {
     const available = toNumber(unit.availableQuantity);
-    const allocated = Math.max(toNumber(unit.allocatedQuantity), toNumber(unit.totalQuantity) - available, 0);
-    const total = normalizeDistributionTotal(unit.totalQuantity, allocated, available);
+    const inTransit = toNumber(unit.inTransitQuantity);
+    const allocated = Math.max(toNumber(unit.allocatedQuantity), toNumber(unit.totalQuantity) - available - inTransit, 0);
+    const total = normalizeDistributionTotal(unit.totalQuantity, allocated, available, inTransit);
     return {
       id: `unit-${unit.id}`,
       name: unit.name,
       allocated,
       available,
+      inTransit,
       total,
-      badge: index === 0 ? "Default" : undefined,
     };
   });
 }
 
-function buildSubDistributionRows(unit: ItemDistributionUnit): DistributionPanelRow[] {
+export function buildSubDistributionRows(unit: ItemDistributionUnit): DistributionPanelRow[] {
   const storeRows = aggregateStoreDistributionRows(unit);
   if (storeRows.length) return storeRows;
 
@@ -986,6 +961,7 @@ function buildSubDistributionRows(unit: ItemDistributionUnit): DistributionPanel
       name: allocation.targetName,
       allocated: 0,
       available: 0,
+      inTransit: 0,
       total: 0,
       badge: formatItemLabel(allocation.targetType, "Allocated"),
     };
@@ -1005,20 +981,23 @@ function aggregateStoreDistributionRows(unit: ItemDistributionUnit): Distributio
       name: store.locationName,
       allocated: 0,
       available: 0,
+      inTransit: 0,
       total: 0,
     };
     const available = toNumber(store.availableQuantity);
-    const allocated = Math.max(toNumber(store.allocatedTotal), toNumber(store.quantity) - available, 0);
+    const inTransit = toNumber(store.inTransitQuantity);
+    const allocated = Math.max(toNumber(store.allocatedTotal), toNumber(store.quantity) - available - inTransit, 0);
     current.available += available;
+    current.inTransit += inTransit;
     current.allocated += allocated;
-    current.total += normalizeDistributionTotal(store.quantity, allocated, available);
+    current.total += normalizeDistributionTotal(store.quantity, allocated, available, inTransit);
     groups.set(store.locationId, current);
   });
   return Array.from(groups.values());
 }
 
-function normalizeDistributionTotal(total: number | string | null | undefined, allocated: number, available: number) {
-  return Math.max(toNumber(total), allocated + available, 0);
+export function normalizeDistributionTotal(total: number | string | null | undefined, allocated: number, available: number, inTransit = 0) {
+  return Math.max(toNumber(total), allocated + available + inTransit, 0);
 }
 
 function distributionPercent(value: number, total: number) {
@@ -1028,13 +1007,14 @@ function distributionPercent(value: number, total: number) {
 
 function exportDistributionCsv(item: ItemRecord, units: ItemDistributionUnit[], acctUnit: string) {
   const rows = [
-    ["Section", "Parent Location", "Location", "Allocated", "Available", "Total", "Unit"],
+    ["Section", "Parent Location", "Location", "Allocated", "Available", "In Transit", "Total", "Unit"],
     ...buildStandaloneDistributionRows(units).map(row => [
       "Standalone Location",
       "",
       row.name,
       formatQuantity(row.allocated),
       formatQuantity(row.available),
+      formatQuantity(row.inTransit),
       formatQuantity(row.total),
       acctUnit,
     ]),
@@ -1044,6 +1024,7 @@ function exportDistributionCsv(item: ItemRecord, units: ItemDistributionUnit[], 
       row.name,
       formatQuantity(row.allocated),
       formatQuantity(row.available),
+      formatQuantity(row.inTransit),
       formatQuantity(row.total),
       acctUnit,
     ])),

@@ -960,10 +960,10 @@
 
 .overviewTitle {
   margin: 0 0 12px;
-  font-family: var(--font-display);
-  font-size: 34px;
-  line-height: 1.03;
-  font-weight: 400;
+  font-family: var(--font-sans);
+  font-size: 28px;
+  line-height: 1.12;
+  font-weight: 650;
   color: var(--ink);
   letter-spacing: -0.01em;
 }
@@ -983,11 +983,11 @@
 }
 
 .overviewActions :global(.btn) {
-  height: 42px;
-  padding-inline: 18px;
+  height: 32px;
+  padding-inline: 12px;
   border-radius: var(--radius);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 12.5px;
+  font-weight: 550;
 }
 
 .codeChip,
@@ -1050,21 +1050,20 @@
   align-items: start;
 }
 
-.detailPanel,
-.accordionPanel {
+.detailPanel {
   background: var(--card);
-  border: 1px solid var(--border);
+  border: 1px solid var(--hairline);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-xs);
 }
 
 .detailPanel {
-  padding: 20px 22px;
+  padding: 16px 18px;
 }
 
 .detailPanel h2 {
-  margin: 0 0 22px;
-  font-size: 15px;
+  margin: 0 0 16px;
+  font-size: 14px;
   line-height: 1.2;
   font-weight: 650;
   color: var(--ink);
@@ -1083,7 +1082,7 @@
 
 .infoRows {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 
 .infoRow {
@@ -1106,14 +1105,14 @@
 
 .powerCard {
   align-self: stretch;
-  padding: 22px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: linear-gradient(180deg, color-mix(in oklch, var(--surface) 45%, white), var(--card));
+  padding: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--surface);
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 16px;
+  gap: 12px;
 }
 
 .powerTop {
@@ -1123,15 +1122,16 @@
 }
 
 .powerShield {
-  width: 38px;
-  height: 44px;
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
-  background: var(--primary);
-  clip-path: polygon(50% 0, 90% 16%, 90% 72%, 50% 100%, 10% 72%, 10% 16%);
-  font-size: 18px;
+  color: var(--primary);
+  background: var(--primary-weak);
+  border: 1px solid var(--primary-weak-border);
+  border-radius: var(--radius);
+  font-size: 15px;
   font-weight: 700;
 }
 
@@ -1146,9 +1146,9 @@
 .powerTop strong {
   display: block;
   margin-bottom: 6px;
-  font-family: var(--font-display);
-  font-size: 20px;
-  font-weight: 400;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 650;
   color: var(--ink);
 }
 
@@ -1162,24 +1162,6 @@
 .sideDivider {
   height: 1px;
   background: var(--hairline);
-}
-
-.locationPill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  width: fit-content;
-  max-width: 100%;
-  padding: 9px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--card);
-  color: var(--ink-2);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
 }
 
 .createdBy {
@@ -1209,7 +1191,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 28px;
+  margin-bottom: 18px;
 }
 
 .cardTitleRow h2 { margin: 0; }
@@ -1218,7 +1200,7 @@
 .stockStats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  margin-bottom: 26px;
+  margin-bottom: 18px;
 }
 
 .stockMetric {
@@ -1246,7 +1228,7 @@
 .stockMetric strong,
 .reorderGrid strong {
   color: var(--ink);
-  font-size: 26px;
+  font-size: 20px;
   line-height: 1;
   letter-spacing: -0.02em;
 }
@@ -1288,8 +1270,8 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 24px 0;
-  margin-top: 24px;
+  padding: 16px 0;
+  margin-top: 18px;
   border-top: 1px solid var(--hairline);
   border-bottom: 1px solid var(--hairline);
 }
@@ -1329,8 +1311,8 @@
 }
 
 .transactionTable {
-  width: calc(100% + 44px);
-  margin: 0 -22px;
+  width: calc(100% + 36px);
+  margin: 0 -18px;
   border-collapse: collapse;
   table-layout: fixed;
   font-size: 13px;
@@ -1417,9 +1399,9 @@
 .txQty[data-tone="neutral"] { color: var(--primary); }
 
 .viewAllBtn {
-  width: calc(100% + 44px);
-  height: 52px;
-  margin: 0 -22px;
+  width: calc(100% + 36px);
+  height: 42px;
+  margin: 0 -18px;
   border: 0;
   background: transparent;
   color: var(--primary);
@@ -1444,12 +1426,12 @@
 
 .quickGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 12px;
 }
 
 .quickGrid button {
-  height: 50px;
+  height: 36px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--card);
@@ -1457,10 +1439,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 8px;
   font-family: var(--font-sans);
-  font-size: 14px;
-  font-weight: 650;
+  font-size: 13px;
+  font-weight: 550;
   cursor: pointer;
 }
 
@@ -1471,50 +1453,6 @@
 
 .quickGrid svg {
   color: var(--primary);
-}
-
-.accordionPanel {
-  overflow: hidden;
-}
-
-.accordionLine {
-  width: 100%;
-  min-height: 42px;
-  padding: 0 18px;
-  border: 0;
-  border-bottom: 1px solid var(--hairline);
-  background: var(--card);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--ink-2);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.accordionLine:last-child { border-bottom: 0; }
-.accordionLine:hover { background: var(--surface-2); }
-
-.accordionLine span {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-}
-
-.accordionLine em {
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--muted);
-  font-style: normal;
-  font-size: 11px;
 }
 
 /* ---------- Distribution drawer ---------- */
@@ -1535,7 +1473,7 @@
 .distributionDrawer {
   position: absolute;
   inset: 0 0 0 auto;
-  width: min(430px, calc(100vw - 24px));
+  width: min(520px, calc(100vw - 24px));
   height: 100dvh;
   background: var(--card);
   border-left: 1px solid var(--border);
@@ -1622,8 +1560,8 @@
 .distributionHeaderRow,
 .distributionMainLine {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 74px 74px 56px;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) 68px 68px 72px 56px;
+  gap: 8px;
   align-items: center;
 }
 
@@ -1702,6 +1640,7 @@ button.distributionDataRow:hover {
 }
 
 .distributionProgress {
+  display: flex;
   height: 7px;
   margin-top: 14px;
   border-radius: 999px;
@@ -1714,8 +1653,16 @@ button.distributionDataRow:hover {
   display: block;
   height: 100%;
   min-width: 2px;
-  border-radius: inherit;
+  border-radius: 0;
   background: var(--primary);
+}
+
+.distributionProgress span:first-child {
+  border-radius: 999px 0 0 999px;
+}
+
+.distributionProgress span:nth-child(2) {
+  background: var(--warn);
 }
 
 .distributionPercents {
@@ -1732,6 +1679,10 @@ button.distributionDataRow:hover {
 }
 
 .distributionPercents span:last-child {
+  color: var(--warn);
+}
+
+.distributionPercents span:nth-child(2) {
   color: var(--success);
 }
 

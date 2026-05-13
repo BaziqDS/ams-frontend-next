@@ -346,6 +346,41 @@ function buildScopeQuery(scopeTokens: string[]) {
   return scopeTokens.map(token => `scope=${encodeURIComponent(token)}`).join("&");
 }
 
+function buildRelatedListExtraQuery({ locationId, scopeTokens }: { locationId?: string | null; scopeTokens?: string[] }) {
+  const parts = [
+    locationId ? `location=${encodeURIComponent(locationId)}` : "",
+    scopeTokens?.length ? buildScopeQuery(scopeTokens) : "",
+  ].filter(Boolean);
+  return parts.length ? `&${parts.join("&")}` : "";
+}
+
+function useItemScopeFilter() {
+  const [scopeOptions, setScopeOptions] = useState<ItemScopeOption[]>([]);
+  const [defaultScopeTokens, setDefaultScopeTokens] = useState<string[]>([]);
+  const [selectedScopeTokens, setSelectedScopeTokens] = useState<string[]>([]);
+
+  const loadScopeOptions = useCallback(async () => {
+    const scopeData = await apiFetch<ItemScopeOptionsResponse>("/api/inventory/distribution/scope-options/");
+    setScopeOptions(scopeData.options);
+    setDefaultScopeTokens(scopeData.default);
+    setSelectedScopeTokens(current => current.length ? current : scopeData.default);
+  }, []);
+
+  const effectiveScopeTokens = selectedScopeTokens.length ? selectedScopeTokens : defaultScopeTokens;
+  const handleScopeChange = useCallback((nextTokens: string[]) => {
+    setSelectedScopeTokens(nextTokens.length ? nextTokens : defaultScopeTokens);
+  }, [defaultScopeTokens]);
+
+  return {
+    scopeOptions,
+    defaultScopeTokens,
+    selectedScopeTokens,
+    effectiveScopeTokens,
+    handleScopeChange,
+    loadScopeOptions,
+  };
+}
+
 export function scopeFilterOptions(options: ItemScopeOption[]): MultiSelectFilterOption[] {
   return options.map(option => ({
     id: option.id,
@@ -940,7 +975,7 @@ export function ItemListView() {
 
   const getItemOpenHref = useCallback((item: ItemRecord) => {
     if (alertFocusConfig?.preferBatchesTab && canShowBatches(item.tracking_type, item.category_type)) {
-      return buildItemsWorkspaceHref({ itemId: item.id, tab: "batches" });
+      return `/items/${item.id}/batches`;
     }
     return `/items/${item.id}`;
   }, [alertFocusConfig]);
@@ -2941,7 +2976,7 @@ function ItemPageActions({ item }: { item: ItemRecord | null }) {
   );
 }
 
-export function useItemDistribution(itemId: string, scopeTokens: string[] = EMPTY_SCOPE_TOKENS) {
+export function useItemDistribution(itemId: string, scopeTokens: string[] = EMPTY_SCOPE_TOKENS, batchId?: string | null) {
   const [item, setItem] = useState<ItemRecord | null>(null);
   const [units, setUnits] = useState<ItemDistributionUnit[]>([]);
   const [scopeOptions, setScopeOptions] = useState<ItemScopeOption[]>([]);
@@ -2957,9 +2992,10 @@ export function useItemDistribution(itemId: string, scopeTokens: string[] = EMPT
     try {
       const scopeQuery = buildScopeQuery(scopeKey ? scopeKey.split("|") : []);
       const scopeSuffix = scopeQuery ? `&${scopeQuery}` : "";
+      const batchSuffix = batchId ? `&batch=${encodeURIComponent(batchId)}` : "";
       const [itemData, unitData, scopeData] = await Promise.all([
         apiFetch<ItemRecord>(`/api/inventory/items/${itemId}/${scopeQuery ? `?${scopeQuery}` : ""}`),
-        apiFetch<ItemDistributionUnit[]>(`/api/inventory/distribution/hierarchical/?item=${encodeURIComponent(itemId)}${scopeSuffix}`),
+        apiFetch<ItemDistributionUnit[]>(`/api/inventory/distribution/hierarchical/?item=${encodeURIComponent(itemId)}${batchSuffix}${scopeSuffix}`),
         apiFetch<ItemScopeOptionsResponse>("/api/inventory/distribution/scope-options/"),
       ]);
       setItem(itemData);
@@ -2973,7 +3009,7 @@ export function useItemDistribution(itemId: string, scopeTokens: string[] = EMPT
     } finally {
       if (showLoading) setIsLoading(false);
     }
-  }, [itemId, scopeKey]);
+  }, [batchId, itemId, scopeKey]);
 
   return { item, units, scopeOptions, defaultScopeTokens, isLoading, fetchError, setFetchError, load };
 }
@@ -3128,6 +3164,235 @@ export function ItemDistributionView({ itemId }: { itemId: string }) {
                           <span className="ra-label">Details</span>
                         </Link>
                       </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <ListPagination
+            summary={filteredUnits.length === 0 ? "Showing 0 standalone units" : `Showing ${pageStart}-${pageEnd} of ${filteredUnits.length} standalone units`}
+            page={page}
+            totalPages={totalPages}
+            onPrev={() => setPage(current => Math.max(1, current - 1))}
+            onNext={() => setPage(current => Math.min(totalPages, current + 1))}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ItemBatchDistributionView({ itemId, batchId }: { itemId: string; batchId: string }) {
+  const router = useRouter();
+  const { isLoading: capsLoading } = useCapabilities();
+  const canViewItems = useCan("items");
+  const { scopeOptions, effectiveScopeTokens, handleScopeChange, loadScopeOptions } = useItemScopeFilter();
+  const { item, units, isLoading, fetchError, setFetchError, load } = useItemDistribution(itemId, effectiveScopeTokens, batchId);
+  const [batch, setBatch] = useState<ItemBatchRecord | null>(null);
+  const [batchError, setBatchError] = useState<string | null>(null);
+  const [density, setDensity] = useState<Density>("balanced");
+  const [search, setSearch] = useState("");
+  const [stockFilter, setStockFilter] = useState("all");
+
+  const loadBatch = useCallback(async () => {
+    setBatchError(null);
+    try {
+      const batchData = await apiFetch<ItemBatchRecord>(`/api/inventory/item-batches/${batchId}/`);
+      setBatch(batchData);
+    } catch (err) {
+      setBatch(null);
+      setBatchError(err instanceof Error ? err.message : "Failed to load item batch.");
+    }
+  }, [batchId]);
+
+  useEffect(() => {
+    if (capsLoading) return;
+    if (!canViewItems) {
+      router.replace("/403");
+      return;
+    }
+    loadScopeOptions().catch(() => undefined);
+    load();
+    loadBatch();
+  }, [canViewItems, capsLoading, load, loadBatch, loadScopeOptions, router]);
+
+  const filteredUnits = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return units.filter(unit => {
+      if (q) {
+        const hay = [unit.name, unit.code, ...unit.stores.map(store => store.locationName), ...unit.allocations.map(allocation => allocation.targetName)].join(" ").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (stockFilter === "available" && unit.availableQuantity <= 0) return false;
+      if (stockFilter === "allocated" && unit.allocatedQuantity <= 0) return false;
+      if (stockFilter === "transit" && unit.inTransitQuantity <= 0) return false;
+      return true;
+    });
+  }, [search, stockFilter, units]);
+
+  const {
+    page,
+    totalPages,
+    pageItems: pagedUnits,
+    pageStart,
+    pageEnd,
+    setPage,
+  } = useClientPagination(filteredUnits, ITEM_DISTRIBUTION_PAGE_SIZE, [search, stockFilter, itemId, batchId, effectiveScopeTokens.join("|")]);
+
+  const singularBatchLabel = batchLabelForItem(item, false);
+  const batchTitle = batch?.batch_number ?? `${singularBatchLabel} distribution`;
+
+  return (
+    <div data-density={density}>
+      <Topbar breadcrumb={["Inventory", "Items", item?.name ?? "Item", batchTitle, "Distribution"]} />
+      <div className="page">
+        {fetchError && (
+          <Alert onDismiss={() => setFetchError(null)} action={<button type="button" className="btn btn-xs" onClick={() => load()}>Retry</button>}>
+            {fetchError}
+          </Alert>
+        )}
+        {batchError && (
+          <Alert onDismiss={() => setBatchError(null)} action={<button type="button" className="btn btn-xs" onClick={() => loadBatch()}>Retry</button>}>
+            {batchError}
+          </Alert>
+        )}
+
+        <div className="page-head">
+          <div className="page-title-group">
+            <div className="eyebrow">{singularBatchLabel} distribution</div>
+            <h1>{batchTitle}</h1>
+            <div className="page-sub">
+              {item ? `${item.name} / ${item.code} / ${formatItemLabel(String(item.tracking_type ?? ""))}` : "Loading permission-scoped batch distribution."}
+            </div>
+          </div>
+          <div className="page-head-actions">
+            <Link className="btn btn-sm" href={`/items/${itemId}/batches`}>
+              <Ic d="M15 18l-6-6 6-6" size={14} />
+              {batchLabelForItem(item)}
+            </Link>
+            <Link className="btn btn-sm btn-ghost" href={`/items/${itemId}`}>
+              <Ic d="M3 12h18M3 6h18M3 18h18" size={14} />
+              Item
+            </Link>
+          </div>
+        </div>
+
+        {batch ? (
+          <div className="table-card" style={{ marginBottom: 16 }}>
+            <div className="table-card-head">
+              <div className="table-card-head-left">
+                <div className="eyebrow">Visible batch totals</div>
+                <div className="table-count">
+                  <span className="mono">{formatQuantity(batch.quantity)}</span>
+                  <span>total quantity</span>
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(140px, 1fr))", gap: 12, padding: 16, borderTop: "1px solid var(--hairline)" }}>
+              {[
+                ["Available", batch.available_quantity],
+                ["Allocated", batch.allocated_quantity],
+                ["In Transit", batch.in_transit_quantity],
+                ["Locations", units.length],
+              ].map(([label, value]) => (
+                <div key={String(label)} style={{ border: "1px solid var(--hairline)", borderRadius: 8, padding: 12, background: "var(--surface-2)" }}>
+                  <div className="eyebrow">{label}</div>
+                  <div className="mono" style={{ color: "var(--text-1)", fontSize: 18, fontWeight: 700, marginTop: 4 }}>{formatQuantity(value as number | string | null | undefined)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="filter-bar">
+          <div className="filter-bar-left">
+            <div className="search-input">
+              <Ic d={<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>} size={14} />
+              <input placeholder="Search standalone, store, person, or sub-location..." value={search} onChange={e => setSearch(e.target.value)} />
+              {search && <button type="button" className="clear-search" onClick={() => setSearch("")}>x</button>}
+            </div>
+            <div className="chip-filter-group">
+              <div className="chip-filter-label">Focus</div>
+              <div className="chip-filter">
+                {[
+                  { k: "all", label: "All" },
+                  { k: "available", label: "Available" },
+                  { k: "allocated", label: "Allocated" },
+                  { k: "transit", label: "Transit" },
+                ].map(option => (
+                  <button key={option.k} type="button" className={"chip-filter-btn" + (stockFilter === option.k ? " active" : "")} onClick={() => setStockFilter(option.k)}>
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {scopeOptions.length > 1 ? (
+              <div className="filter-select-group">
+                <div className="chip-filter-label">Scope</div>
+                <MultiSelectFilter
+                  options={scopeFilterOptions(scopeOptions)}
+                  value={effectiveScopeTokens}
+                  onChange={handleScopeChange}
+                  placeholder="All visible locations"
+                  searchPlaceholder="Search locations or stores..."
+                  minWidth={260}
+                />
+              </div>
+            ) : null}
+          </div>
+          <div className="filter-bar-right">
+            <DensityToggle density={density} setDensity={setDensity} />
+          </div>
+        </div>
+
+        <div className="table-card">
+          <div className="table-card-head">
+            <div className="table-card-head-left">
+              <div className="eyebrow">Location distribution</div>
+              <div className="table-count">
+                <span className="mono">{filteredUnits.length}</span>
+                <span>of</span>
+                <span className="mono">{units.length}</span>
+                <span>standalone units</span>
+              </div>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", borderTop: "1px solid var(--hairline)" }}>Loading batch distribution...</div>
+          ) : (
+            <div className="h-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Standalone Location</th>
+                    <th>Total</th>
+                    <th>Available</th>
+                    <th>Allocated</th>
+                    <th>In Transit</th>
+                    <th>Store Rows</th>
+                    <th>Issued Targets</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredUnits.length === 0 ? (
+                    <EmptyTableRow colSpan={7} message="No batch distribution matches the current filters." />
+                  ) : pagedUnits.map(unit => (
+                    <tr key={unit.id}>
+                      <td className="col-user">
+                        <div className="identity-cell">
+                          <div className="user-name">{unit.name}</div>
+                          <div className="user-username mono">{unit.code}</div>
+                        </div>
+                      </td>
+                      <td className="mono">{formatQuantity(unit.totalQuantity)}</td>
+                      <td className="mono">{formatQuantity(unit.availableQuantity)}</td>
+                      <td className="mono">{formatQuantity(unit.allocatedQuantity)}</td>
+                      <td className="mono">{formatQuantity(unit.inTransitQuantity)}</td>
+                      <td><span className="chip">{unit.stores.length} stores</span></td>
+                      <td><span className="chip">{unit.allocations.length} targets</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -3409,7 +3674,8 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
   const locationId = searchParams.get("location");
   const { isLoading: capsLoading } = useCapabilities();
   const canViewItems = useCan("items");
-  const extraQuery = locationId ? `&location=${encodeURIComponent(locationId)}` : "";
+  const { scopeOptions, effectiveScopeTokens, handleScopeChange, loadScopeOptions } = useItemScopeFilter();
+  const extraQuery = buildRelatedListExtraQuery({ locationId, scopeTokens: effectiveScopeTokens });
   const { item, records, isLoading, fetchError, setFetchError, load } = useItemRelatedList<ItemInstanceRecord>(itemId, "/api/inventory/item-instances/", "Failed to load item instances", extraQuery);
   const [density, setDensity] = useState<Density>("balanced");
   const [search, setSearch] = useState("");
@@ -3421,8 +3687,9 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
       router.replace("/403");
       return;
     }
+    loadScopeOptions().catch(() => undefined);
     load();
-  }, [canViewItems, capsLoading, load, router]);
+  }, [canViewItems, capsLoading, load, loadScopeOptions, router]);
 
   const statusOptions = useMemo(() => {
     const values = new Set<string>();
@@ -3459,7 +3726,7 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
     pageStart,
     pageEnd,
     setPage,
-  } = useClientPagination(filteredRecords, ITEM_RELATED_RECORDS_PAGE_SIZE, [search, statusFilter, itemId, locationId]);
+  } = useClientPagination(filteredRecords, ITEM_RELATED_RECORDS_PAGE_SIZE, [search, statusFilter, itemId, locationId, effectiveScopeTokens.join("|")]);
 
   const showInstances = !item || canShowInstances(item.tracking_type);
 
@@ -3517,6 +3784,19 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
                     />
                   </div>
                 </div>
+                {!locationId && scopeOptions.length > 1 ? (
+                  <div className="filter-select-group">
+                    <div className="chip-filter-label">Scope</div>
+                    <MultiSelectFilter
+                      options={scopeFilterOptions(scopeOptions)}
+                      value={effectiveScopeTokens}
+                      onChange={handleScopeChange}
+                      placeholder="All visible locations"
+                      searchPlaceholder="Search locations or stores..."
+                      minWidth={260}
+                    />
+                  </div>
+                ) : null}
               </div>
               <div className="filter-bar-right">
                 <DensityToggle density={density} setDensity={setDensity} />
@@ -3747,7 +4027,8 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
   const locationId = searchParams.get("location");
   const { isLoading: capsLoading } = useCapabilities();
   const canViewItems = useCan("items");
-  const extraQuery = locationId ? `&location=${encodeURIComponent(locationId)}` : "";
+  const { scopeOptions, effectiveScopeTokens, handleScopeChange, loadScopeOptions } = useItemScopeFilter();
+  const extraQuery = buildRelatedListExtraQuery({ locationId, scopeTokens: effectiveScopeTokens });
   const { item, records, isLoading, fetchError, setFetchError, load } = useItemRelatedList<ItemBatchRecord>(itemId, "/api/inventory/item-batches/", "Failed to load item batches", extraQuery);
   const [density, setDensity] = useState<Density>("balanced");
   const [search, setSearch] = useState("");
@@ -3761,8 +4042,9 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
       router.replace("/403");
       return;
     }
+    loadScopeOptions().catch(() => undefined);
     load();
-  }, [canViewItems, capsLoading, load, router]);
+  }, [canViewItems, capsLoading, load, loadScopeOptions, router]);
 
   const filteredRecords = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -3785,7 +4067,7 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
     pageStart,
     pageEnd,
     setPage,
-  } = useClientPagination(filteredRecords, ITEM_RELATED_RECORDS_PAGE_SIZE, [search, statusFilter, itemId, locationId]);
+  } = useClientPagination(filteredRecords, ITEM_RELATED_RECORDS_PAGE_SIZE, [search, statusFilter, itemId, locationId, effectiveScopeTokens.join("|")]);
 
   return (
     <div data-density={density}>
@@ -3833,6 +4115,19 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
                 ))}
               </div>
             </div>
+            {!locationId && scopeOptions.length > 1 ? (
+              <div className="filter-select-group">
+                <div className="chip-filter-label">Scope</div>
+                <MultiSelectFilter
+                  options={scopeFilterOptions(scopeOptions)}
+                  value={effectiveScopeTokens}
+                  onChange={handleScopeChange}
+                  placeholder="All visible locations"
+                  searchPlaceholder="Search locations or stores..."
+                  minWidth={260}
+                />
+              </div>
+            ) : null}
           </div>
           <div className="filter-bar-right">
             <DensityToggle density={density} setDensity={setDensity} />
@@ -3868,11 +4163,12 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
                     <th>Active</th>
                     <th>Created By</th>
                     <th>Updated</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredRecords.length === 0 ? (
-                    <EmptyTableRow colSpan={isFixedAssetLotItem(item) ? 10 : 9} message={`No item ${pluralBatchLabel.toLowerCase()} match the current filters.`} />
+                    <EmptyTableRow colSpan={isFixedAssetLotItem(item) ? 11 : 10} message={`No item ${pluralBatchLabel.toLowerCase()} match the current filters.`} />
                   ) : pagedRecords.map(record => (
                     <tr key={record.id}>
                       <td className="col-user">
@@ -3890,6 +4186,12 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
                       <td><StatusPill active={record.is_active} /></td>
                       <td>{record.created_by_name ?? "-"}</td>
                       <td>{formatItemDate(record.updated_at)}</td>
+                      <td className="col-actions">
+                        <Link className="btn btn-xs btn-ghost row-action" href={`/items/${itemId}/batches/${record.id}/distribution`}>
+                          <Ic d="M4 7h16M4 12h16M4 17h16" size={13} />
+                          <span className="ra-label">Distribution</span>
+                        </Link>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

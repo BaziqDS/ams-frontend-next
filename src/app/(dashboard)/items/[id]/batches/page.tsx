@@ -1,5 +1,4 @@
-import { redirect } from "next/navigation";
-import { buildItemsWorkspaceHref } from "@/lib/itemsWorkspaceState";
+import { ItemBatchesView } from "@/components/ItemModuleViews";
 
 export default async function ItemBatchesPage({
   params,
@@ -7,5 +6,5 @@ export default async function ItemBatchesPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  redirect(buildItemsWorkspaceHref({ itemId: id, tab: "batches" }));
+  return <ItemBatchesView itemId={id} />;
 }
