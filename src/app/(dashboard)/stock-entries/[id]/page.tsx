@@ -264,7 +264,10 @@ function quantityVerb(entry: StockEntryRecord) {
 }
 
 function hasImplicitInspectionSource(entry: StockEntryRecord) {
-  return entry.entry_type === "RECEIPT" && entry.from_location == null && entry.issued_to == null;
+  return (
+    entry.entry_type === "RECEIPT" &&
+    entry.inspection_certificate != null
+  );
 }
 
 function acknowledgementMeta(entry: StockEntryRecord, related: RelatedEntries) {
@@ -2043,17 +2046,27 @@ export default function StockEntryDetailPage() {
     setLoading(true);
     setError(null);
     try {
-      const [entryData, entriesData, instanceData] = await Promise.all([
-        apiFetch<StockEntryRecord>(`/api/inventory/stock-entries/${params.id}/`),
-        apiFetch<Page<StockEntryRecord> | StockEntryRecord[]>("/api/inventory/stock-entries/?page_size=500"),
-        apiFetch<Page<StockEntryItemInstance> | StockEntryItemInstance[]>("/api/inventory/item-instances/?page_size=1000"),
+      const entryData = await apiFetch<StockEntryRecord>(`/api/inventory/stock-entries/${params.id}/`);
+      const [referenceEntry, childrenData] = await Promise.all([
+        entryData.reference_entry
+          ? apiFetch<StockEntryRecord>(`/api/inventory/stock-entries/${entryData.reference_entry}/`).catch(() => null)
+          : Promise.resolve(null),
+        apiFetch<Page<StockEntryRecord> | StockEntryRecord[]>(`/api/inventory/stock-entries/?reference_entry=${entryData.id}&page_size=100`),
       ]);
+      const relatedEntries = [entryData, referenceEntry, ...normalizeList(childrenData)]
+        .filter((candidate): candidate is StockEntryRecord => Boolean(candidate));
+      const relatedEntryIds = Array.from(new Set(relatedEntries.map(candidate => candidate.id)));
       const registerPath = entryData.to_location
         ? `/api/inventory/stock-registers/?page_size=500&store=${entryData.to_location}`
         : "/api/inventory/stock-registers/?page_size=500";
-      const registerData = await apiFetch<Page<StockRegisterRecord> | StockRegisterRecord[]>(registerPath);
+      const [registerData, instanceData] = await Promise.all([
+        apiFetch<Page<StockRegisterRecord> | StockRegisterRecord[]>(registerPath),
+        apiFetch<Page<StockEntryItemInstance> | StockEntryItemInstance[]>(
+          `/api/inventory/item-instances/?stock_entry_ids=${relatedEntryIds.join(",")}&page_size=1000`,
+        ),
+      ]);
       setEntry(entryData);
-      setAllEntries(normalizeList(entriesData));
+      setAllEntries(relatedEntries);
       setRegisters(normalizeList(registerData));
       setInstances(normalizeList(instanceData));
     } catch (err) {

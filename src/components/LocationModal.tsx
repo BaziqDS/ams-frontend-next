@@ -49,6 +49,8 @@ type LocationFormState = {
   main_store_name: string;
   parent_location: string;
   location_type: string;
+  create_main_store: boolean;
+  is_store: boolean;
   is_active: boolean;
   description: string;
   address: string;
@@ -63,6 +65,8 @@ function emptyForm(): LocationFormState {
     main_store_name: "",
     parent_location: "",
     location_type: "DEPARTMENT",
+    create_main_store: false,
+    is_store: false,
     is_active: true,
     description: "",
     address: "",
@@ -79,7 +83,9 @@ function formFromLocation(location: LocationRecord | null): LocationFormState {
     code: location.code ?? "",
     main_store_name: "",
     parent_location: location.parent_location == null ? "" : String(location.parent_location),
-    location_type: location.location_type ?? "DEPARTMENT",
+    location_type: location.location_type === "STORE" ? "OTHER" : location.location_type ?? "DEPARTMENT",
+    create_main_store: false,
+    is_store: Boolean(location.is_store),
     is_active: Boolean(location.is_active),
     description: location.description ?? "",
     address: location.address ?? "",
@@ -89,15 +95,16 @@ function formFromLocation(location: LocationRecord | null): LocationFormState {
 }
 
 function toPayload(form: LocationFormState) {
-  const isStore = form.location_type === "STORE";
-
   return {
     name: form.name.trim(),
     code: form.code.trim(),
     main_store_name: form.main_store_name.trim(),
     parent_location: form.parent_location ? Number(form.parent_location) : null,
-    location_type: form.location_type,
-    is_store: isStore,
+    location_type: form.create_main_store ? "STORE" : form.location_type,
+    create_main_store: form.create_main_store,
+    is_store: form.create_main_store ? true : form.is_store,
+    is_main_store: form.create_main_store ? true : undefined,
+    is_auto_created: form.create_main_store ? true : undefined,
     is_active: form.is_active,
     description: form.description.trim() || null,
     address: form.address.trim() || null,
@@ -179,6 +186,8 @@ export function LocationModal({ open, mode, location, createContext = "default",
   const isEditMode = mode === "edit";
   const showParentSelector = !isEditMode && createContext === "default";
   const isClassificationOnly = !showParentSelector;
+  const canCreateMissingMainStore = !isEditMode && createContext === "child" && Boolean(lockedParent?.is_standalone) && !lockedParent?.main_store_id;
+  const canConfigureStoreCapability = !form.create_main_store && (createContext === "child" || (isEditMode && Boolean(location?.parent_location) && !location?.is_standalone));
   const errors = {
     name: touched.has("name") && !form.name.trim() ? "Location name is required." : undefined,
     location_type: touched.has("location_type") && !form.location_type.trim() ? "Location type is required." : undefined,
@@ -189,12 +198,13 @@ export function LocationModal({ open, mode, location, createContext = "default",
 
   const loadStatusMessage = useMemo(() => {
     if (!isEditMode && createContext === "standalone") return "A main store will be created automatically for this location.";
+    if (canCreateMissingMainStore) return "This standalone location does not currently have a main store.";
     if (!isEditMode && createContext === "child" && lockedParent) return `Creating sub-location under ${lockedParent.name}.`;
     if (parentError) return `Parent locations failed to load: ${parentError}`;
     if (parentLoading) return "Loading parent locations…";
     if (parentLocations.length === 0) return "No parent locations were returned. Root locations can still be saved without a parent.";
     return null;
-  }, [createContext, isEditMode, lockedParent, parentError, parentLoading, parentLocations.length]);
+  }, [canCreateMissingMainStore, createContext, isEditMode, lockedParent, parentError, parentLoading, parentLocations.length]);
 
   const set = (patch: Partial<LocationFormState>) => setForm(prev => ({ ...prev, ...patch }));
 
@@ -325,9 +335,48 @@ export function LocationModal({ open, mode, location, createContext = "default",
                       }}
                       placeholder="Select location type"
                       ariaLabel="Location type"
-                      options={Object.entries(LOCATION_TYPE_LABELS).map(([value, label]) => ({ value, label }))}
+                      options={form.create_main_store
+                        ? [{ value: "STORE", label: "Store" }]
+                        : Object.entries(LOCATION_TYPE_LABELS).map(([value, label]) => ({ value, label }))}
+                      disabled={form.create_main_store}
                     />
                   </Field>
+                  {canCreateMissingMainStore && (
+                    <Field
+                      label="Main store"
+                      hint="Creates the primary inventory store for this standalone location."
+                      span={2}
+                    >
+                      <label className="checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={form.create_main_store}
+                          onChange={event => set({
+                            create_main_store: event.target.checked,
+                            location_type: event.target.checked ? "STORE" : "DEPARTMENT",
+                            is_store: event.target.checked,
+                          })}
+                        />
+                        <span>Main store location</span>
+                      </label>
+                    </Field>
+                  )}
+                  {canConfigureStoreCapability && (
+                    <Field
+                      label="Store capability"
+                      hint="Enable when this sub-location maintains stock registers and can issue or receive stock."
+                      span={2}
+                    >
+                      <label className="checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={form.is_store}
+                          onChange={event => set({ is_store: event.target.checked })}
+                        />
+                        <span>Inventory store location</span>
+                      </label>
+                    </Field>
+                  )}
                 </div>
               </Section>
 
@@ -359,7 +408,7 @@ export function LocationModal({ open, mode, location, createContext = "default",
                 ? <span className="foot-err">Loading parent locations…</span>
                 : issueCount > 0
                   ? <span className="foot-err">{issueCount} issue{issueCount > 1 ? "s" : ""} to resolve</span>
-                  : <span className="foot-ok">{locationTypeLabel(form.location_type)} location ready</span>}
+                  : <span className="foot-ok">{form.create_main_store ? "Main store" : `${locationTypeLabel(form.location_type)}${form.is_store ? " store" : " location"}`} ready</span>}
           </div>
           <div className="modal-foot-actions">
             <button type="button" className="btn btn-md" onClick={onClose}>Cancel</button>

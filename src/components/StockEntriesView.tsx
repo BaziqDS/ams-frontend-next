@@ -94,6 +94,8 @@ interface StockEntryRecord {
   created_by_name?: string | null;
   created_at: string;
   can_acknowledge?: boolean;
+  can_delete?: boolean;
+  delete_blockers?: string[];
   active_correction?: {
     id: number;
     original_entry?: number;
@@ -1032,7 +1034,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
 function RowActions({ entry, canEdit, canDelete, pageBusy, deleteBusy, ackBusy, onEdit, onDelete, onAcknowledge }: { entry: StockEntryRecord; canEdit: boolean; canDelete: boolean; pageBusy: boolean; deleteBusy: boolean; ackBusy: boolean; onEdit: () => void; onDelete: () => void; onAcknowledge: () => void }) {
   const showAcknowledge = Boolean(entry.can_acknowledge) && entry.status === "PENDING_ACK";
   const showEdit = canEdit && entry.status === "DRAFT";
-  const showDelete = canDelete && entry.status === "DRAFT";
+  const showDelete = canDelete && entry.can_delete !== false && entry.status === "DRAFT";
   if (!showAcknowledge && !showEdit && !showDelete) return <span className="muted-note mono">No actions</span>;
   return (
     <div className="row-actions">
@@ -1155,8 +1157,7 @@ export function StockEntriesView() {
     }
     loadEntries();
     loadScopeStores();
-    loadRefs();
-  }, [canView, capsLoading, loadEntries, loadRefs, loadScopeStores, router]);
+  }, [canView, capsLoading, loadEntries, loadScopeStores, router]);
 
   useEffect(() => {
     const typeParam = searchParams.get("type");
@@ -1235,6 +1236,10 @@ export function StockEntriesView() {
 
   const handleDelete = async (entry: StockEntryRecord) => {
     if (!canDelete || busyAction) return;
+    if (entry.can_delete === false) {
+      setActionError(entry.delete_blockers?.join(" ") || "This stock entry cannot be deleted because it is linked to existing records.");
+      return;
+    }
     const confirmed = window.confirm(`Delete draft ${entry.entry_number}? This cannot be undone.`);
     if (!confirmed) return;
     setBusyAction({ kind: "delete", entryId: entry.id });

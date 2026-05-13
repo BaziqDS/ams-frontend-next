@@ -56,6 +56,8 @@ export type CategoryRecord = {
   created_at?: string | null;
   updated_at?: string | null;
   notes?: string | null;
+  can_delete?: boolean;
+  delete_blockers?: string[];
 };
 
 type CategoryFormState = {

@@ -41,6 +41,20 @@ function StatusPill({ active }: { active: boolean }) {
   );
 }
 
+function LocationTypeChips({ location }: { location: LocationRecord }) {
+  const baseType = locationTypeLabel(location.location_type);
+  return (
+    <span className="location-type-chips">
+      <span className="chip">{baseType}</span>
+      {location.is_store && baseType.toLowerCase() !== "store" ? <span className="chip chip-store">Store</span> : null}
+    </span>
+  );
+}
+
+function deleteBlockedMessage(blockers: string[] | undefined, fallback: string) {
+  return blockers && blockers.length > 0 ? blockers.join(" ") : fallback;
+}
+
 function DensityToggle({ density, setDensity }: { density: "compact" | "balanced" | "comfortable"; setDensity: (density: "compact" | "balanced" | "comfortable") => void }) {
   return (
     <div className="seg">
@@ -117,7 +131,7 @@ function LocationCard({
   deleteBusy: boolean;
   onOpen?: () => void;
   onEdit: () => void;
-  onDelete: () => void;
+  onDelete?: () => void;
 }) {
   return (
     <div className="user-card" onClick={onOpen} style={onOpen ? { cursor: "pointer" } : undefined}>
@@ -126,7 +140,7 @@ function LocationCard({
       </div>
       <div className="user-card-name">{location.name}</div>
       <div className="user-card-meta mono">{location.code}</div>
-      <div className="user-card-eid mono">{locationTypeLabel(location.location_type)}</div>
+      <div className="user-card-eid"><LocationTypeChips location={location} /></div>
       <div className="user-card-section">
         <div className="eyebrow">Parent Location</div>
         <div style={{ fontSize: 13, color: "var(--text-1)" }}>{location.parent_location_display ?? "Root location"}</div>
@@ -170,7 +184,7 @@ function LocationRow({
   deleteBusy: boolean;
   onOpen?: () => void;
   onEdit: () => void;
-  onDelete: () => void;
+  onDelete?: () => void;
 }) {
   return (
     <tr onClick={onOpen} style={onOpen ? { cursor: "pointer" } : undefined}>
@@ -182,7 +196,7 @@ function LocationRow({
           </div>
         </div>
       </td>
-      <td><span className="chip">{locationTypeLabel(location.location_type)}</span></td>
+      <td><LocationTypeChips location={location} /></td>
       <td>
         {location.parent_location_display
           ? <span className="chip chip-loc">{location.parent_location_display}</span>
@@ -277,6 +291,10 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
 
   const handleDelete = useCallback(async (location: LocationRecord) => {
     if (busyAction !== null) return;
+    if (location.can_delete === false) {
+      setActionError(deleteBlockedMessage(location.delete_blockers, "This location cannot be deleted because it is linked to existing records."));
+      return;
+    }
     const confirmed = window.confirm(`Delete ${location.name}? This cannot be undone.`);
     if (!confirmed) return;
 
@@ -302,7 +320,7 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
     const q = search.trim().toLowerCase();
     return locations.filter(location => {
       if (q) {
-        const hay = `${location.name} ${location.code} ${location.parent_location_display ?? ""} ${location.location_type}`.toLowerCase();
+        const hay = `${location.name} ${location.code} ${location.parent_location_display ?? ""} ${location.location_type} ${location.is_store ? "store inventory stock" : ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       if (typeFilter !== "all" && location.location_type !== typeFilter) return false;
@@ -492,12 +510,12 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
                         key={location.id}
                         location={location}
                         canChange={canChangeLocation}
-                        canDelete={canDeleteLocation}
+                        canDelete={canDeleteLocation && location.can_delete !== false}
                         pageBusy={pageBusy}
                         deleteBusy={deleteBusyLocationId === location.id}
                         onOpen={openLocation ? () => openLocation(location) : undefined}
                         onEdit={() => setEditingLocation(location)}
-                        onDelete={() => handleDelete(location)}
+                        onDelete={canDeleteLocation && location.can_delete !== false ? () => handleDelete(location) : undefined}
                       />
                     ))
                   )}
@@ -519,7 +537,7 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
                 key={location.id}
                 location={location}
                 canChange={canChangeLocation}
-                canDelete={canDeleteLocation}
+                canDelete={canDeleteLocation && location.can_delete !== false}
                 pageBusy={pageBusy}
                 deleteBusy={deleteBusyLocationId === location.id}
                 onOpen={openLocation ? () => openLocation(location) : undefined}

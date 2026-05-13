@@ -87,7 +87,7 @@ const PANEL_POLL_MS = 15_000;
 
 export function Topbar({ breadcrumb }: TopbarProps) {
   const { user } = useAuth();
-  const { summary, alerts, feed, isPanelLoading, loadPanelData, refreshSummary, markRead, markAllRead, clearFeed } = useNotifications();
+  const { summary, alerts, feed, isPanelLoading, loadPanelData, markRead, markAllRead, clearFeed } = useNotifications();
   const [panelOpen, setPanelOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"alerts" | "feed">("alerts");
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -126,11 +126,10 @@ export function Topbar({ breadcrumb }: TopbarProps) {
 
     const intervalId = window.setInterval(() => {
       void loadPanelData();
-      void refreshSummary();
     }, PANEL_POLL_MS);
 
     return () => window.clearInterval(intervalId);
-  }, [loadPanelData, panelOpen, refreshSummary]);
+  }, [loadPanelData, panelOpen]);
 
   useEffect(() => {
     if (!panelOpen) return;
@@ -161,7 +160,6 @@ export function Topbar({ breadcrumb }: TopbarProps) {
 
     setActiveTab((summary.open_alerts ?? 0) > 0 ? "alerts" : "feed");
     void loadPanelData();
-    void refreshSummary();
   };
 
   const handleFeedNavigate = (item: NotificationFeedItem) => {

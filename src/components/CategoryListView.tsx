@@ -58,6 +58,10 @@ function compactList(items: string[], max = 1) {
   return { shown, rest: items.length - shown.length };
 }
 
+function deleteBlockedMessage(blockers: string[] | undefined, fallback: string) {
+  return blockers && blockers.length > 0 ? blockers.join(" ") : fallback;
+}
+
 function SubcategorySummary({ names }: { names: string[] }) {
   if (names.length === 0) return <span className="muted-note">No subcategories</span>;
   const { shown, rest } = compactList(names, 1);
@@ -369,6 +373,10 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
       setActionError("You do not have permission to delete categories.");
       return;
     }
+    if (category.can_delete === false) {
+      setActionError(deleteBlockedMessage(category.delete_blockers, "This category cannot be deleted because it is linked to existing records."));
+      return;
+    }
 
     if (busyAction) return;
     const confirmed = window.confirm(`Delete ${category.name}? This cannot be undone.`);
@@ -569,10 +577,10 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
                         childNames={childNamesByCategory.get(category.id) ?? []}
                         trackingSummary={trackingSummaryByCategory.get(category.id) ?? "No subcategories"}
                         canEdit={canManageCategories}
-                        canDelete={canDeleteCategories}
+                        canDelete={canDeleteCategories && category.can_delete !== false}
                         onOpen={openCategory ? () => openCategory(category) : undefined}
                         onEdit={canManageCategories ? () => openEditModal(category) : undefined}
-                        onDelete={canDeleteCategories ? () => handleDelete(category) : undefined}
+                        onDelete={canDeleteCategories && category.can_delete !== false ? () => handleDelete(category) : undefined}
                         disabled={isLoading || pageBusy}
                         deleteBusy={deleteBusyCategoryId === category.id}
                       />
@@ -601,7 +609,7 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
                 childNames={childNamesByCategory.get(category.id) ?? []}
                 trackingSummary={trackingSummaryByCategory.get(category.id) ?? "No subcategories"}
                 canEdit={canManageCategories}
-                canDelete={canDeleteCategories}
+                canDelete={canDeleteCategories && category.can_delete !== false}
                 pageBusy={pageBusy}
                 deleteBusy={deleteBusyCategoryId === category.id}
                 onOpen={openCategory ? () => openCategory(category) : undefined}

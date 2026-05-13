@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { ListPagination } from "@/components/ListPagination";
 import { MultiSelectFilter, type MultiSelectFilterOption } from "@/components/MultiSelectFilter";
 import { ThemedSelect } from "@/components/ThemedSelect";
@@ -860,6 +860,7 @@ export function ItemListView() {
   const [scopeOptions, setScopeOptions] = useState<ItemScopeOption[]>([]);
   const [defaultScopeTokens, setDefaultScopeTokens] = useState<string[]>([]);
   const [selectedScopeTokens, setSelectedScopeTokens] = useState<string[]>([]);
+  const skipNextDefaultScopeReloadRef = useRef(false);
   const legacyWorkspaceState = useMemo(
     () => parseItemsWorkspaceSearch(new URLSearchParams(searchParams.toString())),
     [searchParams],
@@ -871,24 +872,31 @@ export function ItemListView() {
   );
 
   const loadItems = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
+    if (skipNextDefaultScopeReloadRef.current) {
+      skipNextDefaultScopeReloadRef.current = false;
+      return true;
+    }
+
     if (showLoading) setIsLoading(true);
     setFetchError(null);
     try {
-      const scopeQuery = buildScopeQuery(selectedScopeTokens);
-      const [itemsData, categoriesData] = await Promise.all([
-        apiFetch<ItemScopeOptionsResponse>("/api/inventory/distribution/scope-options/")
-          .then(data => {
-            setScopeOptions(data.options);
-            setDefaultScopeTokens(data.default);
-            if (selectedScopeTokens.length === 0 && data.default.length > 0) {
-              setSelectedScopeTokens(data.default);
-            }
-            return apiFetch<Page<ItemRecord> | ItemRecord[]>(`/api/inventory/items/?page_size=500${scopeQuery ? `&${scopeQuery}` : ""}`);
-          }),
+      const [scopeData, categoriesData] = await Promise.all([
+        apiFetch<ItemScopeOptionsResponse>("/api/inventory/distribution/scope-options/"),
         canManageItems
           ? apiFetch<Page<CategoryRecord> | CategoryRecord[]>("/api/inventory/categories/?page_size=500")
           : Promise.resolve([] as CategoryRecord[]),
       ]);
+      setScopeOptions(scopeData.options);
+      setDefaultScopeTokens(scopeData.default);
+
+      const effectiveScopeTokens = selectedScopeTokens.length > 0 ? selectedScopeTokens : scopeData.default;
+      if (selectedScopeTokens.length === 0 && scopeData.default.length > 0) {
+        skipNextDefaultScopeReloadRef.current = true;
+        setSelectedScopeTokens(scopeData.default);
+      }
+
+      const scopeQuery = buildScopeQuery(effectiveScopeTokens);
+      const itemsData = await apiFetch<Page<ItemRecord> | ItemRecord[]>(`/api/inventory/items/?page_size=500${scopeQuery ? `&${scopeQuery}` : ""}`);
       setItems(normalizeList(itemsData));
       setCategories(normalizeList(categoriesData));
       return true;
@@ -1007,6 +1015,10 @@ export function ItemListView() {
 
   const handleDelete = async (item: ItemRecord) => {
     if (!canDeleteItems || busyAction) return;
+    if (item.can_delete === false) {
+      setActionError(item.delete_blockers?.join(" ") || "This item cannot be deleted because it is linked to existing records.");
+      return;
+    }
     const confirmed = window.confirm(`Delete ${item.name}? This cannot be undone.`);
     if (!confirmed) return;
 
@@ -1209,7 +1221,7 @@ export function ItemListView() {
                       item={item}
                       categoryPath={buildCategoryPath(item.category, categories, item.category_display)}
                       canEdit={canManageItems}
-                      canDelete={canDeleteItems}
+                      canDelete={canDeleteItems && item.can_delete !== false}
                       pageBusy={pageBusy}
                       deleteBusy={deleteBusyItemId === item.id}
                       openHref={openHref}

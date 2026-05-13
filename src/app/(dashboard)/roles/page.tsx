@@ -68,6 +68,7 @@ const MODULE_LABELS: Record<string, string> = {
   "stock-registers": "Stock Registers",
   inspections: "Inspections",
   depreciation: "Depreciation",
+  maintenance: "Maintenance",
 };
 
 const LEVEL_DESCRIPTIONS: Record<CapabilityLevel, string> = {

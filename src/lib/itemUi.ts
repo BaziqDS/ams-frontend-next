@@ -35,6 +35,8 @@ export interface ItemRecord {
   updated_at?: string | null;
   created_by_name?: string | null;
   depreciation_summary?: DepreciationSummary | null;
+  can_delete?: boolean;
+  delete_blockers?: string[];
 }
 
 export interface ItemDistributionStore {

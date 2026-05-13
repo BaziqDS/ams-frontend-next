@@ -72,6 +72,24 @@ function normalizeList<T>(data: Page<T> | T[]) {
   return Array.isArray(data) ? data : data.results;
 }
 
+function buildSummaryFromAlerts(alerts: NotificationAlertRecord[], unreadNotifications: number): NotificationSummary {
+  const modules = alerts.reduce<Record<string, NotificationModuleSummary>>((acc, alert) => {
+    const moduleName = alert.module || "general";
+    const current = acc[moduleName] ?? { count: 0, critical: 0 };
+    acc[moduleName] = {
+      count: current.count + 1,
+      critical: current.critical + (alert.severity === "critical" ? 1 : 0),
+    };
+    return acc;
+  }, {});
+
+  return {
+    unread_notifications: Math.max(0, unreadNotifications),
+    open_alerts: alerts.length,
+    modules,
+  };
+}
+
 export function NotificationsProvider({ children }: { children: ReactNode }) {
   const [summary, setSummary] = useState<NotificationSummary>(EMPTY_SUMMARY);
   const [alerts, setAlerts] = useState<NotificationAlertRecord[]>([]);
@@ -110,8 +128,11 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         apiFetch<NotificationAlertRecord[]>("/api/notifications/alerts/"),
         apiFetch<Page<NotificationFeedItem> | NotificationFeedItem[]>("/api/notifications/feed/?page_size=200"),
       ]);
-      setAlerts(alertsData ?? []);
+      const nextAlerts = alertsData ?? [];
+      setAlerts(nextAlerts);
       setFeed(normalizeList(feedData));
+      setSummary(prev => buildSummaryFromAlerts(nextAlerts, prev.unread_notifications ?? 0));
+      setIsSummaryLoading(false);
       hasLoadedPanelDataRef.current = true;
     } catch {
       // Keep the last loaded panel state during transient polling errors.

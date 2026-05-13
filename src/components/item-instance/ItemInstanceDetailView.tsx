@@ -5,13 +5,20 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Topbar } from "@/components/Topbar";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, type Page } from "@/lib/api";
 import {
   buildInstanceDescription,
   buildInstanceStatusLabel,
   getPrimaryInstanceIdentifier,
 } from "@/lib/itemInstanceDetailUi";
 import { formatItemDate, formatItemLabel, toNumber, type DepreciationSummary, type ItemRecord } from "@/lib/itemUi";
+import {
+  formatMaintenanceLabel,
+  isClosedMaintenance,
+  normalizeList,
+  statusPillClass,
+  type MaintenanceWorkOrderRecord,
+} from "@/lib/maintenanceUi";
 import styles from "./ItemInstanceDetailView.module.css";
 
 interface ItemInstanceRecord {
@@ -162,9 +169,11 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
   const { isLoading: capsLoading } = useCapabilities();
   const canViewItems = useCan("items");
   const canManageItems = useCan("items", "manage");
+  const canViewMaintenance = useCan("maintenance");
   const [item, setItem] = useState<ItemRecord | null>(null);
   const [instance, setInstance] = useState<ItemInstanceRecord | null>(null);
   const [relatedEntries, setRelatedEntries] = useState<RelatedStockEntryRecord[]>([]);
+  const [maintenanceOrders, setMaintenanceOrders] = useState<MaintenanceWorkOrderRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [isEditingSerial, setIsEditingSerial] = useState(false);
@@ -184,15 +193,22 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
       ]);
 
       const stockEntryIds = Array.from(new Set((instanceData.stock_entry_ids ?? []).filter(Number.isFinite)));
-      const stockEntryResults = await Promise.allSettled(
-        stockEntryIds.map(stockEntryId => apiFetch<RelatedStockEntryRecord>(`/api/inventory/stock-entries/${stockEntryId}/`)),
-      );
+      const [stockEntryResults, maintenanceData] = await Promise.all([
+        stockEntryIds.length > 0
+          ? apiFetch<Page<RelatedStockEntryRecord> | RelatedStockEntryRecord[]>(
+              `/api/inventory/stock-entries/?ids=${stockEntryIds.join(",")}&page_size=${stockEntryIds.length}`,
+            ).then(normalizeList).catch(() => [] as RelatedStockEntryRecord[])
+          : Promise.resolve([] as RelatedStockEntryRecord[]),
+        canViewMaintenance
+          ? apiFetch<Page<MaintenanceWorkOrderRecord> | MaintenanceWorkOrderRecord[]>(`/api/inventory/maintenance/work-orders/?instance=${instanceId}&page_size=20`).catch(() => [] as MaintenanceWorkOrderRecord[])
+          : Promise.resolve([] as MaintenanceWorkOrderRecord[]),
+      ]);
 
       setItem(itemData);
       setInstance(instanceData);
+      setMaintenanceOrders(normalizeList(maintenanceData));
       setRelatedEntries(
         stockEntryResults
-          .flatMap(result => result.status === "fulfilled" ? [result.value] : [])
           .sort((left, right) => new Date(right.entry_date).getTime() - new Date(left.entry_date).getTime()),
       );
     } catch (err) {
@@ -200,7 +216,7 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
     } finally {
       setIsLoading(false);
     }
-  }, [instanceId, itemId]);
+  }, [canViewMaintenance, instanceId, itemId]);
 
   useEffect(() => {
     if (capsLoading) return;
@@ -299,6 +315,8 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
   const inCharge = cleanValue(instance?.in_charge) ?? "Not recorded";
   const relatedEntryCount = relatedEntries.length;
   const latestRelatedEntry = relatedEntries[0] ?? null;
+  const openMaintenanceCount = maintenanceOrders.filter(row => !isClosedMaintenance(row.status)).length;
+  const latestMaintenance = maintenanceOrders[0] ?? null;
   const inspectionHref = instance?.inspection_certificate_id ? `/inspections/${instance.inspection_certificate_id}` : null;
   const heroIdentifierPrefix = cleanValue(instance?.serial_number) ? "Serial /" : "Instance /";
   const statusTone = !instance?.is_active ? "warn" : statusLabel === "Available" ? "success" : "neutral";
@@ -464,6 +482,44 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
                   </SectionCard>
                 ) : null}
 
+                {canViewMaintenance ? (
+                  <SectionCard
+                    title="Maintenance history"
+                    meta={(
+                      <Link className={styles.inlineLink} href={`/maintenance?instance=${instance.id}`}>
+                        {openMaintenanceCount} open · view module
+                      </Link>
+                    )}
+                  >
+                    {maintenanceOrders.length > 0 ? (
+                      <div className={styles.relatedList}>
+                        {maintenanceOrders.slice(0, 5).map(order => (
+                          <Link key={order.id} className={styles.relatedRow} href={`/maintenance?instance=${instance.id}`}>
+                            <span className={styles.relatedIcon}>
+                              {order.maintenance_type.slice(0, 1)}
+                            </span>
+                            <span className={styles.relatedCopy}>
+                              <span className={styles.relatedNumber}>
+                                {order.work_order_number} · {order.title}
+                              </span>
+                              <span className={styles.relatedMeta}>
+                                {formatMaintenanceLabel(order.maintenance_type)} · {formatItemDate(order.due_date, "No due date")} · {order.action_taken || order.outcome_notes || "History retained in maintenance log"}
+                              </span>
+                            </span>
+                            <span className={statusPillClass(order.status)}>
+                              {formatMaintenanceLabel(order.status)}
+                            </span>
+                          </Link>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className={styles.stateStack}>
+                        <DetailField label="History" value="No maintenance work orders recorded for this instance." />
+                      </div>
+                    )}
+                  </SectionCard>
+                ) : null}
+
                 {cleanValue(instance.inspection_certificate) ? (
                   <div className={styles.inspectionBanner}>
                     <span className={styles.inspectionIcon}>
@@ -514,6 +570,13 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
                         label="Latest movement"
                         value={<Link className={styles.inlineLink} href={`/stock-entries/${latestRelatedEntry.id}`}>{latestRelatedEntry.entry_number}</Link>}
                         sub={`${formatItemLabel(latestRelatedEntry.entry_type)} · ${formatItemDate(latestRelatedEntry.entry_date)}`}
+                      />
+                    ) : null}
+                    {latestMaintenance ? (
+                      <DetailField
+                        label="Latest maintenance"
+                        value={<Link className={styles.inlineLink} href={`/maintenance?instance=${instance.id}`}>{latestMaintenance.work_order_number}</Link>}
+                        sub={`${formatMaintenanceLabel(latestMaintenance.status)} · ${latestMaintenance.title}`}
                       />
                     ) : null}
                   </div>

@@ -15,7 +15,7 @@ export const ADMIN_PERMISSIONS = {
     assignPermissions: "user_management.assign_permissions_to_roles",
   },
   locations: {
-    view: "inventory.view_location",
+    view: "inventory.view_locations",
     add: "inventory.add_location",
     change: "inventory.change_location",
     delete: "inventory.delete_location",
@@ -53,6 +53,15 @@ export const ADMIN_PERMISSIONS = {
     change: "inventory.change_inspectioncertificate",
     delete: "inventory.delete_inspectioncertificate",
   },
+  maintenance: {
+    view: "inventory.view_maintenance",
+    add: "inventory.create_maintenance",
+    change: "inventory.edit_maintenance",
+    delete: "inventory.delete_maintenance",
+    approve: "inventory.approve_maintenance",
+    close: "inventory.close_maintenance",
+    managePlans: "inventory.manage_maintenance_plans",
+  },
 } as const;
 
 export const PROTECTED_ADMIN_ROUTES = {
@@ -65,6 +74,7 @@ export const PROTECTED_ADMIN_ROUTES = {
   "/stock-registers": ADMIN_PERMISSIONS.stockRegisters.view,
   "/reports": ADMIN_PERMISSIONS.reports.view,
   "/inspections": ADMIN_PERMISSIONS.inspections.view,
+  "/maintenance": ADMIN_PERMISSIONS.maintenance.view,
 } as const;
 
 export function hasPermission(userPermissions: string[] | undefined, requiredPermission: string) {

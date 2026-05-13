@@ -460,6 +460,10 @@ export function StockRegisterListView() {
 
   const handleDelete = useCallback(async (register: StockRegisterRecord) => {
     if (busyAction) return;
+    if (register.can_delete === false) {
+      setActionError(register.delete_blockers?.join(" ") || "This stock register cannot be deleted because it is linked to existing records.");
+      return;
+    }
     const confirmed = window.confirm(`Delete ${register.register_number}? This cannot be undone.`);
     if (!confirmed) return;
 
@@ -660,7 +664,7 @@ export function StockRegisterListView() {
                         key={register.id}
                         register={register}
                         canEdit={canManageRegisters}
-                        canDelete={canDeleteRegisters}
+                        canDelete={canDeleteRegisters && register.can_delete !== false}
                         pageBusy={pageBusy}
                         deleteBusy={deleteBusyRegisterId === register.id}
                         onEdit={() => { setEditingRegister(register); setModalOpen(true); }}
@@ -688,7 +692,7 @@ export function StockRegisterListView() {
                 key={register.id}
                 register={register}
                 canEdit={canManageRegisters}
-                canDelete={canDeleteRegisters}
+                canDelete={canDeleteRegisters && register.can_delete !== false}
                 pageBusy={pageBusy}
                 deleteBusy={deleteBusyRegisterId === register.id}
                 onEdit={() => { setEditingRegister(register); setModalOpen(true); }}

@@ -51,6 +51,8 @@ export interface LocationRecord {
   root_main_store_display?: string | null;
   hierarchy_level: number;
   updated_at: string;
+  can_delete?: boolean;
+  delete_blockers?: string[];
 }
 
 export interface StockRegisterRecord {
@@ -71,12 +73,13 @@ export interface StockRegisterRecord {
   created_at: string;
   updated_at: string;
   created_by_name?: string | null;
+  can_delete?: boolean;
+  delete_blockers?: string[];
 }
 
 export const LOCATION_TYPE_LABELS: Record<string, string> = {
   DEPARTMENT: "Department",
   BUILDING: "Building",
-  STORE: "Store",
   ROOM: "Room",
   LAB: "Lab",
   JUNKYARD: "Junkyard",

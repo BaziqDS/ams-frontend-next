@@ -178,6 +178,18 @@ html, body {
   letter-spacing: 0;
   padding: 2px 7px;
 }
+.location-type-chips {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.chip-store {
+  border-color: color-mix(in oklch, var(--primary) 38%, transparent);
+  background: color-mix(in oklch, var(--primary) 12%, var(--card));
+  color: var(--primary);
+  font-weight: 700;
+}
 
 .status-dot {
   width: 6px; height: 6px; border-radius: 999px; display: inline-block;
@@ -3932,12 +3944,22 @@ button:active,
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  width: fit-content;
+  padding: 6px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow-xs);
   font-size: 12px;
-  color: var(--muted);
+  font-weight: 600;
+  color: var(--ink-2);
   text-decoration: none;
   margin-bottom: 8px;
 }
-.page-head-detail .page-back:hover { color: var(--ink); }
+.page-head-detail .page-back:hover {
+  color: var(--ink);
+  border-color: color-mix(in oklch, var(--primary) 30%, var(--hairline));
+}
 .page-id-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
 .page-id-row .doc-no {
   font-family: var(--font-mono);
@@ -5049,11 +5071,20 @@ button:active,
   align-items: center;
   gap: 6px;
   width: fit-content;
+  padding: 6px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow-xs);
   font-size: 12px;
-  color: var(--muted);
+  font-weight: 600;
+  color: var(--ink-2);
   text-decoration: none;
 }
-.detail-page-back:hover { color: var(--ink); }
+.detail-page-back:hover {
+  color: var(--ink);
+  border-color: color-mix(in oklch, var(--primary) 30%, var(--hairline));
+}
 
 .page-head-detail {
   display: flex;
@@ -5649,13 +5680,23 @@ button:active,
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  width: fit-content;
   margin-bottom: 10px;
-  color: var(--muted);
+  padding: 6px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow-xs);
+  color: var(--ink-2);
   font-size: 12px;
+  font-weight: 600;
   text-decoration: none;
 }
 
-.stock-page-back-inline:hover { color: var(--ink); }
+.stock-page-back-inline:hover {
+  color: var(--ink);
+  border-color: color-mix(in oklch, var(--primary) 30%, var(--hairline));
+}
 
 .stock-voucher-head {
   align-items: flex-start;
