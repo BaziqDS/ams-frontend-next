@@ -13,6 +13,7 @@ import {
   getInspectionStageDisplayLabel,
   getInspectionStageEditorLabel,
   getInspectionValueTotals,
+  getInspectionWorkflowContract,
   getInspectionWorkflowSteps,
   requiresDepartmentalStockStage,
 } from "./inspectionUi";
@@ -254,6 +255,59 @@ describe("inspection UI helpers", () => {
         stage => stage === "initiate_inspection",
       ),
     ).toBe(true);
+  });
+
+  it("builds a workflow contract that blocks advancement without the required stage permission", () => {
+    expect(
+      getInspectionWorkflowContract(
+        {
+          id: 42,
+          stage: "STOCK_DETAILS",
+          status: "ACTIVE",
+          department_hierarchy_level: 2,
+        },
+        {
+          canManage: true,
+          hasStage: () => false,
+          busyAction: null,
+        },
+      ),
+    ).toMatchObject({
+      recordId: 42,
+      currentStage: "STOCK_DETAILS",
+      nextStage: "CENTRAL_REGISTER",
+      transition: "submit_to_central_register",
+      requiredInspectionStage: "fill_stock_details",
+      canAdvance: false,
+      blockedReason:
+        "You need inspection stage permission fill_stock_details to advance Stock Details.",
+    });
+  });
+
+  it("builds a workflow contract that allows root-level draft advancement to central register", () => {
+    expect(
+      getInspectionWorkflowContract(
+        {
+          id: 43,
+          stage: "DRAFT",
+          status: "DRAFT",
+          department_hierarchy_level: 0,
+        },
+        {
+          canManage: true,
+          hasStage: stage => stage === "initiate_inspection",
+          busyAction: null,
+        },
+      ),
+    ).toMatchObject({
+      recordId: 43,
+      currentStage: "DRAFT",
+      nextStage: "CENTRAL_REGISTER",
+      transition: "initiate",
+      requiredInspectionStage: "initiate_inspection",
+      canAdvance: true,
+      blockedReason: null,
+    });
   });
 
   it("collects compact register references without duplicating repeated rows", () => {

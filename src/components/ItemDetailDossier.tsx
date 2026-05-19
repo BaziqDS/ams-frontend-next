@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Topbar } from "@/components/Topbar";
@@ -250,6 +251,10 @@ export function ItemDetailDossierView({ itemId }: { itemId: string }) {
       <div>
         <Topbar breadcrumb={["Inventory", "Items", "Item detail"]} />
         <div className={styles.shell}>
+          <Link className="detail-page-back" href="/items">
+            <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
+            Back to Items
+          </Link>
           <div className={styles.loading}>Loading item permissions…</div>
         </div>
       </div>
@@ -263,6 +268,10 @@ export function ItemDetailDossierView({ itemId }: { itemId: string }) {
       <div>
         <Topbar breadcrumb={["Inventory", "Items", "Item detail"]} />
         <div className={styles.shell}>
+          <Link className="detail-page-back" href="/items">
+            <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
+            Back to Items
+          </Link>
           <div className={styles.loading}>Compiling item dossier…</div>
         </div>
       </div>
@@ -274,6 +283,10 @@ export function ItemDetailDossierView({ itemId }: { itemId: string }) {
       <div>
         <Topbar breadcrumb={["Inventory", "Items", "Item detail"]} />
         <div className={styles.shell}>
+          <Link className="detail-page-back" href="/items">
+            <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
+            Back to Items
+          </Link>
           <div className={styles.loading}>This item is no longer available in your current permission scope.</div>
         </div>
       </div>
@@ -350,6 +363,10 @@ export function ItemDetailDossierView({ itemId }: { itemId: string }) {
       <Topbar breadcrumb={["Inventory", "Items", item.name]} />
 
       <div className={styles.shell}>
+        <Link className="detail-page-back" href="/items">
+          <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
+          Back to Items
+        </Link>
         {actionError ? (
           <div style={{ marginBottom: 14 }}>
             <Alert onDismiss={() => setActionError(null)}>{actionError}</Alert>

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { apiFetch } from "@/lib/api";
 import { ThemedSelect } from "@/components/ThemedSelect";
+import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
 
 const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
   <svg aria-hidden="true" focusable="false" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -10,16 +11,17 @@ const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
   </svg>
 );
 
-function Field({ label, required, error, hint, children, span = 1 }: {
+function Field({ label, required, error, hint, children, span = 1, copilotField }: {
   label: string;
   required?: boolean;
   error?: string;
   hint?: string;
   children: ReactNode;
   span?: number;
+  copilotField?: string;
 }) {
   return (
-    <div className={"field" + (error ? " has-error" : "")} style={{ gridColumn: `span ${span}` }}>
+    <div className={"field" + (error ? " has-error" : "")} style={{ gridColumn: `span ${span}` }} data-copilot-field={copilotField}>
       <div className="field-label">{label}{required && <span className="field-req">*</span>}</div>
       {children}
       {error ? <div className="field-error">{error}</div> : hint ? <div className="field-hint">{hint}</div> : null}
@@ -118,6 +120,20 @@ function toPayload(form: CategoryFormState) {
   };
 }
 
+export function buildCategoryCopilotValuePatch(values: Record<string, unknown>): Partial<CategoryFormState> {
+  const patch: Partial<CategoryFormState> = {};
+
+  if ("name" in values) patch.name = String(values.name ?? "");
+  if ("code" in values) patch.code = String(values.code ?? "").toUpperCase();
+  if ("parent_category" in values) patch.parent_category = values.parent_category == null ? "" : String(values.parent_category);
+  if ("category_type" in values) patch.category_type = String(values.category_type ?? "").toUpperCase();
+  if ("tracking_type" in values) patch.tracking_type = String(values.tracking_type ?? "").toUpperCase();
+  if ("is_active" in values) patch.is_active = Boolean(values.is_active);
+  if ("notes" in values) patch.notes = String(values.notes ?? "");
+
+  return patch;
+}
+
 type CategoryCreateContext = "root" | "child" | "edit";
 
 interface CategoryModalProps {
@@ -162,6 +178,7 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
 
   const parentSelected = Boolean(form.parent_category);
   const showTrackingType = parentSelected;
+  const categoryTypeLocked = isEditMode;
   const trackingTypeLocked = isEditMode && parentSelected;
   const errors = {
     name: touched.has("name") && !form.name.trim() ? "Category name is required." : undefined,
@@ -185,7 +202,11 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
 
     if (!canSave) {
       setSubmitError("Please complete the required fields.");
-      return;
+      return {
+        ok: false,
+        errorType: "validation_error",
+        message: "Please complete the required category fields.",
+      };
     }
 
     const nextParentSelected = Boolean(form.parent_category);
@@ -194,20 +215,30 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
       category_type: !nextParentSelected && !form.category_type.trim() ? "Category type is required for top-level categories." : undefined,
       tracking_type: nextParentSelected && !(isEditMode && nextParentSelected) && !form.tracking_type.trim() ? "Tracking type is required for subcategories." : undefined,
     };
-    if (Object.values(nextErrors).some(Boolean)) return;
+    if (Object.values(nextErrors).some(Boolean)) {
+      return {
+        ok: false,
+        errorType: "validation_error",
+        message: "Please complete the required category fields.",
+        fieldErrors: Object.fromEntries(
+          Object.entries(nextErrors).filter((entry): entry is [string, string] => Boolean(entry[1])),
+        ),
+      };
+    }
 
     setSubmitting(true);
     setSubmitError(null);
 
     try {
       const body = JSON.stringify(toPayload(form));
+      let savedCategory: unknown;
       if (isEditMode && category) {
-        await apiFetch(`/api/inventory/categories/${category.id}/`, {
+        savedCategory = await apiFetch(`/api/inventory/categories/${category.id}/`, {
           method: "PATCH",
           body,
         });
       } else {
-        await apiFetch("/api/inventory/categories/", {
+        savedCategory = await apiFetch("/api/inventory/categories/", {
           method: "POST",
           body,
         });
@@ -215,12 +246,110 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
 
       await onSave?.();
       onClose();
+      return {
+        ok: true,
+        message: isEditMode ? "Category updated successfully." : "Category created successfully.",
+        recordId:
+          savedCategory && typeof savedCategory === "object" && "id" in savedCategory
+            ? (savedCategory as { id: string | number }).id
+            : category?.id,
+      };
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : (isEditMode ? "Failed to update category." : "Failed to create category."));
+      const message = err instanceof Error ? err.message : (isEditMode ? "Failed to update category." : "Failed to create category.");
+      setSubmitError(message);
+      return {
+        ok: false,
+        errorType: "submit_failed",
+        message,
+      };
     } finally {
       setSubmitting(false);
     }
   };
+
+  const copilotFields = useMemo<CopilotFormField[]>(() => [
+    { name: "name", label: "Category name", type: "string", required: true },
+    { name: "code", label: "Category code", type: "string", description: "Optional. Leave blank to let the backend generate one." },
+    { name: "parent_category", label: "Parent category", type: "string", readOnly: Boolean(lockedParent) || isEditMode },
+    {
+      name: "category_type",
+      label: "Category type",
+      type: "select",
+      required: !parentSelected,
+      readOnly: categoryTypeLocked,
+      options: [
+        { value: "FIXED_ASSET", label: "Fixed Asset" },
+        { value: "CONSUMABLE", label: "Consumable" },
+        { value: "PERISHABLE", label: "Perishable" },
+      ],
+    },
+    {
+      name: "tracking_type",
+      label: "Tracking type",
+      type: "select",
+      required: showTrackingType && !trackingTypeLocked,
+      readOnly: trackingTypeLocked,
+      options: [
+        { value: "INDIVIDUAL", label: "Individual Tracking (Serial/QR)" },
+        { value: "QUANTITY", label: "Quantity Based Tracking" },
+      ],
+    },
+    { name: "is_active", label: "Active state", type: "boolean" },
+    { name: "notes", label: "Notes", type: "string" },
+  ], [categoryTypeLocked, isEditMode, lockedParent, parentSelected, showTrackingType, trackingTypeLocked]);
+
+  const validateForCopilot = useCallback(() => {
+    setTouched(new Set(["name", "category_type", "tracking_type"]));
+    const nextParentSelected = Boolean(form.parent_category);
+    const nextErrors: Record<string, string> = {};
+    if (!form.name.trim()) nextErrors.name = "Category name is required.";
+    if (!nextParentSelected && !form.category_type.trim()) {
+      nextErrors.category_type = "Category type is required for top-level categories.";
+    }
+    if (nextParentSelected && !(isEditMode && nextParentSelected) && !form.tracking_type.trim()) {
+      nextErrors.tracking_type = "Tracking type is required for subcategories.";
+    }
+    return {
+      ok: Object.keys(nextErrors).length === 0,
+      errors: nextErrors,
+    };
+  }, [form, isEditMode]);
+
+  useCopilotForm({
+    formId: isEditMode && category ? `category-edit-${category.id}` : createContext === "child" ? "subcategory-create" : "category-create",
+    title: isEditMode ? "Edit Category" : createContext === "child" ? "Create Subcategory" : "Create Category",
+    description: "Create or edit an inventory category on the Categories page.",
+    mode,
+    active: open,
+    fields: copilotFields,
+    values: form,
+    errors: Object.fromEntries(Object.entries(errors).filter((entry): entry is [string, string] => Boolean(entry[1]))),
+    canSetValues: !submitting,
+    canValidate: true,
+    canSubmit: canSave,
+    requirements: {
+      setValues: { requiredCapabilities: [{ module: "categories", level: "manage" }] },
+      validate: { requiredCapabilities: [{ module: "categories", level: "manage" }] },
+      submit: { requiredCapabilities: [{ module: "categories", level: "manage" }] },
+    },
+    setValues: values => {
+      set(buildCategoryCopilotValuePatch(values));
+      return { updated: Object.keys(values) };
+    },
+    focusField: field => {
+      const escapedField = CSS.escape(field);
+      const target = document.querySelector<HTMLElement>(
+        `[data-copilot-field="${escapedField}"] input, ` +
+        `[data-copilot-field="${escapedField}"] textarea, ` +
+        `[data-copilot-field="${escapedField}"] button`,
+      );
+      target?.focus();
+      target?.scrollIntoView({ block: "center", behavior: "smooth" });
+      return target ? { ok: true, field } : { ok: false, reason: `Field ${field} is not focusable.` };
+    },
+    validate: validateForCopilot,
+    submit: () => submit(),
+  });
 
   if (!open) return null;
 
@@ -253,13 +382,13 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
 
               <Section n={1} title="Identity" sub="Core details used for navigation, labels, and lookups.">
                 <div className="form-grid cols-2">
-                  <Field label="Category name" required error={errors.name}>
+                  <Field label="Category name" required error={errors.name} copilotField="name">
                     <input value={form.name} onChange={e => set({ name: e.target.value })} onBlur={() => setTouched(prev => new Set(prev).add("name"))} placeholder="Enter category name" />
                   </Field>
-                  <Field label="Category code" hint="Leave blank to let the backend generate one.">
+                  <Field label="Category code" hint="Leave blank to let the backend generate one." copilotField="code">
                     <input value={form.code} onChange={e => set({ code: e.target.value.toUpperCase() })} placeholder="Enter category code" />
                   </Field>
-                  <Field label="Active state" span={2}>
+                  <Field label="Active state" span={2} copilotField="is_active">
                     <div className="seg seg-inline">
                       <button type="button" className={"seg-btn" + (form.is_active ? " active" : "")} onClick={() => set({ is_active: true })}>Active</button>
                       <button type="button" className={"seg-btn" + (!form.is_active ? " active" : "")} onClick={() => set({ is_active: false })}>Disabled</button>
@@ -270,7 +399,7 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
 
               <Section n={2} title="Classification" sub="Category type and tracking rules.">
                 <div className="form-grid cols-2">
-                  <Field label="Category type" required={!parentSelected} error={errors.category_type} hint={parentSelected ? "Optional for subcategories; inherited from the parent when left blank." : undefined}>
+                  <Field label="Category type" required={!parentSelected} error={errors.category_type} hint={categoryTypeLocked ? "Category type is locked after creation." : parentSelected ? "Optional for subcategories; inherited from the parent when left blank." : undefined} copilotField="category_type">
                     <ThemedSelect
                       value={form.category_type}
                       onChange={value => {
@@ -279,6 +408,7 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
                       }}
                       placeholder="Select category type"
                       ariaLabel="Category type"
+                      disabled={categoryTypeLocked}
                       options={[
                         { value: "FIXED_ASSET", label: "Fixed Asset" },
                         { value: "CONSUMABLE", label: "Consumable" },
@@ -287,7 +417,7 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
                     />
                   </Field>
                   {showTrackingType && (
-                    <Field label="Tracking type" required={!trackingTypeLocked} error={errors.tracking_type} hint={trackingTypeLocked ? "Tracking type is locked after subcategory creation." : "Required for subcategories."}>
+                    <Field label="Tracking type" required={!trackingTypeLocked} error={errors.tracking_type} hint={trackingTypeLocked ? "Tracking type is locked after subcategory creation." : "Required for subcategories."} copilotField="tracking_type">
                       <ThemedSelect
                         value={form.tracking_type}
                         onChange={value => {
@@ -309,7 +439,7 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
 
               <Section n={3} title="Notes" sub="Optional audit text passed through to the backend on save.">
                 <div className="form-grid cols-1">
-                  <Field label="Notes" span={1}>
+                  <Field label="Notes" span={1} copilotField="notes">
                     <textarea className="textarea-field" rows={4} value={form.notes} onChange={e => set({ notes: e.target.value })} placeholder="Optional notes" />
                   </Field>
                 </div>

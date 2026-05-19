@@ -404,7 +404,7 @@ function validate(
   f: FormState,
   touched: Set<string>,
   isEditMode: boolean,
-  options: { requireLocation?: boolean; requireStockEntryStore?: boolean; hasAssignedStore?: boolean } = {},
+  options: { requireGroups?: boolean; requireLocation?: boolean; requireStockEntryStore?: boolean; hasAssignedStore?: boolean } = {},
 ): Record<string, string> {
   const e: Record<string, string> = {};
   if (touched.has("first_name") && !f.first_name.trim()) e.first_name = "First name is required.";
@@ -419,7 +419,7 @@ function validate(
   if (touched.has("password") && !isEditMode && !f.password.length) {
     e.password = "Password is required.";
   }
-  if (touched.has("groups") && f.groups.length === 0)
+  if (options.requireGroups && touched.has("groups") && f.groups.length === 0)
     e.groups = "Assign at least one role / group.";
   if (touched.has("locations")) {
     if (options.requireStockEntryStore && !options.hasAssignedStore) {
@@ -595,6 +595,7 @@ export function AddUserModal({
   );
   const hasAssignedStore = form.locations.some(locationId => assignedLocationById.get(locationId)?.is_store);
   const errors = validate(form, touched, isEditMode, {
+    requireGroups: canAssignRoles,
     requireLocation: requireLocationAssignment,
     requireStockEntryStore: requiresStockEntryStoreAssignment,
     hasAssignedStore,
@@ -608,12 +609,10 @@ export function AddUserModal({
     if (canAssignRoles) {
       if (dataLoadError.groups) return `Roles / groups failed to load: ${dataLoadError.groups} You can still save this user without role assignments.`;
       if (groupsLoading) return "Loading groups…";
-      if (!groupsAvailable) return "No groups are available right now. You can still save this user without role assignments.";
     }
     if (canAssignLocations) {
       if (dataLoadError.locations) return `Locations failed to load: ${dataLoadError.locations} Existing assignments can still be saved unchanged.`;
       if (locationsLoading) return "Loading locations…";
-      if (!locationsAvailable) return "No locations are available right now.";
     }
     return null;
   })();
@@ -632,6 +631,7 @@ export function AddUserModal({
     if (canAssignRoles) allTouched.add("groups");
     setTouched(allTouched);
     const errs = validate(form, allTouched, isEditMode, {
+      requireGroups: canAssignRoles,
       requireLocation: requireLocationAssignment,
       requireStockEntryStore: requiresStockEntryStoreAssignment,
       hasAssignedStore,
@@ -760,7 +760,9 @@ export function AddUserModal({
                     {selfAssignmentLocked
                       ? "Your own location assignments are locked."
                       : canAssignLocations
-                      ? mode === "create"
+                      ? !locationsAvailable
+                        ? "Create at least one location before adding users."
+                        : mode === "create"
                         ? "Select at least one standalone location, then choose any optional sub-locations under it."
                         : canCreateGlobalLocationScope
                           ? "Select standalone locations and optional sub-locations."
@@ -781,8 +783,8 @@ export function AddUserModal({
                 ) : locationsLoading ? (
                   <div className="location-section-panel" style={{ color: "var(--text-2)", fontSize: 13, padding: "12px 0" }}>Loading locations…</div>
                 ) : !locationsAvailable ? (
-                  <div className="location-section-panel" style={{ padding: "12px 14px", border: "1px solid color-mix(in oklch, var(--warning) 30%, transparent)", borderRadius: "var(--radius)", background: "var(--warning-weak)", color: "var(--text-1)", fontSize: 13 }}>
-                    No locations are available right now.
+                  <div className="location-section-panel" style={{ padding: "12px 14px", border: "1px solid color-mix(in oklch, var(--danger) 35%, transparent)", borderRadius: "var(--radius)", background: "var(--danger-weak)", color: "var(--danger)", fontSize: 13 }}>
+                    No locations exist yet. Create a root or standalone location before adding users.
                   </div>
                 ) : (
                   <div className="location-section-panel">
@@ -822,13 +824,13 @@ export function AddUserModal({
                 </div>
               ) : dataLoadError.groups ? (
                 <div style={{ padding: "12px 14px", border: "1px solid color-mix(in oklch, var(--warning) 30%, transparent)", borderRadius: "var(--radius)", background: "var(--warning-weak)", color: "var(--text-1)", fontSize: 13 }}>
-                  Roles / groups are unavailable right now, so the user can still be saved without role assignments.
+                  Roles / groups are unavailable right now. Create at least one role before adding users.
                 </div>
               ) : groupsLoading ? (
                 <div style={{ color: "var(--text-2)", fontSize: 13, padding: "12px 0" }}>Loading groups…</div>
               ) : !groupsAvailable ? (
-                <div style={{ padding: "12px 14px", border: "1px solid color-mix(in oklch, var(--warning) 30%, transparent)", borderRadius: "var(--radius)", background: "var(--warning-weak)", color: "var(--text-1)", fontSize: 13 }}>
-                  No groups are available right now. Leave roles empty to continue.
+                <div style={{ padding: "12px 14px", border: "1px solid color-mix(in oklch, var(--danger) 35%, transparent)", borderRadius: "var(--radius)", background: "var(--danger-weak)", color: "var(--danger)", fontSize: 13 }}>
+                  No roles exist yet. Create at least one role before adding users.
                 </div>
               ) : (
                 <div className={"group-grid" + (errors.groups ? " has-error" : "")}>

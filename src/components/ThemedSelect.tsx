@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export interface ThemedSelectOption {
   value: string;
@@ -50,6 +50,11 @@ export function ThemedSelect({
     setOpen(true);
     focusInput();
   };
+
+  useEffect(() => {
+    setQuery("");
+    setOpen(false);
+  }, [value]);
 
   return (
     <div

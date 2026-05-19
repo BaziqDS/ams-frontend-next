@@ -6,6 +6,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { CapabilitiesProvider } from "@/contexts/CapabilitiesContext";
 import { NotificationsProvider } from "@/contexts/NotificationsContext";
 import { AppSidebar } from "@/components/AppSidebar";
+import { CopilotSidePanel } from "@/components/CopilotSidePanel";
+import { CopilotProvider } from "@/contexts/CopilotContext";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -35,10 +37,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <CapabilitiesProvider>
       <NotificationsProvider>
-        <div className="app-frame">
-          <AppSidebar />
-          <div className="main-col">{children}</div>
-        </div>
+        <CopilotProvider>
+          <div className="app-frame">
+            <AppSidebar />
+            <div className="main-col">
+              {children}
+              <CopilotSidePanel />
+            </div>
+          </div>
+        </CopilotProvider>
       </NotificationsProvider>
     </CapabilitiesProvider>
   );

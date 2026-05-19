@@ -9,7 +9,14 @@ import { ThemedSelect } from "@/components/ThemedSelect";
 import { Topbar } from "@/components/Topbar";
 import type { CategoryRecord } from "@/components/CategoryModal";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
+import { useCopilotAction } from "@/hooks/useCopilotAction";
+import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
+import { useCopilotReadable } from "@/hooks/useCopilotReadable";
 import { apiFetch, type Page } from "@/lib/api";
+import {
+  consumePendingOpen,
+  SAME_PAGE_OPEN_EVENT,
+} from "@/lib/copilotPendingAction";
 import { useClientPagination } from "@/lib/listPagination";
 import {
   buildItemsWorkspaceHref,
@@ -426,16 +433,17 @@ export function DetailKV({ label, value, sub }: { label: string; value: ReactNod
   );
 }
 
-function Field({ label, required, error, hint, children, span = 1 }: {
+function Field({ label, required, error, hint, children, span = 1, copilotField }: {
   label: string;
   required?: boolean;
   error?: string;
   hint?: string;
   children: ReactNode;
   span?: number;
+  copilotField?: string;
 }) {
   return (
-    <div className={"field" + (error ? " has-error" : "")} style={{ gridColumn: `span ${span}` }}>
+    <div className={"field" + (error ? " has-error" : "")} style={{ gridColumn: `span ${span}` }} data-copilot-field={copilotField}>
       <div className="field-label">{label}{required && <span className="field-req">*</span>}</div>
       {children}
       {error ? <div className="field-error">{error}</div> : hint ? <div className="field-hint">{hint}</div> : null}
@@ -488,6 +496,23 @@ function itemPayload(form: ItemFormState, options?: { provisionalInspectionId?: 
         }
       : {}),
   };
+}
+
+export function buildItemCopilotValuePatch(values: Record<string, unknown>): Partial<ItemFormState> {
+  const patch: Partial<ItemFormState> = {};
+
+  if ("name" in values) patch.name = String(values.name ?? "");
+  if ("code" in values) patch.code = String(values.code ?? "").toUpperCase();
+  if ("category" in values) patch.category = values.category == null ? "" : String(values.category);
+  if ("acct_unit" in values) patch.acct_unit = String(values.acct_unit ?? "");
+  if ("low_stock_threshold" in values) {
+    patch.low_stock_threshold = values.low_stock_threshold == null ? "" : String(values.low_stock_threshold);
+  }
+  if ("description" in values) patch.description = String(values.description ?? "");
+  if ("specifications" in values) patch.specifications = String(values.specifications ?? "");
+  if ("is_active" in values) patch.is_active = Boolean(values.is_active);
+
+  return patch;
 }
 
 export function isFixedAssetItem(item: Pick<ItemRecord, "category_type"> | null | undefined) {
@@ -583,7 +608,14 @@ export function ItemModal({
       Number(form.low_stock_threshold) < 1
     ) {
       setSubmitError("Please complete the required fields.");
-      return;
+      return {
+        ok: false,
+        errorType: "validation_error",
+        message: "Please complete the required item fields.",
+        fieldErrors: Object.fromEntries(
+          Object.entries(errors).filter((entry): entry is [string, string] => Boolean(entry[1])),
+        ),
+      };
     }
 
     setSubmitting(true);
@@ -599,12 +631,94 @@ export function ItemModal({
       }
       await onSave(savedItem);
       onClose();
+      return {
+        ok: true,
+        message: isEdit ? "Item updated successfully." : "Item created successfully.",
+        recordId: savedItem.id,
+      };
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : (isEdit ? "Failed to update item." : "Failed to create item."));
+      const message = err instanceof Error ? err.message : (isEdit ? "Failed to update item." : "Failed to create item.");
+      setSubmitError(message);
+      return {
+        ok: false,
+        errorType: "submit_failed",
+        message,
+      };
     } finally {
       setSubmitting(false);
     }
   };
+
+  const copilotFields = useMemo<CopilotFormField[]>(() => [
+    { name: "name", label: "Item name", type: "string", required: true },
+    { name: "code", label: "Item code", type: "string", description: "Optional. Leave blank to let the backend generate one." },
+    {
+      name: "category",
+      label: "Subcategory",
+      type: "select",
+      required: true,
+      options: categories.map(category => ({
+        label: `${category.name} (${category.code})`,
+        value: String(category.id),
+      })),
+    },
+    { name: "acct_unit", label: "Accounting unit", type: "string", required: true },
+    { name: "low_stock_threshold", label: "Low-stock threshold", type: "number", required: true },
+    { name: "is_active", label: "Active state", type: "boolean" },
+    { name: "description", label: "Description", type: "string" },
+    { name: "specifications", label: "Specifications", type: "string" },
+  ], [categories]);
+
+  const validateForCopilot = useCallback(() => {
+    setTouched(new Set(["name", "category", "acct_unit", "low_stock_threshold"]));
+    const nextErrors: Record<string, string> = {};
+    if (!form.name.trim()) nextErrors.name = "Item name is required.";
+    if (!form.category) nextErrors.category = "Select a subcategory for this item.";
+    if (!form.acct_unit.trim()) nextErrors.acct_unit = "Accounting unit is required.";
+    if (!form.low_stock_threshold || !/^\d+$/.test(form.low_stock_threshold) || Number(form.low_stock_threshold) < 1) {
+      nextErrors.low_stock_threshold = "Low-stock threshold must be at least 1.";
+    }
+    return {
+      ok: Object.keys(nextErrors).length === 0,
+      errors: nextErrors,
+    };
+  }, [form]);
+
+  useCopilotForm({
+    formId: isEdit && item ? `item-edit-${item.id}` : "item-create",
+    title: isEdit ? "Edit Item" : "Create Item",
+    description: "Create or edit an inventory item definition on the Items page.",
+    mode,
+    active: open,
+    fields: copilotFields,
+    values: form,
+    errors: Object.fromEntries(Object.entries(errors).filter((entry): entry is [string, string] => Boolean(entry[1]))),
+    canSetValues: !submitting,
+    canValidate: true,
+    canSubmit: canSave,
+    requirements: {
+      setValues: { requiredCapabilities: [{ module: "items", level: "manage" }] },
+      validate: { requiredCapabilities: [{ module: "items", level: "manage" }] },
+      submit: { requiredCapabilities: [{ module: "items", level: "manage" }] },
+    },
+    setValues: values => {
+      set(buildItemCopilotValuePatch(values));
+      return { updated: Object.keys(values) };
+    },
+    focusField: field => {
+      const escapedField = CSS.escape(field);
+      const target = document.querySelector<HTMLElement>(
+        `[data-copilot-field="${escapedField}"] input, ` +
+        `[data-copilot-field="${escapedField}"] textarea, ` +
+        `[data-copilot-field="${escapedField}"] button`,
+      );
+      target?.focus();
+      target?.scrollIntoView({ block: "center", behavior: "smooth" });
+      return target ? { ok: true, field } : { ok: false, reason: `Field ${field} is not focusable.` };
+    },
+    validate: validateForCopilot,
+    submit: () => submit(),
+  });
 
   if (!open) return null;
 
@@ -636,13 +750,13 @@ export function ItemModal({
 
             <Section n={1} title="Identity" sub="Core item details used throughout inventory records.">
               <div className="form-grid cols-2">
-                <Field label="Item name" required error={errors.name}>
+                <Field label="Item name" required error={errors.name} copilotField="name">
                   <input value={form.name} onChange={e => set({ name: e.target.value })} onBlur={() => setTouched(prev => new Set(prev).add("name"))} placeholder="Enter item name" />
                 </Field>
-                <Field label="Item code" hint="Leave blank to let the backend generate one.">
+                <Field label="Item code" hint="Leave blank to let the backend generate one." copilotField="code">
                   <input value={form.code} onChange={e => set({ code: e.target.value.toUpperCase() })} placeholder="Enter item code" />
                 </Field>
-                <Field label="Subcategory" required error={errors.category} span={2} hint={categories.length === 0 ? "You need at least one subcategory before creating items." : "Tracking type is inherited from the selected subcategory."}>
+                <Field label="Subcategory" required error={errors.category} span={2} hint={categories.length === 0 ? "You need at least one subcategory before creating items." : "Tracking type is inherited from the selected subcategory."} copilotField="category">
                   <ThemedSelect
                     value={form.category}
                     onChange={value => {
@@ -659,10 +773,10 @@ export function ItemModal({
                     }))}
                   />
                 </Field>
-                <Field label="Accounting unit" required error={errors.acct_unit}>
+                <Field label="Accounting unit" required error={errors.acct_unit} copilotField="acct_unit">
                   <input value={form.acct_unit} onChange={e => set({ acct_unit: e.target.value })} onBlur={() => setTouched(prev => new Set(prev).add("acct_unit"))} placeholder="pcs, units, meters" />
                 </Field>
-                <Field label="Low-stock threshold" required error={errors.low_stock_threshold} hint="Trigger a warning when total stock reaches this quantity or lower.">
+                <Field label="Low-stock threshold" required error={errors.low_stock_threshold} hint="Trigger a warning when total stock reaches this quantity or lower." copilotField="low_stock_threshold">
                   <input
                     type="number"
                     min={1}
@@ -673,7 +787,7 @@ export function ItemModal({
                     placeholder="Enter minimum threshold"
                   />
                 </Field>
-                <Field label="Active state">
+                <Field label="Active state" copilotField="is_active">
                   <div className="seg seg-inline">
                     <button type="button" className={"seg-btn" + (form.is_active ? " active" : "")} onClick={() => set({ is_active: true })}>Active</button>
                     <button type="button" className={"seg-btn" + (!form.is_active ? " active" : "")} onClick={() => set({ is_active: false })}>Disabled</button>
@@ -684,10 +798,10 @@ export function ItemModal({
 
             <Section n={2} title="Description" sub="Optional searchable context for specifications and procurement details.">
               <div className="form-grid cols-1">
-                <Field label="Description">
+                <Field label="Description" copilotField="description">
                   <textarea className="textarea-field" rows={3} value={form.description} onChange={e => set({ description: e.target.value })} placeholder="Short description" />
                 </Field>
-                <Field label="Specifications">
+                <Field label="Specifications" copilotField="specifications">
                   <textarea className="textarea-field" rows={4} value={form.specifications} onChange={e => set({ specifications: e.target.value })} placeholder="Technical specifications" />
                 </Field>
               </div>
@@ -989,14 +1103,88 @@ export function ItemListView() {
   } = useClientPagination(filteredItems, ITEMS_PAGE_SIZE, [search, filterKey]);
 
   const effectiveScopeTokens = selectedScopeTokens.length ? selectedScopeTokens : defaultScopeTokens;
+
+  // Expose the items currently visible on /items so the agent can resolve
+  // references like "core i5" → id without firing SQL. Also serves as the
+  // catalog when filling inspection stage rows from this page.
+  const itemsListReadable = useMemo(() => ({
+    route: "/items",
+    total: items.length,
+    filtered_total: filteredItems.length,
+    filters: {
+      search: search || null,
+      filter_key: filterKey,
+      scope_tokens: effectiveScopeTokens,
+    },
+    pagination: { page, page_size: ITEMS_PAGE_SIZE, total_pages: totalPages },
+    visible_rows: pagedItems.map((item) => ({
+      id: item.id,
+      name: item.name,
+      code: item.code,
+      category_type: item.category_type ?? null,
+      tracking_type: item.tracking_type ?? null,
+      acct_unit: item.acct_unit ?? null,
+      total_quantity: item.total_quantity ?? null,
+      detail_route: `/items/${item.id}`,
+    })),
+  }), [
+    items.length,
+    filteredItems.length,
+    pagedItems,
+    search,
+    filterKey,
+    effectiveScopeTokens,
+    page,
+    totalPages,
+  ]);
+
+  useCopilotReadable({
+    description:
+      "Items (asset catalog) currently displayed on the /items list page after filters/pagination. Use 'visible_rows' to resolve references like 'core i5', 'the first item', 'low-stock items' to specific catalog ids without a SQL lookup.",
+    value: itemsListReadable,
+  });
   const handleScopeChange = (nextTokens: string[]) => {
     setSelectedScopeTokens(nextTokens.length ? nextTokens : defaultScopeTokens);
   };
 
-  const openCreateModal = () => {
+  const openCreateModal = useCallback(() => {
     setEditingItem(null);
     setModalOpen(true);
-  };
+  }, []);
+
+  useCopilotAction({
+    name: "open_create_item_form",
+    description: "Open the Create Item modal on the Items page before filling a new item.",
+    parameters: {},
+    allowed: canManageItems,
+    requiredCapabilities: [{ module: "items", level: "manage" }],
+    handler: () => {
+      openCreateModal();
+      return { ok: true };
+    },
+  });
+
+  // Cross-page open: when open_form({form_id:"item_create"}) is called from
+  // another page, it queues a token in sessionStorage and navigates to /items.
+  // Consume the token on mount and open the modal exactly once.
+  useEffect(() => {
+    if (consumePendingOpen("item_create") && canManageItems) {
+      openCreateModal();
+    }
+  }, [canManageItems, openCreateModal]);
+
+  // Same-page open: when open_form is called while already on /items, the
+  // CopilotProvider dispatches a window event instead of navigating.
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ formId?: string }>).detail;
+      if (detail?.formId !== "item_create") return;
+      if (!canManageItems) return;
+      openCreateModal();
+    };
+    window.addEventListener(SAME_PAGE_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(SAME_PAGE_OPEN_EVENT, onOpen);
+  }, [canManageItems, openCreateModal]);
 
   const openEditModal = (item: ItemRecord) => {
     setEditingItem(item);
@@ -1927,6 +2115,20 @@ function WorkspaceSelectedItemPane({
       onNormalizeState(normalized);
     }
   }, [activeTab, item, itemId, onNormalizeState, selectedLocationId]);
+
+  useCopilotAction({
+    name: "open_edit_item_form",
+    description: "Open the Edit Item modal for the current item detail page.",
+    parameters: {},
+    allowed: canManageItems && Boolean(item),
+    enabled: Boolean(item),
+    requiredCapabilities: [{ module: "items", level: "manage" }],
+    handler: () => {
+      if (!item) return { ok: false, reason: "Current item is not loaded yet." };
+      onEditItem(item);
+      return { ok: true, itemId: item.id };
+    },
+  });
 
   const totalQuantity = toNumber(item?.total_quantity);
   const availableQuantity = toNumber(item?.available_quantity);

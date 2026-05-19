@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ListPagination } from "@/components/ListPagination";
 import { ThemedSelect } from "@/components/ThemedSelect";
@@ -9,6 +10,7 @@ import { LocationModal } from "@/components/LocationModal";
 import { apiFetch, type Page } from "@/lib/api";
 import { LOCATION_TYPE_LABELS, locationTypeLabel, relTime, type LocationRecord } from "@/lib/userUiShared";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
+import { useCopilotReadable } from "@/hooks/useCopilotReadable";
 import { useClientPagination } from "@/lib/listPagination";
 
 const LOCATIONS_PAGE_SIZE = 15;
@@ -365,6 +367,57 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
     setPage,
   } = useClientPagination(filteredLocations, LOCATIONS_PAGE_SIZE, [search, typeFilter, statusFilter, variant, parentId]);
 
+  // Expose the locations (or child locations under a parent) currently
+  // displayed so the agent can resolve names → ids without SQL. The
+  // inspections "department" foreign key is a Location id; this readable
+  // is the source of truth for that lookup when /locations is the page.
+  const locationsListReadable = useMemo(() => ({
+    route: isChildrenView ? `/locations/${parentId}` : "/locations",
+    variant,
+    parent_location: parentLocation
+      ? { id: parentLocation.id, name: parentLocation.name, code: parentLocation.code }
+      : null,
+    total: locations.length,
+    filtered_total: filteredLocations.length,
+    filters: {
+      search: search || null,
+      type: typeFilter,
+      status: statusFilter,
+    },
+    pagination: { page, page_size: LOCATIONS_PAGE_SIZE, total_pages: totalPages },
+    visible_rows: pagedLocations.map((loc) => ({
+      id: loc.id,
+      name: loc.name,
+      code: loc.code,
+      location_type: loc.location_type,
+      is_store: loc.is_store,
+      parent_location: loc.parent_location,
+      parent_location_display: loc.parent_location_display ?? null,
+      hierarchy_level: loc.hierarchy_level,
+      is_active: loc.is_active,
+      detail_route: `/locations/${loc.id}`,
+    })),
+  }), [
+    isChildrenView,
+    parentId,
+    variant,
+    parentLocation,
+    locations.length,
+    filteredLocations.length,
+    pagedLocations,
+    search,
+    typeFilter,
+    statusFilter,
+    page,
+    totalPages,
+  ]);
+
+  useCopilotReadable({
+    description:
+      "Locations (or child locations under the current parent) displayed on this page after filters/pagination. Use 'visible_rows' to resolve names → ids when filling foreign-key fields like inspection 'department' or item 'location' without a SQL lookup.",
+    value: locationsListReadable,
+  });
+
   return (
     <div data-density={density}>
       <LocationModal
@@ -380,6 +433,12 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
       <Topbar breadcrumb={isChildrenView ? ["Inventory", "Locations", parentLocation?.name ?? "Details"] : ["Inventory", "Locations"]} />
 
       <div className="page">
+        {isChildrenView ? (
+          <Link className="detail-page-back" href="/locations">
+            <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
+            Back to Locations
+          </Link>
+        ) : null}
         {fetchError && (
           <div style={{ padding: "12px 16px", background: "var(--danger-weak)", border: "1px solid color-mix(in oklch, var(--danger) 30%, transparent)", borderRadius: "var(--radius)", color: "var(--danger)", fontSize: 13, marginBottom: 16 }}>
             {fetchError}

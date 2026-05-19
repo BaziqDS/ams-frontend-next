@@ -1,9 +1,19 @@
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 function formatApiError(body: unknown): string | null {
   if (!body || typeof body !== "object") return null;
 
   const record = body as Record<string, unknown>;
+
+  const deleteBlockers = record.delete_blockers;
+  if (Array.isArray(deleteBlockers)) {
+    const messages = deleteBlockers.filter(
+      (item): item is string => typeof item === "string" && item.trim().length > 0,
+    );
+    if (messages.length > 0) {
+      return messages.join(" ");
+    }
+  }
 
   if (typeof record.detail === "string" && record.detail.trim()) {
     return record.detail;
@@ -44,7 +54,7 @@ export class ApiError extends Error {
 }
 
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     credentials: "include",
     headers: {

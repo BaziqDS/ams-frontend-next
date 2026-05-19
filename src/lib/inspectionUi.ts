@@ -374,6 +374,95 @@ export function canResumeInspectionEditor(
   return false;
 }
 
+export function getInspectionStageTransitionPath(
+  inspection: Pick<InspectionRecord, "stage">,
+) {
+  if (inspection.stage === "DRAFT") return "initiate";
+  if (inspection.stage === "STOCK_DETAILS") return "submit_to_central_register";
+  if (inspection.stage === "CENTRAL_REGISTER") return "submit_to_finance_review";
+  if (inspection.stage === "FINANCE_REVIEW") return "complete";
+  return null;
+}
+
+export function getInspectionStageRequiredPermission(
+  stage: InspectionStage,
+): InspectionStagePermissionKey | null {
+  if (stage === "DRAFT") return "initiate_inspection";
+  if (stage === "STOCK_DETAILS") return "fill_stock_details";
+  if (stage === "CENTRAL_REGISTER") return "fill_central_register";
+  if (stage === "FINANCE_REVIEW") return "review_finance";
+  return null;
+}
+
+export function getInspectionWorkflowContract(
+  inspection: Pick<
+    InspectionRecord,
+    "id" | "stage" | "status" | "department_hierarchy_level"
+  >,
+  options: {
+    canManage: boolean;
+    hasStage: (stage: string) => boolean;
+    busyAction?: string | null;
+  },
+) {
+  const sequence = requiresDepartmentalStockStage(inspection)
+    ? DEPARTMENTAL_WORKFLOW
+    : ROOT_WORKFLOW;
+  const currentIndex = sequence.indexOf(
+    inspection.stage as Exclude<InspectionStage, "REJECTED">,
+  );
+  const nextStage =
+    currentIndex >= 0 && currentIndex < sequence.length - 1
+      ? sequence[currentIndex + 1]
+      : null;
+  const transition = getInspectionStageTransitionPath(inspection);
+  const requiredInspectionStage = getInspectionStageRequiredPermission(
+    inspection.stage,
+  );
+  const hasRequiredStageCapability = requiredInspectionStage
+    ? options.hasStage(requiredInspectionStage)
+    : false;
+  const terminal = inspection.stage === "COMPLETED" || inspection.stage === "REJECTED";
+
+  let blockedReason: string | null = null;
+  if (terminal) {
+    blockedReason = `Inspection is ${getInspectionStageDisplayLabel(inspection)} and cannot be advanced.`;
+  } else if (options.busyAction) {
+    blockedReason = `Inspection workflow is busy with ${options.busyAction}.`;
+  } else if (!transition || !nextStage) {
+    blockedReason = "No workflow transition is available from the current stage.";
+  } else if (!options.canManage && inspection.stage !== "DRAFT") {
+    blockedReason = "You need inspections:manage capability to advance this inspection stage.";
+  } else if (requiredInspectionStage && !hasRequiredStageCapability) {
+    blockedReason =
+      `You need inspection stage permission ${requiredInspectionStage} to advance ${INSPECTION_STAGE_LABELS[inspection.stage]}.`;
+  }
+
+  return {
+    recordId: inspection.id,
+    currentStage: inspection.stage,
+    currentStageLabel: getInspectionStageDisplayLabel(inspection),
+    status: inspection.status,
+    nextStage,
+    nextStageLabel: nextStage ? INSPECTION_STAGE_LABELS[nextStage] : null,
+    transition,
+    submitIntent: "submit",
+    saveIntent: "save",
+    requiredCapability: transition
+      ? { module: "inspections", level: "manage" as const }
+      : null,
+    requiredInspectionStage,
+    hasRequiredStageCapability,
+    canEdit: canResumeInspectionEditor(
+      inspection,
+      options.canManage,
+      options.hasStage,
+    ),
+    canAdvance: !blockedReason,
+    blockedReason,
+  };
+}
+
 export function getInspectionStageGuidance(inspection: InspectionRecord) {
   if (inspection.stage === "DRAFT") {
     return "Review contract information, line items, and supporting documents before initiating the certificate.";

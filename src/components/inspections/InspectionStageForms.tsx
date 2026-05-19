@@ -170,6 +170,11 @@ function CatalogItemSearchField({
     }
   }, [item.item, item.item_name, open]);
 
+  useEffect(() => {
+    setQuery(item.item_name || "");
+    setOpen(false);
+  }, [item.item, item.item_name]);
+
   const filteredOptions = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     if (!normalizedQuery) return options.slice(0, 8);

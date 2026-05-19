@@ -9,6 +9,12 @@ import { Topbar } from "@/components/Topbar";
 import { CategoryModal, type CategoryRecord } from "@/components/CategoryModal";
 import { apiFetch, type Page } from "@/lib/api";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
+import { useCopilotAction } from "@/hooks/useCopilotAction";
+import { useCopilotReadable } from "@/hooks/useCopilotReadable";
+import {
+  consumePendingOpen,
+  SAME_PAGE_OPEN_EVENT,
+} from "@/lib/copilotPendingAction";
 import { useClientPagination } from "@/lib/listPagination";
 import { relTime } from "@/lib/userUiShared";
 
@@ -346,10 +352,98 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
     setPage,
   } = useClientPagination(filteredCategories, CATEGORIES_PAGE_SIZE, [search, typeFilter, statusFilter, variant, parentId]);
 
+  // Expose the categories (or subcategories under a parent) currently
+  // displayed so the agent can resolve names → ids without a SQL lookup.
+  const categoriesListReadable = useMemo(() => ({
+    route: variant === "children" ? `/categories/${parentId}` : "/categories",
+    variant,
+    parent_category: parentCategory
+      ? { id: parentCategory.id, name: parentCategory.name, code: parentCategory.code }
+      : null,
+    total: categories.length,
+    filtered_total: filteredCategories.length,
+    filters: {
+      search: search || null,
+      type: typeFilter,
+      status: statusFilter,
+    },
+    pagination: { page, page_size: CATEGORIES_PAGE_SIZE, total_pages: totalPages },
+    visible_rows: pagedCategories.map((c) => ({
+      id: c.id,
+      name: c.name,
+      code: c.code,
+      category_type: c.category_type ?? null,
+      tracking_type: c.tracking_type ?? null,
+      resolved_category_type: c.resolved_category_type ?? null,
+      parent_category: c.parent_category,
+      parent_category_display: c.parent_category_display ?? null,
+      is_active: c.is_active,
+      detail_route: `/categories/${c.id}`,
+    })),
+  }), [
+    variant,
+    parentId,
+    parentCategory,
+    categories.length,
+    filteredCategories.length,
+    pagedCategories,
+    search,
+    typeFilter,
+    statusFilter,
+    page,
+    totalPages,
+  ]);
+
+  useCopilotReadable({
+    description:
+      "Categories (or subcategories under the current parent) displayed on this page after filters/pagination. Use 'visible_rows' to resolve names → ids without SQL. When variant='children', the page is /categories/{parent_category.id} and subcategory_create is available there.",
+    value: categoriesListReadable,
+  });
+
   const openCreateModal = useCallback(() => {
     setEditingCategory(null);
     setModalOpen(true);
   }, []);
+
+  useCopilotAction({
+    name: variant === "children" ? "open_create_subcategory_form" : "open_create_category_form",
+    description: variant === "children"
+      ? "Open the Add Subcategory modal on the current category page before filling a new subcategory."
+      : "Open the Add Category modal on the Categories page before filling a new category.",
+    parameters: {},
+    allowed: canManageCategories && (variant !== "children" || Boolean(parentCategory)),
+    enabled: variant !== "children" || Boolean(parentCategory),
+    requiredCapabilities: [{ module: "categories", level: "manage" }],
+    handler: () => {
+      openCreateModal();
+      return { ok: true };
+    },
+  });
+
+  // Cross-page trigger: agent called open_form("category_create") from another
+  // route, navigation deposited a token, we consume it on mount.
+  // Subcategories use a different formId since they're scoped to a parent.
+  useEffect(() => {
+    if (variant !== "children" && consumePendingOpen("category_create") && canManageCategories) {
+      openCreateModal();
+    }
+  }, [variant, canManageCategories, openCreateModal]);
+
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ formId?: string }>).detail;
+      if (variant === "children") {
+        if (detail?.formId !== "subcategory_create") return;
+        if (!canManageCategories || !parentCategory) return;
+      } else {
+        if (detail?.formId !== "category_create") return;
+        if (!canManageCategories) return;
+      }
+      openCreateModal();
+    };
+    window.addEventListener(SAME_PAGE_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(SAME_PAGE_OPEN_EVENT, onOpen);
+  }, [variant, canManageCategories, parentCategory, openCreateModal]);
 
   const openEditModal = useCallback((category: CategoryRecord) => {
     setEditingCategory(category);

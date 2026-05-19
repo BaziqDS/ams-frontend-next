@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
+import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
+import { useCopilotReadable } from "@/hooks/useCopilotReadable";
 import {
   InspectionIcon,
   RejectInspectionModal,
@@ -15,7 +17,7 @@ import {
   Stage3Form,
   Stage4Form,
 } from "@/components/inspections/InspectionStageForms";
-import { ApiError, apiFetch } from "@/lib/api";
+import { ApiError, apiFetch, type Page } from "@/lib/api";
 import { useCapabilities } from "@/contexts/CapabilitiesContext";
 import {
   API_BASE,
@@ -33,15 +35,36 @@ import {
   getInspectionValueTotals,
   getInspectionWorkflowSteps,
   INSPECTION_STAGE_LABELS,
+  type InspectionItemOption,
   type InspectionItemRecord,
   type InspectionRecord,
+  type InspectionStockRegisterOption,
   type InspectionWorkflowStep,
 } from "@/lib/inspectionUi";
 import {
   buildStageItemsPayload,
+  getInspectionCentralStoreRegisters,
   getInspectionItemFinancials,
+  getInspectionMainStoreRegisters,
   normalizeStageItems,
 } from "@/lib/inspectionStageForms";
+import {
+  applyInspectionItemCopilotPatches,
+  buildInspectionItemCopilotFields,
+} from "@/lib/inspectionCopilotForm";
+
+type InspectionLocationDetail = {
+  id: number;
+  hierarchy_level?: number | null;
+  main_store_id?: number | string | null;
+  main_store_display?: string | null;
+  root_main_store_id?: number | string | null;
+  root_main_store_display?: string | null;
+};
+
+function normalizeApiList<T>(data: Page<T> | T[]) {
+  return Array.isArray(data) ? data : data.results;
+}
 
 function formatInspectionDateTime(value: string | null | undefined) {
   if (!value) return "Pending";
@@ -632,6 +655,68 @@ function buildStagePayload(inspection: InspectionRecord) {
   return {};
 }
 
+function blankInspectionItem(): InspectionItemRecord {
+  return {
+    item: null,
+    item_description: "",
+    item_specifications: "",
+    tendered_quantity: 1,
+    accepted_quantity: 0,
+    rejected_quantity: 0,
+    unit_price: "0.00",
+    remarks: "",
+    stock_register: null,
+    stock_register_no: "",
+    stock_register_page_no: "",
+    stock_entry_date: "",
+    central_register: null,
+    central_register_no: "",
+    central_register_page_no: "",
+    batch_number: "",
+    manufactured_date: "",
+    expiry_date: "",
+    depreciation_asset_class: null,
+    capitalization_cost: "",
+    capitalization_date: "",
+  };
+}
+
+function syncCopilotItemReferences({
+  items,
+  departmentRegisterOptions,
+  centralRegisterOptions,
+  itemOptions,
+}: {
+  items: InspectionItemRecord[];
+  departmentRegisterOptions: InspectionStockRegisterOption[];
+  centralRegisterOptions: InspectionStockRegisterOption[];
+  itemOptions: InspectionItemOption[];
+}) {
+  const departmentRegistersById = new Map(departmentRegisterOptions.map(option => [option.id, option]));
+  const centralRegistersById = new Map(centralRegisterOptions.map(option => [option.id, option]));
+  const itemsById = new Map(itemOptions.map(option => [option.id, option]));
+
+  return items.map(item => {
+    const departmentRegister = item.stock_register ? departmentRegistersById.get(item.stock_register) : null;
+    const centralRegister = item.central_register ? centralRegistersById.get(item.central_register) : null;
+    const catalogItem = item.item ? itemsById.get(item.item) : null;
+
+    return {
+      ...item,
+      ...(departmentRegister ? { stock_register_no: departmentRegister.register_number } : {}),
+      ...(centralRegister ? { central_register_no: centralRegister.register_number } : {}),
+      ...(catalogItem
+        ? {
+            item_name: catalogItem.name,
+            item_code: catalogItem.code,
+            item_category_type: catalogItem.category_type ?? null,
+            item_tracking_type: catalogItem.tracking_type ?? null,
+          }
+        : {}),
+    };
+  });
+}
+
 function getTransitionPath(inspection: InspectionRecord) {
   if (inspection.stage === "DRAFT") return "initiate";
   if (inspection.stage === "STOCK_DETAILS") return "submit_to_central_register";
@@ -656,6 +741,9 @@ export default function InspectionDetailPage() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [returnOpen, setReturnOpen] = useState(false);
+  const [copilotItems, setCopilotItems] = useState<InspectionItemOption[]>([]);
+  const [copilotRegisters, setCopilotRegisters] = useState<InspectionStockRegisterOption[]>([]);
+  const [copilotLocation, setCopilotLocation] = useState<InspectionLocationDetail | null>(null);
 
   const loadInspection = useCallback(async () => {
     setLoading(true);
@@ -682,6 +770,42 @@ export default function InspectionDetailPage() {
     loadInspection();
   }, [canView, capsLoading, loadInspection, router]);
 
+  useEffect(() => {
+    if (!editableInspection || !["STOCK_DETAILS", "CENTRAL_REGISTER"].includes(editableInspection.stage)) {
+      setCopilotItems([]);
+      setCopilotRegisters([]);
+      setCopilotLocation(null);
+      return;
+    }
+
+    let ignored = false;
+    Promise.all([
+      editableInspection.stage === "CENTRAL_REGISTER"
+        ? apiFetch<Page<InspectionItemOption> | InspectionItemOption[]>("/api/inventory/items/?page_size=500").then(normalizeApiList)
+        : Promise.resolve([] as InspectionItemOption[]),
+      apiFetch<Page<InspectionStockRegisterOption> | InspectionStockRegisterOption[]>("/api/inventory/stock-registers/?page_size=500").then(normalizeApiList),
+      editableInspection.department
+        ? apiFetch<InspectionLocationDetail>(`/api/inventory/locations/${editableInspection.department}/`).catch(() => null)
+        : Promise.resolve(null),
+    ])
+      .then(([loadedItems, loadedRegisters, loadedLocation]) => {
+        if (ignored) return;
+        setCopilotItems(loadedItems);
+        setCopilotRegisters(loadedRegisters);
+        setCopilotLocation(loadedLocation);
+      })
+      .catch(() => {
+        if (ignored) return;
+        setCopilotItems([]);
+        setCopilotRegisters([]);
+        setCopilotLocation(null);
+      });
+
+    return () => {
+      ignored = true;
+    };
+  }, [editableInspection?.department, editableInspection?.stage]);
+
   const canEdit = inspection ? canResumeInspectionEditor(inspection, canManage, hasInspectionStage) : false;
   const canDelete = Boolean(inspection && canFull && inspection.stage === "DRAFT");
   const canActStage1 = Boolean(inspection && inspection.stage === "DRAFT" && hasInspectionStage("initiate_inspection"));
@@ -706,7 +830,13 @@ export default function InspectionDetailPage() {
   const activeRevisionRequest = inspection ? getInspectionActiveRevisionRequest(inspection) : null;
 
   const saveProgress = useCallback(async () => {
-    if (!editableInspection) return;
+    if (!editableInspection) {
+      return {
+        ok: false,
+        errorType: "no_active_record",
+        message: "No active inspection is loaded.",
+      };
+    }
     setBusyAction("save");
     setError(null);
     try {
@@ -715,17 +845,40 @@ export default function InspectionDetailPage() {
         body: JSON.stringify(buildStagePayload(editableInspection)),
       });
       await loadInspection();
+      return {
+        ok: true,
+        message: "Inspection progress saved.",
+        recordId: editableInspection.id,
+      };
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to save inspection");
+      const message = err instanceof ApiError ? err.message : "Failed to save inspection";
+      setError(message);
+      return {
+        ok: false,
+        errorType: "submit_failed",
+        message,
+      };
     } finally {
       setBusyAction(null);
     }
   }, [editableInspection, loadInspection]);
 
   const submitStage = useCallback(async () => {
-    if (!editableInspection) return;
+    if (!editableInspection) {
+      return {
+        ok: false,
+        errorType: "no_active_record",
+        message: "No active inspection is loaded.",
+      };
+    }
     const transition = getTransitionPath(editableInspection);
-    if (!transition) return;
+    if (!transition) {
+      return {
+        ok: false,
+        errorType: "transition_unavailable",
+        message: "This inspection stage cannot be submitted from the current state.",
+      };
+    }
     setBusyAction("transition");
     setError(null);
     try {
@@ -735,12 +888,230 @@ export default function InspectionDetailPage() {
       });
       await apiFetch(`/api/inventory/inspections/${editableInspection.id}/${transition}/`, { method: "POST" });
       await loadInspection();
+      return {
+        ok: true,
+        message: "Inspection stage submitted successfully.",
+        recordId: editableInspection.id,
+        transition,
+      };
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to transition stage. Check required details and register links.");
+      const message = err instanceof ApiError ? err.message : "Failed to transition stage. Check required details and register links.";
+      setError(message);
+      return {
+        ok: false,
+        errorType: "submit_failed",
+        message,
+      };
     } finally {
       setBusyAction(null);
     }
   }, [editableInspection, loadInspection]);
+
+  const departmentRegisterOptions = useMemo(
+    () => getInspectionMainStoreRegisters(copilotRegisters, copilotLocation),
+    [copilotLocation, copilotRegisters],
+  );
+
+  const centralRegisterOptions = useMemo(
+    () => getInspectionCentralStoreRegisters(copilotRegisters, copilotLocation),
+    [copilotLocation, copilotRegisters],
+  );
+
+  const copilotItemOptions = useMemo(() => {
+    const byId = new Map(copilotItems.map(option => [option.id, option]));
+    (editableInspection?.items ?? []).forEach(item => {
+      if (!item.item || byId.has(item.item)) return;
+      byId.set(item.item, {
+        id: item.item,
+        name: item.item_name || item.item_description || `Item #${item.item}`,
+        code: item.item_code || "",
+        category_type: item.item_category_type ?? null,
+        tracking_type: item.item_tracking_type ?? null,
+        description: null,
+        acct_unit: null,
+        specifications: null,
+      });
+    });
+    return Array.from(byId.values());
+  }, [copilotItems, editableInspection?.items]);
+
+  // Expose the catalog options that back the stage form dropdowns so the
+  // agent can resolve "core i5" → catalog item id, etc., without firing SQL.
+  useCopilotReadable({
+    description:
+      "Inspection detail dropdown catalogs (loaded for the current stage). Use 'items' to resolve inspection row 'item' foreign-key IDs by matching item_description/item_name to catalog name/code; use 'stock_registers' for stock_register/central_register IDs. When filling stage-2/stage-3 item rows, ALWAYS set the row's 'item' field to the catalog id from items[].id, do NOT leave it null when a name match exists. The items array is empty when the current stage does not need it.",
+    value: {
+      route: `/inspections/${params.id}`,
+      stage: editableInspection?.stage ?? null,
+      department_id: editableInspection?.department ?? null,
+      items: copilotItemOptions.map(o => ({
+        id: o.id,
+        name: o.name,
+        code: o.code,
+        category_type: o.category_type,
+        tracking_type: o.tracking_type,
+      })),
+      stock_registers: copilotRegisters.map(r => ({
+        id: r.id,
+        ...(r as unknown as Record<string, unknown>),
+      })),
+      department_stock_registers: departmentRegisterOptions.map(r => r.id),
+      central_stock_registers: centralRegisterOptions.map(r => r.id),
+    },
+  });
+
+  const copilotFields = useMemo<CopilotFormField[]>(() => {
+    if (!editableInspection) return [];
+
+    const stageFields = buildInspectionItemCopilotFields({
+      items: editableInspection.items ?? [],
+      canEditStock: canEdit && editableInspection.stage === "STOCK_DETAILS",
+      canEditCentral: canEdit && editableInspection.stage === "CENTRAL_REGISTER",
+      departmentRegisterOptions,
+      centralRegisterOptions,
+      itemOptions: copilotItemOptions,
+    });
+
+    if (stageFields.length > 0) {
+      return [
+        {
+          name: "items",
+          label: "Inspection item rows",
+          type: "array",
+          description:
+            "Current item rows. Prefer exact per-row fields like items.0.central_register and items.0.central_register_page_no; bulk item patches are merged over existing rows.",
+        },
+        ...stageFields,
+      ];
+    }
+
+    if (canEdit && editableInspection.stage === "FINANCE_REVIEW") {
+      return [
+        {
+          name: "finance_check_date",
+          label: "Finance Check Date",
+          type: "date",
+        },
+      ];
+    }
+
+    return [];
+  }, [
+    canEdit,
+    centralRegisterOptions,
+    copilotItemOptions,
+    departmentRegisterOptions,
+    editableInspection,
+  ]);
+
+  const copilotFormValues = useMemo(
+    () => editableInspection
+      ? {
+          stage: editableInspection.stage,
+          finance_check_date: editableInspection.finance_check_date,
+          items: normalizeStageItems(editableInspection.items ?? []).map((item, index) => ({
+            index,
+            id: item.id,
+            item_description: item.item_description,
+            accepted_quantity: item.accepted_quantity,
+            stock_register: item.stock_register,
+            stock_register_no: item.stock_register_no,
+            stock_register_page_no: item.stock_register_page_no,
+            stock_entry_date: item.stock_entry_date,
+            central_register: item.central_register,
+            central_register_no: item.central_register_no,
+            central_register_page_no: item.central_register_page_no,
+            item: item.item,
+            item_name: item.item_name,
+            batch_number: item.batch_number,
+            manufactured_date: item.manufactured_date,
+            expiry_date: item.expiry_date,
+          })),
+        }
+      : {},
+    [editableInspection],
+  );
+
+  const applyDetailCopilotValues = useCallback(
+    (values: Record<string, unknown>) => {
+      if (!editableInspection) {
+        return { applied: [], ignored: Object.keys(values), reason: "No active inspection loaded." };
+      }
+
+      const applied: string[] = [];
+      const ignored: string[] = [];
+      let nextInspection: InspectionRecord = {
+        ...editableInspection,
+        items: normalizeStageItems(editableInspection.items ?? []),
+      };
+
+      if (
+        editableInspection.stage === "FINANCE_REVIEW" &&
+        Object.prototype.hasOwnProperty.call(values, "finance_check_date")
+      ) {
+        nextInspection = {
+          ...nextInspection,
+          finance_check_date: String(values.finance_check_date ?? ""),
+        };
+        applied.push("finance_check_date");
+      }
+
+      const itemPatch = applyInspectionItemCopilotPatches({
+        currentItems: nextInspection.items,
+        values,
+        blankItem: blankInspectionItem,
+      });
+
+      if (itemPatch.applied.length > 0) {
+        nextInspection = {
+          ...nextInspection,
+          items: syncCopilotItemReferences({
+            items: itemPatch.nextItems,
+            departmentRegisterOptions,
+            centralRegisterOptions,
+            itemOptions: copilotItemOptions,
+          }),
+        };
+        applied.push(...itemPatch.applied);
+      }
+      ignored.push(...itemPatch.ignored);
+
+      if (applied.length === 0) {
+        return { applied, ignored: Object.keys(values), reason: "No editable stage fields were provided." };
+      }
+
+      setEditableInspection(nextInspection);
+      return { applied, ignored };
+    },
+    [
+      centralRegisterOptions,
+      copilotItemOptions,
+      departmentRegisterOptions,
+      editableInspection,
+    ],
+  );
+
+  useCopilotForm({
+    formId: editableInspection ? `inspection_detail_${editableInspection.id}_${editableInspection.stage.toLowerCase()}` : "inspection_detail",
+    title: editableInspection
+      ? `Inspection Detail - ${getInspectionStageDisplayLabel(editableInspection)}`
+      : "Inspection Detail",
+    description:
+      "Active inspection detail stage form. The assistant patches the same editable stage state used by the visible form; Save Progress and workflow transition still use the existing page buttons and backend validation.",
+    mode: editableInspection?.stage,
+    active: Boolean(editableInspection && inspection && !["COMPLETED", "REJECTED"].includes(inspection.stage)),
+    canSetValues: Boolean(canEdit && busyAction === null && copilotFields.length > 0),
+    canValidate: false,
+    canSubmit: Boolean(canEdit && busyAction === null),
+    fields: copilotFields,
+    values: copilotFormValues,
+    requirements: {
+      setValues: { requiredCapabilities: [{ module: "inspections", level: "manage" }] },
+      submit: { requiredCapabilities: [{ module: "inspections", level: "manage" }] },
+    },
+    setValues: applyDetailCopilotValues,
+    submit: intent => intent === "submit" ? submitStage() : saveProgress(),
+  });
 
   const handleCancelConfirm = useCallback(async (reason: string) => {
     if (!inspection) return;

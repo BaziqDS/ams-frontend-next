@@ -87,6 +87,24 @@ const unavailableActionStyle = { opacity: 0.55, cursor: "not-allowed" } as const
 const busyActionStyle = { opacity: 0.75, cursor: "wait" } as const;
 const USERS_PAGE_SIZE = 12;
 
+type UserCreateSetup = {
+  groupsCount: number;
+  locationsCount: number;
+  loading: boolean;
+  error: string | null;
+};
+
+const emptyCreateSetup: UserCreateSetup = {
+  groupsCount: 0,
+  locationsCount: 0,
+  loading: false,
+  error: null,
+};
+
+function pageCount<T>(data: Page<T> | T[]): number {
+  return Array.isArray(data) ? data.length : data.results.length;
+}
+
 function RowActions({
   onEdit,
   onToggleActive,
@@ -264,6 +282,7 @@ export default function UsersPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
   const [busyAction, setBusyAction] = useState<{ kind: "toggle" | "delete"; userId: number } | null>(null);
+  const [createSetup, setCreateSetup] = useState<UserCreateSetup>(emptyCreateSetup);
   const pageBusy = busyAction !== null;
   const canAssignUserRoles = shouldLoadUserAssignmentSelectors(editUser ? "edit" : "create", canAddUser, canChangeUser);
   const canAssignUserLocations = canAssignUserRoles;
@@ -300,6 +319,43 @@ export default function UsersPage() {
     }
     loadUsers();
   }, [authLoading, canViewUsers, router, loadUsers]);
+
+  useEffect(() => {
+    if (authLoading || !canViewUsers || !canAddUser) {
+      setCreateSetup(emptyCreateSetup);
+      return;
+    }
+
+    let cancelled = false;
+    setCreateSetup(prev => ({ ...prev, loading: true, error: null }));
+
+    Promise.all([
+      apiFetch<Page<{ id: number }> | { id: number }[]>("/api/users/groups/"),
+      apiFetch<Page<{ id: number }> | { id: number }[]>("/api/inventory/locations/assignable/"),
+    ])
+      .then(([groupsData, locationsData]) => {
+        if (cancelled) return;
+        setCreateSetup({
+          groupsCount: pageCount(groupsData),
+          locationsCount: pageCount(locationsData),
+          loading: false,
+          error: null,
+        });
+      })
+      .catch(err => {
+        if (cancelled) return;
+        setCreateSetup({
+          groupsCount: 0,
+          locationsCount: 0,
+          loading: false,
+          error: err instanceof Error ? err.message : "Failed to load user setup.",
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, canViewUsers, canAddUser]);
 
   const handleCreateSave = useCallback(async () => {
     const refreshed = await loadUsers({ showLoading: false });
@@ -394,6 +450,28 @@ export default function UsersPage() {
     setPage,
   } = useClientPagination(filtered, USERS_PAGE_SIZE, [search, tierFilter, statusFilter]);
 
+  const createSetupIssues = useMemo(() => {
+    if (!canAddUser || createSetup.loading) return [];
+    const issues: string[] = [];
+    if (createSetup.error) {
+      issues.push(`User setup could not be checked: ${createSetup.error}`);
+      return issues;
+    }
+    if (createSetup.groupsCount === 0) {
+      issues.push("Create at least one role before adding users.");
+    }
+    if (createSetup.locationsCount === 0) {
+      issues.push("Create at least one root or standalone location before adding users.");
+    }
+    return issues;
+  }, [canAddUser, createSetup]);
+  const canOpenCreateUser = canAddUser && !createSetup.loading && createSetupIssues.length === 0;
+  const addUserTitle = !canAddUser
+    ? "Requires add user permission"
+    : createSetup.loading
+      ? "Checking roles and locations..."
+      : createSetupIssues[0] ?? "Add User";
+
   return (
     <div data-density={density}>
       <AddUserModal
@@ -415,6 +493,14 @@ export default function UsersPage() {
         {actionError && (
           <div style={{ padding: "12px 16px", background: "var(--danger-weak)", border: "1px solid color-mix(in oklch, var(--danger) 30%, transparent)", borderRadius: "var(--radius)", color: "var(--danger)", fontSize: 13, marginBottom: 16 }}>
             {actionError}
+          </div>
+        )}
+        {canAddUser && createSetupIssues.length > 0 && (
+          <div style={{ padding: "12px 16px", background: "var(--danger-weak)", border: "1px solid color-mix(in oklch, var(--danger) 35%, transparent)", borderRadius: "var(--radius)", color: "var(--danger)", fontSize: 13, marginBottom: 16 }}>
+            <strong style={{ display: "block", marginBottom: 6 }}>User creation is blocked.</strong>
+            {createSetupIssues.map(issue => (
+              <div key={issue}>{issue}</div>
+            ))}
           </div>
         )}
         {isLoading && (
@@ -511,7 +597,14 @@ export default function UsersPage() {
               Export
             </button>
             {canAddUser && (
-              <button type="button" className="btn btn-sm btn-primary" onClick={() => setAddOpen(true)}>
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                onClick={() => { if (canOpenCreateUser) setAddOpen(true); }}
+                disabled={!canOpenCreateUser}
+                title={addUserTitle}
+                style={!canOpenCreateUser ? unavailableActionStyle : undefined}
+              >
                 <Ic d="M12 5v14M5 12h14" size={14} />
                 Add User
               </button>

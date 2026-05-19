@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, type Page } from "@/lib/api";
+import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -169,6 +170,7 @@ export function InspectionModal({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [previewFile, setPreviewFile] = useState<{ url: string; type: "image" | "pdf" | "other"; name: string } | null>(null);
+
   const canCreateForAnyStandalone = Boolean(user?.is_superuser);
   const locationScopeHint = canCreateForAnyStandalone
     ? "Superusers can create certificates for any standalone location."
@@ -415,11 +417,19 @@ export function InspectionModal({
   const submit = async (saveAsDraft = false) => {
     setTouched(true);
     setSubmitError(null);
-    if (Object.keys(errors).length > 0 && canEditBasic) return;
+    if (Object.keys(errors).length > 0 && canEditBasic) {
+      return {
+        ok: false,
+        errorType: "validation_error",
+        message: "Resolve the highlighted inspection fields before submitting.",
+        fieldErrors: errors,
+      };
+    }
 
     setSubmitting(true);
     try {
       const payload: Record<string, unknown> = {};
+      let savedInspection: InspectionRecord | null = null;
       if (canEditBasic) {
         Object.assign(payload, {
           date,
@@ -473,15 +483,23 @@ export function InspectionModal({
         });
         if (!response.ok) {
           const body = await response.json().catch(() => null);
-          throw new Error(body?.detail ?? `HTTP ${response.status}`);
+          const message = body?.detail ?? `HTTP ${response.status}`;
+          setSubmitError(message);
+          return {
+            ok: false,
+            errorType: "backend_error",
+            message,
+            fieldErrors: body && typeof body === "object" ? body : undefined,
+          };
         }
+        savedInspection = await response.json().catch(() => null);
       } else if (mode === "edit" && inspection) {
-        await apiFetch(`/api/inventory/inspections/${inspection.id}/`, {
+        savedInspection = await apiFetch<InspectionRecord>(`/api/inventory/inspections/${inspection.id}/`, {
           method: "PATCH",
           body: JSON.stringify(payload),
         });
       } else {
-        await apiFetch("/api/inventory/inspections/", {
+        savedInspection = await apiFetch<InspectionRecord>("/api/inventory/inspections/", {
           method: "POST",
           body: JSON.stringify(payload),
         });
@@ -489,12 +507,248 @@ export function InspectionModal({
 
       await onSave();
       onClose();
+      return {
+        ok: true,
+        message: saveAsDraft
+          ? "Inspection certificate draft saved."
+          : "Inspection certificate submitted successfully.",
+        recordId: savedInspection?.id ?? inspection?.id,
+      };
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Failed to save");
+      const message = err instanceof Error ? err.message : "Failed to save";
+      setSubmitError(message);
+      return {
+        ok: false,
+        errorType: "submit_failed",
+        message,
+      };
     } finally {
       setSubmitting(false);
     }
   };
+
+  const copilotFields = useMemo<CopilotFormField[]>(
+    () => [
+      { name: "date", label: "Certificate Date", type: "date", readOnly: !canEditBasic },
+      { name: "contract_no", label: "Contract Number", type: "string", required: canEditBasic, readOnly: !canEditBasic },
+      { name: "contract_date", label: "Contract Date", type: "date", readOnly: !canEditBasic },
+      {
+        name: "delivery_type",
+        label: "Delivery Type",
+        type: "select",
+        readOnly: !canEditBasic,
+        options: [
+          { label: "Full", value: "FULL" },
+          { label: "Part", value: "PART" },
+        ],
+      },
+      { name: "contractor_name", label: "Contractor Name", type: "string", required: canEditBasic, readOnly: !canEditBasic },
+      { name: "contractor_address", label: "Contractor Address", type: "string", readOnly: !canEditBasic },
+      { name: "indenter", label: "Indenter", type: "string", required: canEditBasic, readOnly: !canEditBasic },
+      { name: "indent_no", label: "Indent Number", type: "string", required: canEditBasic, readOnly: !canEditBasic },
+      {
+        name: "department",
+        label: "Department",
+        type: "select",
+        required: canEditBasic,
+        readOnly: !canEditBasic,
+        options: locations.map(location => ({ label: location.name, value: location.id })),
+      },
+      { name: "date_of_delivery", label: "Date of Delivery", type: "date", readOnly: !canEditBasic },
+      { name: "remarks", label: "Remarks", type: "string", readOnly: !canEditBasic },
+      { name: "inspected_by", label: "Inspected By", type: "string", readOnly: !canEditBasic },
+      { name: "date_of_inspection", label: "Date of Inspection", type: "date", readOnly: !canEditBasic },
+      { name: "consignee_name", label: "Consignee Name", type: "string", readOnly: !canEditBasic },
+      { name: "consignee_designation", label: "Consignee Designation", type: "string", readOnly: !canEditBasic },
+      { name: "finance_check_date", label: "Finance Check Date", type: "date", readOnly: !canEditStage4 },
+      {
+        name: "items",
+        label: "Inspection Items",
+        type: "array",
+        required: canEditItems,
+        readOnly: !(canEditItems || canEditStage2 || canEditStage3 || canEditStage4),
+        description:
+          "Array of item rows. Rows may include item_description, item_specifications, tendered_quantity, accepted_quantity, rejected_quantity, unit_price, remarks, stock_register_no, stock_register_page_no, stock_entry_date, central_register_no, central_register_page_no, batch_number, manufactured_date, expiry_date, depreciation_asset_class, capitalization_cost, and capitalization_date.",
+      },
+    ],
+    [canEditBasic, canEditItems, canEditStage2, canEditStage3, canEditStage4, locations],
+  );
+
+  const copilotFormValues = useMemo(
+    () => ({
+      date,
+      contract_no: contractNo,
+      contract_date: contractDate,
+      contractor_name: contractorName,
+      contractor_address: contractorAddress,
+      indenter,
+      indent_no: indentNo,
+      department,
+      date_of_delivery: dateOfDelivery,
+      delivery_type: deliveryType,
+      remarks,
+      inspected_by: inspectedBy,
+      date_of_inspection: dateOfInspection,
+      finance_check_date: financeCheckDate,
+      consignee_name: consigneeName,
+      consignee_designation: consigneeDesignation,
+      items: items.map(item => ({
+        item_description: item.item_description,
+        item_specifications: item.item_specifications,
+        tendered_quantity: item.tendered_quantity,
+        accepted_quantity: item.accepted_quantity,
+        rejected_quantity: item.rejected_quantity,
+        unit_price: item.unit_price,
+        remarks: item.remarks,
+        stock_register_no: item.stock_register_no,
+        stock_register_page_no: item.stock_register_page_no,
+        stock_entry_date: item.stock_entry_date,
+        central_register_no: item.central_register_no,
+        central_register_page_no: item.central_register_page_no,
+        batch_number: item.batch_number,
+        manufactured_date: item.manufactured_date,
+        expiry_date: item.expiry_date,
+        depreciation_asset_class: item.depreciation_asset_class,
+        capitalization_cost: item.capitalization_cost,
+        capitalization_date: item.capitalization_date,
+      })),
+    }),
+    [
+      consigneeDesignation,
+      consigneeName,
+      contractDate,
+      contractNo,
+      contractorAddress,
+      contractorName,
+      date,
+      dateOfDelivery,
+      dateOfInspection,
+      deliveryType,
+      department,
+      financeCheckDate,
+      indenter,
+      indentNo,
+      inspectedBy,
+      items,
+      remarks,
+    ],
+  );
+
+  const scalarCopilotSetters = useMemo(
+    () =>
+      ({
+        date: setDate,
+        contract_no: setContractNo,
+        contract_date: setContractDate,
+        contractor_name: setContractorName,
+        contractor_address: setContractorAddress,
+        indenter: setIndenter,
+        indent_no: setIndentNo,
+        department: (value: unknown) =>
+          setDepartment(value === "" || value == null ? "" : Number(value) || ""),
+        date_of_delivery: setDateOfDelivery,
+        delivery_type: (value: unknown) =>
+          setDeliveryType(value === "PART" ? "PART" : "FULL"),
+        remarks: setRemarks,
+        inspected_by: setInspectedBy,
+        date_of_inspection: setDateOfInspection,
+        finance_check_date: setFinanceCheckDate,
+        consignee_name: setConsigneeName,
+        consignee_designation: setConsigneeDesignation,
+      }) as Record<string, (value: unknown) => void>,
+    [],
+  );
+
+  const applyCopilotValues = useCallback(
+    (values: Record<string, unknown>) => {
+      const applied: string[] = [];
+      const ignored: string[] = [];
+
+      for (const [field, value] of Object.entries(values)) {
+        const fieldDef = copilotFields.find(candidate => candidate.name === field);
+        if (!fieldDef || fieldDef.readOnly) {
+          ignored.push(field);
+          continue;
+        }
+
+        if (field === "items") {
+          const list = Array.isArray(value) ? value : [];
+          const nextItems = list.map(row => {
+            const incoming = row && typeof row === "object"
+              ? row as Partial<InspectionItemRecord>
+              : {};
+            const base = blankItem();
+            return {
+              ...base,
+              ...incoming,
+              tendered_quantity:
+                typeof incoming.tendered_quantity === "number"
+                  ? incoming.tendered_quantity
+                  : base.tendered_quantity,
+              accepted_quantity:
+                typeof incoming.accepted_quantity === "number"
+                  ? incoming.accepted_quantity
+                  : base.accepted_quantity,
+              rejected_quantity:
+                typeof incoming.rejected_quantity === "number"
+                  ? incoming.rejected_quantity
+                  : base.rejected_quantity,
+              unit_price:
+                incoming.unit_price !== undefined && incoming.unit_price !== null
+                  ? incoming.unit_price
+                  : base.unit_price,
+            };
+          });
+          setItems(nextItems.length > 0 ? nextItems : [blankItem()]);
+          applied.push(field);
+          continue;
+        }
+
+        const setter = scalarCopilotSetters[field];
+        if (!setter) {
+          ignored.push(field);
+          continue;
+        }
+        setter(value ?? "");
+        applied.push(field);
+      }
+
+      return { applied, ignored };
+    },
+    [copilotFields, scalarCopilotSetters],
+  );
+
+  const canCopilotSetValues =
+    open && !isReadOnly && (canEditBasic || canEditItems || canEditStage2 || canEditStage3 || canEditStage4);
+
+  useCopilotForm({
+    formId: `inspection_${mode}`,
+    title: mode === "create" ? "New Inspection Certificate" : "Inspection Certificate",
+    description:
+      "Inspection certificate modal. The assistant can patch visible editable fields and item rows, but backend save still enforces permissions.",
+    mode,
+    active: open,
+    canSetValues: canCopilotSetValues,
+    canValidate: open,
+    canSubmit: open && !isReadOnly && !submitting,
+    fields: copilotFields,
+    values: copilotFormValues,
+    errors: touched ? errors : {},
+    requirements: {
+      setValues: { requiredCapabilities: [{ module: "inspections", level: "manage" }] },
+      validate: { requiredCapabilities: [{ module: "inspections", level: "manage" }] },
+      submit: { requiredCapabilities: [{ module: "inspections", level: "manage" }] },
+    },
+    setValues: applyCopilotValues,
+    validate: () => {
+      setTouched(true);
+      return {
+        ok: Object.keys(errors).length === 0,
+        errors,
+      };
+    },
+    submit: intent => submit(intent === "save_draft"),
+  });
 
   if (!open) return null;
 

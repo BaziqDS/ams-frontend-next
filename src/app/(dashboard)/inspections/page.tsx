@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ListPagination } from "@/components/ListPagination";
 import { MultiSelectFilter } from "@/components/MultiSelectFilter";
@@ -16,6 +23,12 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useClientPagination } from "@/lib/listPagination";
 import { useCapabilities } from "@/contexts/CapabilitiesContext";
+import { useCopilotAction } from "@/hooks/useCopilotAction";
+import { useCopilotReadable } from "@/hooks/useCopilotReadable";
+import {
+  consumePendingOpen,
+  SAME_PAGE_OPEN_EVENT,
+} from "@/lib/copilotPendingAction";
 import {
   API_BASE,
   formatInspectionDate,
@@ -29,7 +42,10 @@ import {
 } from "@/lib/inspectionUi";
 
 const busyActionStyle = { opacity: 0.75, cursor: "wait" } as const;
-const unavailableActionStyle = { opacity: 0.55, cursor: "not-allowed" } as const;
+const unavailableActionStyle = {
+  opacity: 0.55,
+  cursor: "not-allowed",
+} as const;
 const INSPECTIONS_PAGE_SIZE = 12;
 
 function DensityToggle({
@@ -41,8 +57,13 @@ function DensityToggle({
 }) {
   return (
     <div className="seg">
-      {(["compact", "balanced", "comfortable"] as const).map(option => (
-        <button type="button" key={option} className={"seg-btn" + (density === option ? " active" : "")} onClick={() => setDensity(option)}>
+      {(["compact", "balanced", "comfortable"] as const).map((option) => (
+        <button
+          type="button"
+          key={option}
+          className={"seg-btn" + (density === option ? " active" : "")}
+          onClick={() => setDensity(option)}
+        >
           {option.charAt(0).toUpperCase() + option.slice(1)}
         </button>
       ))}
@@ -85,7 +106,8 @@ function InspectionRowActions({
 
     const wrapperRect = wrapper.getBoundingClientRect();
     const card = wrapper.closest(".table-card");
-    const cardRect = card instanceof HTMLElement ? card.getBoundingClientRect() : null;
+    const cardRect =
+      card instanceof HTMLElement ? card.getBoundingClientRect() : null;
     const boundaryTop = cardRect?.top ?? 0;
     const boundaryBottom = cardRect?.bottom ?? window.innerHeight;
     const spaceBelow = boundaryBottom - wrapperRect.bottom;
@@ -114,31 +136,83 @@ function InspectionRowActions({
   }, [open, updateMenuDirection]);
 
   return (
-    <div className="row-actions" onClick={event => event.stopPropagation()}>
+    <div className="row-actions" onClick={(event) => event.stopPropagation()}>
       <div className="row-action-more" ref={moreRef}>
-        <button type="button" className="btn btn-xs btn-ghost" onClick={() => setOpen(prev => !prev)} disabled={busy} style={busy ? busyActionStyle : undefined}>
-          <InspectionIcon d={<><circle cx="12" cy="5" r="1" fill="currentColor" /><circle cx="12" cy="12" r="1" fill="currentColor" /><circle cx="12" cy="19" r="1" fill="currentColor" /></>} size={14} />
+        <button
+          type="button"
+          className="btn btn-xs btn-ghost"
+          onClick={() => setOpen((prev) => !prev)}
+          disabled={busy}
+          style={busy ? busyActionStyle : undefined}
+        >
+          <InspectionIcon
+            d={
+              <>
+                <circle cx="12" cy="5" r="1" fill="currentColor" />
+                <circle cx="12" cy="12" r="1" fill="currentColor" />
+                <circle cx="12" cy="19" r="1" fill="currentColor" />
+              </>
+            }
+            size={14}
+          />
         </button>
         {open && (
-          <div ref={menuRef} className={"row-menu" + (openUp ? " row-menu-up" : "")}>
-            <button type="button" className="row-menu-item" onClick={() => { closeMenu(); onViewPdf(); }}>
+          <div
+            ref={menuRef}
+            className={"row-menu" + (openUp ? " row-menu-up" : "")}
+          >
+            <button
+              type="button"
+              className="row-menu-item"
+              onClick={() => {
+                closeMenu();
+                onViewPdf();
+              }}
+            >
               Open PDF
             </button>
-            {canCancel && !["COMPLETED", "REJECTED", "DRAFT"].includes(inspection.stage) ? (
-              <button type="button" className="row-menu-item danger" onClick={() => { closeMenu(); onCancel(); }} disabled={busy}>
+            {canCancel &&
+            !["COMPLETED", "REJECTED", "DRAFT"].includes(inspection.stage) ? (
+              <button
+                type="button"
+                className="row-menu-item danger"
+                onClick={() => {
+                  closeMenu();
+                  onCancel();
+                }}
+                disabled={busy}
+              >
                 Cancel certificate
               </button>
             ) : (
-              <button type="button" className="row-menu-item" disabled style={unavailableActionStyle}>
+              <button
+                type="button"
+                className="row-menu-item"
+                disabled
+                style={unavailableActionStyle}
+              >
                 Cancel unavailable
               </button>
             )}
             {canDelete ? (
-              <button type="button" className="row-menu-item danger" onClick={() => { closeMenu(); onDelete(); }} disabled={busy}>
+              <button
+                type="button"
+                className="row-menu-item danger"
+                onClick={() => {
+                  closeMenu();
+                  onDelete();
+                }}
+                disabled={busy}
+              >
                 Delete draft
               </button>
             ) : (
-              <button type="button" className="row-menu-item" disabled style={unavailableActionStyle}>
+              <button
+                type="button"
+                className="row-menu-item"
+                disabled
+                style={unavailableActionStyle}
+              >
                 Delete unavailable
               </button>
             )}
@@ -185,31 +259,42 @@ function InspectionRow({
         <div className="user-name mono">{inspection.indent_no || "—"}</div>
       </td>
       <td style={{ textAlign: "center" }}>
-        <div className="user-name mono">{formatInspectionDate(inspection.contract_date)}</div>
+        <div className="user-name mono">
+          {formatInspectionDate(inspection.contract_date)}
+        </div>
       </td>
       <td>
         <div className="user-name">{inspection.contractor_name || "—"}</div>
       </td>
       <td className="inspection-table-location-cell">
         <div className="inspection-table-centered-cell">
-          <div className="inspection-location-name">{inspection.department_name}</div>
+          <div className="inspection-location-name">
+            {inspection.department_name}
+          </div>
         </div>
       </td>
       <td className="inspection-table-status-cell">
         <div className="inspection-table-centered-cell">
-          <InspectionStagePill stage={inspection.stage} status={inspection.status} />
+          <InspectionStagePill
+            stage={inspection.stage}
+            status={inspection.status}
+          />
         </div>
       </td>
       <td className="col-login">
         <div className="login-cell">
           <div>{relTime(inspection.created_at)}</div>
-          <div className="login-cell-sub mono">{formatInspectionDateShort(inspection.created_at)}</div>
+          <div className="login-cell-sub mono">
+            {formatInspectionDateShort(inspection.created_at)}
+          </div>
         </div>
       </td>
       <td className="col-login">
         <div className="login-cell">
           <div>{relTime(inspection.updated_at)}</div>
-          <div className="login-cell-sub mono">{formatInspectionDateShort(inspection.updated_at)}</div>
+          <div className="login-cell-sub mono">
+            {formatInspectionDateShort(inspection.updated_at)}
+          </div>
         </div>
       </td>
       <td className="col-actions">
@@ -231,15 +316,23 @@ export default function InspectionsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
-  const { can, hasInspectionStage, isLoading: capsLoading, isSuperuser } = useCapabilities();
+  const {
+    can,
+    hasInspectionStage,
+    isLoading: capsLoading,
+    isSuperuser,
+  } = useCapabilities();
 
   const canView = can("inspections", "view");
   const canFull = can("inspections", "full");
   const canInitiateInspection = hasInspectionStage("initiate_inspection");
-  const canCancelInspection = isSuperuser || hasInspectionStage("review_finance");
+  const canCancelInspection =
+    isSuperuser || hasInspectionStage("review_finance");
 
   const [inspections, setInspections] = useState<InspectionRecord[]>([]);
-  const [locationOptions, setLocationOptions] = useState<InspectionLocationOption[]>([]);
+  const [locationOptions, setLocationOptions] = useState<
+    InspectionLocationOption[]
+  >([]);
   const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -247,35 +340,139 @@ export default function InspectionsPage() {
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<string>(() => {
     const stageParam = searchParams.get("stage");
-    return stageParam && ["DRAFT", "STOCK_DETAILS", "CENTRAL_REGISTER", "FINANCE_REVIEW", "COMPLETED", "REJECTED"].includes(stageParam)
+    return stageParam &&
+      [
+        "DRAFT",
+        "STOCK_DETAILS",
+        "CENTRAL_REGISTER",
+        "FINANCE_REVIEW",
+        "COMPLETED",
+        "REJECTED",
+      ].includes(stageParam)
       ? stageParam
       : "all";
   });
-  const [density, setDensity] = useState<"compact" | "balanced" | "comfortable">("balanced");
+  const [density, setDensity] = useState<
+    "compact" | "balanced" | "comfortable"
+  >("balanced");
   const [createOpen, setCreateOpen] = useState(false);
-  const [editingInspection, setEditingInspection] = useState<InspectionRecord | null>(null);
-  const [cancelTarget, setCancelTarget] = useState<InspectionRecord | null>(null);
+  const [editingInspection, setEditingInspection] =
+    useState<InspectionRecord | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<InspectionRecord | null>(
+    null,
+  );
   const [busyId, setBusyId] = useState<number | null>(null);
 
-  const loadInspections = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
-    if (showLoading) setLoading(true);
-    setFetchError(null);
-    try {
-      const locationQuery = selectedLocationIds.map(id => `location=${encodeURIComponent(id)}`).join("&");
-      const [data, locationsData] = await Promise.all([
-        apiFetch<InspectionRecord[] | { count: number; next: string | null; previous: string | null; results: InspectionRecord[] }>(`/api/inventory/inspections/${locationQuery ? `?${locationQuery}` : ""}`),
-        apiFetch<InspectionLocationOption[] | { count: number; next: string | null; previous: string | null; results: InspectionLocationOption[] }>("/api/inventory/locations/?page_size=500"),
-      ]);
-      setInspections(normalizeInspectionList(data));
-      setLocationOptions((Array.isArray(locationsData) ? locationsData : locationsData.results).filter(location => location.is_standalone));
-      return true;
-    } catch (err) {
-      setFetchError(err instanceof Error ? err.message : "Failed to load inspections");
-      return false;
-    } finally {
-      if (showLoading) setLoading(false);
+  // Expose "open create inspection form" as an agent action so the assistant
+  // can open the modal from anywhere on this page (mirrors what
+  // CategoryListView does with open_create_category_form).
+  useCopilotAction({
+    name: "open_create_inspection_form",
+    description:
+      "Open the New Inspection Certificate modal on the Inspections page. " +
+      "Prefer open_form for cross-page opens; use set_form_values after this action once fresh page context shows the active form.",
+    parameters: {},
+    allowed: canInitiateInspection,
+    requiredCapabilities: [{ module: "inspections", level: "manage" }],
+    handler: () => {
+      if (!canInitiateInspection) {
+        return {
+          ok: false,
+          reason:
+            "You don't have permission to initiate inspections (inventory.initiate_inspection).",
+        };
+      }
+      setEditingInspection(null);
+      setCreateOpen(true);
+      return { ok: true };
+    },
+  });
+
+  // If the agent called `open_form("inspection_create")` from another page,
+  // the navigation drops a token in sessionStorage. Consume it here on mount
+  // and trigger the modal exactly once.
+  useEffect(() => {
+    if (consumePendingOpen("inspection_create") && canInitiateInspection) {
+      setEditingInspection(null);
+      setCreateOpen(true);
     }
-  }, [selectedLocationIds]);
+  }, [canInitiateInspection]);
+
+  // Same-page calls: agent dispatches a window event while we're already
+  // on /inspections. Trigger the modal in response.
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ formId?: string }>).detail;
+      if (detail?.formId !== "inspection_create") return;
+      if (!canInitiateInspection) return;
+      setEditingInspection(null);
+      setCreateOpen(true);
+    };
+    window.addEventListener(SAME_PAGE_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(SAME_PAGE_OPEN_EVENT, onOpen);
+  }, [canInitiateInspection]);
+
+  useCopilotAction({
+    name: "close_inspection_form",
+    description:
+      "Close the inspection create/edit modal without submitting. Use only when the user asks to cancel.",
+    parameters: {},
+    handler: () => {
+      setCreateOpen(false);
+      setEditingInspection(null);
+      return { ok: true };
+    },
+  });
+
+  const loadInspections = useCallback(
+    async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
+      if (showLoading) setLoading(true);
+      setFetchError(null);
+      try {
+        const locationQuery = selectedLocationIds
+          .map((id) => `location=${encodeURIComponent(id)}`)
+          .join("&");
+        const [data, locationsData] = await Promise.all([
+          apiFetch<
+            | InspectionRecord[]
+            | {
+                count: number;
+                next: string | null;
+                previous: string | null;
+                results: InspectionRecord[];
+              }
+          >(
+            `/api/inventory/inspections/${locationQuery ? `?${locationQuery}` : ""}`,
+          ),
+          apiFetch<
+            | InspectionLocationOption[]
+            | {
+                count: number;
+                next: string | null;
+                previous: string | null;
+                results: InspectionLocationOption[];
+              }
+          >("/api/inventory/locations/?page_size=500"),
+        ]);
+        setInspections(normalizeInspectionList(data));
+        setLocationOptions(
+          (Array.isArray(locationsData)
+            ? locationsData
+            : locationsData.results
+          ).filter((location) => location.is_standalone),
+        );
+        return true;
+      } catch (err) {
+        setFetchError(
+          err instanceof Error ? err.message : "Failed to load inspections",
+        );
+        return false;
+      } finally {
+        if (showLoading) setLoading(false);
+      }
+    },
+    [selectedLocationIds],
+  );
 
   useEffect(() => {
     if (capsLoading) return;
@@ -288,7 +485,17 @@ export default function InspectionsPage() {
 
   useEffect(() => {
     const stageParam = searchParams.get("stage");
-    if (stageParam && ["DRAFT", "STOCK_DETAILS", "CENTRAL_REGISTER", "FINANCE_REVIEW", "COMPLETED", "REJECTED"].includes(stageParam)) {
+    if (
+      stageParam &&
+      [
+        "DRAFT",
+        "STOCK_DETAILS",
+        "CENTRAL_REGISTER",
+        "FINANCE_REVIEW",
+        "COMPLETED",
+        "REJECTED",
+      ].includes(stageParam)
+    ) {
       setStageFilter(stageParam);
       return;
     }
@@ -300,12 +507,21 @@ export default function InspectionsPage() {
   }, [loadInspections]);
 
   const handleDelete = useCallback(async (inspection: InspectionRecord) => {
-    if (!window.confirm(`Delete inspection ${inspection.contract_no}? This cannot be undone.`)) return;
+    if (
+      !window.confirm(
+        `Delete inspection ${inspection.contract_no}? This cannot be undone.`,
+      )
+    )
+      return;
     setBusyId(inspection.id);
     setActionError(null);
     try {
-      await apiFetch(`/api/inventory/inspections/${inspection.id}/`, { method: "DELETE" });
-      setInspections(prev => prev.filter(candidate => candidate.id !== inspection.id));
+      await apiFetch(`/api/inventory/inspections/${inspection.id}/`, {
+        method: "DELETE",
+      });
+      setInspections((prev) =>
+        prev.filter((candidate) => candidate.id !== inspection.id),
+      );
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Delete failed");
     } finally {
@@ -313,36 +529,50 @@ export default function InspectionsPage() {
     }
   }, []);
 
-  const handleCancelConfirm = useCallback(async (reason: string) => {
-    if (!cancelTarget) return;
-    setBusyId(cancelTarget.id);
-    setActionError(null);
-    try {
-      await apiFetch(`/api/inventory/inspections/${cancelTarget.id}/cancel/`, {
-        method: "POST",
-        body: JSON.stringify({ reason }),
-      });
-      await loadInspections({ showLoading: false });
-      setCancelTarget(null);
-    } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : "Cancellation failed");
-    } finally {
-      setBusyId(null);
-    }
-  }, [cancelTarget, loadInspections]);
+  const handleCancelConfirm = useCallback(
+    async (reason: string) => {
+      if (!cancelTarget) return;
+      setBusyId(cancelTarget.id);
+      setActionError(null);
+      try {
+        await apiFetch(
+          `/api/inventory/inspections/${cancelTarget.id}/cancel/`,
+          {
+            method: "POST",
+            body: JSON.stringify({ reason }),
+          },
+        );
+        await loadInspections({ showLoading: false });
+        setCancelTarget(null);
+      } catch (err) {
+        setActionError(
+          err instanceof ApiError ? err.message : "Cancellation failed",
+        );
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [cancelTarget, loadInspections],
+  );
 
   const canFilterByLocation = useMemo(() => {
     if (user?.is_superuser) return true;
-    const assigned = new Set((user?.assigned_locations ?? []).map(id => Number(id)));
-    return locationOptions.some(location => location.hierarchy_level === 0 && assigned.has(location.id));
+    const assigned = new Set(
+      (user?.assigned_locations ?? []).map((id) => Number(id)),
+    );
+    return locationOptions.some(
+      (location) => location.hierarchy_level === 0 && assigned.has(location.id),
+    );
   }, [locationOptions, user?.assigned_locations, user?.is_superuser]);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return inspections.filter(inspection => {
-      if (stageFilter !== "all" && inspection.stage !== stageFilter) return false;
+    return inspections.filter((inspection) => {
+      if (stageFilter !== "all" && inspection.stage !== stageFilter)
+        return false;
       if (!query) return true;
-      const haystack = `${inspection.contract_no} ${inspection.indent_no} ${inspection.contractor_name} ${inspection.department_name}`.toLowerCase();
+      const haystack =
+        `${inspection.contract_no} ${inspection.indent_no} ${inspection.contractor_name} ${inspection.department_name}`.toLowerCase();
       return haystack.includes(query);
     });
   }, [inspections, search, stageFilter]);
@@ -354,10 +584,61 @@ export default function InspectionsPage() {
     pageStart,
     pageEnd,
     setPage,
-  } = useClientPagination(filtered, INSPECTIONS_PAGE_SIZE, [search, stageFilter]);
+  } = useClientPagination(filtered, INSPECTIONS_PAGE_SIZE, [
+    search,
+    stageFilter,
+  ]);
+
+  // Expose the inspections currently visible to the user so the agent can
+  // resolve references like "the first one", "the pending ones", or
+  // "CTR-2026-001" without firing a SQL query.
+  const inspectionsListReadable = useMemo(() => {
+    return {
+      route: "/inspections",
+      total: inspections.length,
+      filtered_total: filtered.length,
+      filters: {
+        search: search || null,
+        stage: stageFilter,
+        location_ids: selectedLocationIds,
+      },
+      pagination: { page, page_size: INSPECTIONS_PAGE_SIZE, total_pages: totalPages },
+      // Rows currently RENDERED on screen (paged). Use this for "the first",
+      // "the top one", "this row" references.
+      visible_rows: pagedInspections.map((i) => ({
+        id: i.id,
+        contract_no: i.contract_no,
+        indent_no: i.indent_no,
+        contractor_name: i.contractor_name,
+        department_name: i.department_name,
+        stage: i.stage,
+        status: i.status ?? null,
+        date_of_inspection: i.date_of_inspection ?? null,
+        detail_route: `/inspections/${i.id}`,
+      })),
+    };
+  }, [
+    inspections.length,
+    filtered.length,
+    pagedInspections,
+    search,
+    stageFilter,
+    selectedLocationIds,
+    page,
+    totalPages,
+  ]);
+
+  useCopilotReadable({
+    description:
+      "Inspections currently displayed on the /inspections list page (after search/stage/location filters and pagination). Use 'visible_rows' to resolve references like 'the first inspection', 'CTR-2026-001', or 'the pending ones' without a SQL lookup. Each row's detail_route is the page to navigate to for stage-2/3/4 work on that record.",
+    value: inspectionsListReadable,
+  });
 
   const openPdf = (inspection: InspectionRecord) => {
-    window.open(`${API_BASE}/api/inventory/inspections/${inspection.id}/view_pdf/`, "_blank");
+    window.open(
+      `${API_BASE}/api/inventory/inspections/${inspection.id}/view_pdf/`,
+      "_blank",
+    );
   };
 
   return (
@@ -383,12 +664,34 @@ export default function InspectionsPage() {
 
       <div className="page">
         {fetchError && (
-          <div style={{ padding: "12px 16px", background: "var(--danger-weak)", border: "1px solid color-mix(in oklch, var(--danger) 30%, transparent)", borderRadius: "var(--radius)", color: "var(--danger)", fontSize: 13, marginBottom: 16 }}>
+          <div
+            style={{
+              padding: "12px 16px",
+              background: "var(--danger-weak)",
+              border:
+                "1px solid color-mix(in oklch, var(--danger) 30%, transparent)",
+              borderRadius: "var(--radius)",
+              color: "var(--danger)",
+              fontSize: 13,
+              marginBottom: 16,
+            }}
+          >
             {fetchError}
           </div>
         )}
         {actionError && (
-          <div style={{ padding: "12px 16px", background: "var(--danger-weak)", border: "1px solid color-mix(in oklch, var(--danger) 30%, transparent)", borderRadius: "var(--radius)", color: "var(--danger)", fontSize: 13, marginBottom: 16 }}>
+          <div
+            style={{
+              padding: "12px 16px",
+              background: "var(--danger-weak)",
+              border:
+                "1px solid color-mix(in oklch, var(--danger) 30%, transparent)",
+              borderRadius: "var(--radius)",
+              color: "var(--danger)",
+              fontSize: 13,
+              marginBottom: 16,
+            }}
+          >
             {actionError}
           </div>
         )}
@@ -397,16 +700,40 @@ export default function InspectionsPage() {
           <div className="page-title-group">
             <div className="eyebrow">Operations</div>
             <h1>Inspection Certificates</h1>
-            <div className="page-sub">Track each certificate from draft to completion, then open the detail page to continue the staged workflow and review the full register trail.</div>
+            <div className="page-sub">
+              Track each certificate from draft to completion, then open the
+              detail page to continue the staged workflow and review the full
+              register trail.
+            </div>
           </div>
         </div>
 
         <div className="filter-bar">
           <div className="filter-bar-left">
             <div className="search-input">
-              <InspectionIcon d={<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>} size={14} />
-              <input placeholder="Search by contract, indent, contractor or location…" value={search} onChange={event => setSearch(event.target.value)} />
-              {search && <button type="button" className="clear-search" onClick={() => setSearch("")}>×</button>}
+              <InspectionIcon
+                d={
+                  <>
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="M21 21l-4.3-4.3" />
+                  </>
+                }
+                size={14}
+              />
+              <input
+                placeholder="Search by contract, indent, contractor or location…"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+              {search && (
+                <button
+                  type="button"
+                  className="clear-search"
+                  onClick={() => setSearch("")}
+                >
+                  ×
+                </button>
+              )}
             </div>
             <div className="filter-select-group">
               <div className="chip-filter-label">Stage</div>
@@ -418,7 +745,22 @@ export default function InspectionsPage() {
                   ariaLabel="Filter inspection certificates by stage"
                   options={[
                     { value: "all", label: "All stages" },
-                    ...(["DRAFT", "STOCK_DETAILS", "CENTRAL_REGISTER", "FINANCE_REVIEW", "COMPLETED", "REJECTED"] as InspectionStage[]).map(stage => ({ value: stage, label: stage === "REJECTED" ? "Rejected / Cancelled" : INSPECTION_STAGE_LABELS[stage] })),
+                    ...(
+                      [
+                        "DRAFT",
+                        "STOCK_DETAILS",
+                        "CENTRAL_REGISTER",
+                        "FINANCE_REVIEW",
+                        "COMPLETED",
+                        "REJECTED",
+                      ] as InspectionStage[]
+                    ).map((stage) => ({
+                      value: stage,
+                      label:
+                        stage === "REJECTED"
+                          ? "Rejected / Cancelled"
+                          : INSPECTION_STAGE_LABELS[stage],
+                    })),
                   ]}
                 />
               </div>
@@ -427,13 +769,18 @@ export default function InspectionsPage() {
               <div className="filter-select-group">
                 <div className="chip-filter-label">Location</div>
                 <MultiSelectFilter
-                  options={locationOptions.map(location => ({
+                  options={locationOptions.map((location) => ({
                     id: String(location.id),
                     label: location.name,
-                    meta: location.hierarchy_level === 0 ? "Root" : "Standalone",
+                    meta:
+                      location.hierarchy_level === 0 ? "Root" : "Standalone",
                   }))}
                   value={selectedLocationIds}
-                  onChange={tokens => setSelectedLocationIds(tokens.filter(token => token !== "all"))}
+                  onChange={(tokens) =>
+                    setSelectedLocationIds(
+                      tokens.filter((token) => token !== "all"),
+                    )
+                  }
                   placeholder="All locations"
                   searchPlaceholder="Search locations..."
                   minWidth={280}
@@ -445,7 +792,11 @@ export default function InspectionsPage() {
           <div className="filter-bar-right">
             <DensityToggle density={density} setDensity={setDensity} />
             {canInitiateInspection && (
-              <button type="button" className="btn btn-sm btn-primary" onClick={() => setCreateOpen(true)}>
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                onClick={() => setCreateOpen(true)}
+              >
                 <InspectionIcon d="M12 5v14M5 12h14" size={14} />
                 New Certificate
               </button>
@@ -484,11 +835,19 @@ export default function InspectionsPage() {
                 {loading ? (
                   <tr>
                     <td colSpan={9}>
-                      <div style={{ padding: 32, textAlign: "center", color: "var(--muted)" }}>Loading inspections…</div>
+                      <div
+                        style={{
+                          padding: 32,
+                          textAlign: "center",
+                          color: "var(--muted)",
+                        }}
+                      >
+                        Loading inspections…
+                      </div>
                     </td>
                   </tr>
                 ) : filtered.length > 0 ? (
-                  pagedInspections.map(inspection => (
+                  pagedInspections.map((inspection) => (
                     <InspectionRow
                       key={inspection.id}
                       inspection={inspection}
@@ -503,7 +862,15 @@ export default function InspectionsPage() {
                 ) : (
                   <tr>
                     <td colSpan={9}>
-                      <div style={{ padding: 32, textAlign: "center", color: "var(--muted)" }}>No inspection certificates match the current filters.</div>
+                      <div
+                        style={{
+                          padding: 32,
+                          textAlign: "center",
+                          color: "var(--muted)",
+                        }}
+                      >
+                        No inspection certificates match the current filters.
+                      </div>
                     </td>
                   </tr>
                 )}
@@ -511,11 +878,17 @@ export default function InspectionsPage() {
             </table>
           </div>
           <ListPagination
-            summary={filtered.length === 0 ? "Showing 0 inspections" : `Showing ${pageStart}-${pageEnd} of ${filtered.length} inspections`}
+            summary={
+              filtered.length === 0
+                ? "Showing 0 inspections"
+                : `Showing ${pageStart}-${pageEnd} of ${filtered.length} inspections`
+            }
             page={page}
             totalPages={totalPages}
-            onPrev={() => setPage(current => Math.max(1, current - 1))}
-            onNext={() => setPage(current => Math.min(totalPages, current + 1))}
+            onPrev={() => setPage((current) => Math.max(1, current - 1))}
+            onNext={() =>
+              setPage((current) => Math.min(totalPages, current + 1))
+            }
           />
         </div>
       </div>

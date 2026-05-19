@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import "@openuidev/react-ui/components.css";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 

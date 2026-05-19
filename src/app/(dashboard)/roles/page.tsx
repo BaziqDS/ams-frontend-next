@@ -36,7 +36,7 @@ const INSPECTION_STAGE_LABELS: Record<string, string> = {
   initiate_inspection: "Stage 1 — Initiate",
   fill_stock_details: "Stage 2 — Stock Details",
   fill_central_register: "Stage 3 — Central Register",
-  review_finance: "Stage 4 — Finance Review",
+  review_finance: "Stage 4 — Finance Review (University-wide)",
 };
 
 interface Role {
