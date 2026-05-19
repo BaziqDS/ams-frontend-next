@@ -1,5 +1,4 @@
-import { redirect } from "next/navigation";
-import { buildItemsWorkspaceHref } from "@/lib/itemsWorkspaceState";
+import { ItemInstancesView } from "@/components/ItemModuleViews";
 
 export default async function ItemInstancesPage({
   params,
@@ -7,5 +6,5 @@ export default async function ItemInstancesPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  redirect(buildItemsWorkspaceHref({ itemId: id, tab: "instances" }));
+  return <ItemInstancesView itemId={id} />;
 }

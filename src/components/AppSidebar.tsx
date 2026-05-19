@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import Image from "next/image";
@@ -84,10 +84,23 @@ export function AppSidebar() {
   const router = useRouter();
   const { logout } = useAuth();
   const { can } = useCapabilities();
-  const { getModuleCount } = useNotifications();
+  const { getModuleCount, markModuleAlertsViewed } = useNotifications();
   const [collapsed, setCollapsed] = useState(false);
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
+  const activeModule = useMemo(() => {
+    for (const group of NAV_ITEMS) {
+      const item = group.items.find(candidate => candidate.module && isActive(candidate.href));
+      if (item?.module) return item.module;
+    }
+    return null;
+  }, [pathname]);
+
+  useEffect(() => {
+    if (activeModule) {
+      markModuleAlertsViewed(activeModule);
+    }
+  }, [activeModule, markModuleAlertsViewed]);
 
   const isAllowed = (item: NavItem) => {
     if (!item.module) return true;

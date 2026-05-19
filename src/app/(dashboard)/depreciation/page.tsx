@@ -759,17 +759,31 @@ export default function DepreciationPage() {
 
         <div className="filter-bar">
           <div className="filter-bar-left">
-            <div className="chip-filter">
+            <div className="seg">
               {TABS.map(tab => (
-                <button key={tab.key} type="button" className={"chip-filter-btn" + (activeTab === tab.key ? " active" : "")} onClick={() => setActiveTab(tab.key)}>
+                <button key={tab.key} type="button" className={"seg-btn" + (activeTab === tab.key ? " active" : "")} onClick={() => setActiveTab(tab.key)}>
                   {tab.label}
                 </button>
               ))}
             </div>
+            {activeTab === "setup" ? (
+              <div className="table-count"><span className="mono">{depreciationSetupRows.length}</span><span>categories</span></div>
+            ) : null}
           </div>
           <div className="filter-bar-right">
             <DensityToggle density={density} setDensity={setDensity} />
-            <span className="pill pill-neutral">{canFull ? "Full access" : canManage ? "Manage access" : "View access"}</span>
+            {activeTab === "setup" ? (
+              <>
+                <ViewModeToggle value={setupViewMode} onChange={setSetupViewMode} />
+                {canViewCategories ? <Link href="/categories" className="btn btn-sm btn-ghost">Open categories</Link> : null}
+                {canManage ? (
+                  <button type="button" className="btn btn-sm btn-primary" onClick={() => openRateModal()}>
+                    <Icon d="M12 5v14M5 12h14" size={14} />
+                    Add rate
+                  </button>
+                ) : null}
+              </>
+            ) : null}
           </div>
         </div>
 
@@ -974,25 +988,6 @@ export default function DepreciationPage() {
 
         {activeTab === "setup" ? (
           <div style={{ display: "grid", gap: 16 }}>
-            <div className="filter-bar">
-              <div className="filter-bar-left">
-                <div className="table-card-head-left">
-                  <div className="eyebrow">Depreciation Setup</div>
-                  <div className="table-count"><span className="mono">{depreciationSetupRows.length}</span><span>categories</span></div>
-                </div>
-              </div>
-              <div className="filter-bar-right">
-                <ViewModeToggle value={setupViewMode} onChange={setSetupViewMode} />
-                {canViewCategories ? <Link href="/categories" className="btn btn-sm btn-ghost">Open categories</Link> : null}
-                {canManage ? (
-                  <button type="button" className="btn btn-sm btn-primary" onClick={() => openRateModal()}>
-                    <Icon d="M12 5v14M5 12h14" size={14} />
-                    Add rate
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
             {setupViewMode === "grid" ? (
               <>
                 {depreciationSetupRows.length === 0 ? (
