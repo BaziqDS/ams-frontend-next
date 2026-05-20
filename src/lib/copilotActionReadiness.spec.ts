@@ -40,6 +40,26 @@ describe("copilot action readiness", () => {
     });
   });
 
+  it("does not treat an empty loading list as ready", () => {
+    expect(
+      getCopilotActionReadiness("navigate_to_route", { path: "/inspections" }, [
+        runtime("/inspections"),
+        {
+          id: "inspection-list",
+          value: {
+            route: "/inspections",
+            page_kind: "list",
+            loading: true,
+            visible_rows: [],
+          },
+        },
+      ]),
+    ).toMatchObject({
+      ready: false,
+      requirement: 'route "/inspections" with loaded visible_rows',
+    });
+  });
+
   it("treats detail route navigation as ready once the runtime route matches", () => {
     expect(
       getCopilotActionReadiness(

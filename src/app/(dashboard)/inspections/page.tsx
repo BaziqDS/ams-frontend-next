@@ -630,6 +630,10 @@ export default function InspectionsPage() {
       filter_by_stage: true,
       filter_by_location: canFilterByLocation,
     },
+    extra: {
+      loading: loading || capsLoading,
+      load_state: loading || capsLoading ? "loading" : "loaded",
+    },
   }), [
     inspections.length,
     filtered.length,
@@ -641,6 +645,8 @@ export default function InspectionsPage() {
     canFilterByLocation,
     canFull,
     canInitiateInspection,
+    capsLoading,
+    loading,
     page,
     totalPages,
   ]);

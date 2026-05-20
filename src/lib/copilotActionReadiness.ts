@@ -70,7 +70,7 @@ function getRuntimeRoute(readables: CopilotReadableLike[]) {
   return null;
 }
 
-function getVisibleRows(readables: CopilotReadableLike[], route?: string | null) {
+function getListReadable(readables: CopilotReadableLike[], route?: string | null) {
   const normalizedRoute = route ? normalizePath(route) : null;
   for (const readable of readables) {
     if (!isRecord(readable.value)) continue;
@@ -82,10 +82,22 @@ function getVisibleRows(readables: CopilotReadableLike[], route?: string | null)
       continue;
     }
     if (Array.isArray(readable.value.visible_rows)) {
-      return readable.value.visible_rows;
+      return readable.value;
     }
   }
   return null;
+}
+
+function isListLoading(value: Record<string, unknown>) {
+  return (
+    value.loading === true ||
+    value.is_loading === true ||
+    value.isLoading === true ||
+    value.ready === false ||
+    value.loaded === false ||
+    value.load_state === "loading" ||
+    value.loading_state === "loading"
+  );
 }
 
 function getActiveForm(
@@ -131,17 +143,30 @@ export function getCopilotActionReadiness(
     }
 
     if (LISTING_ROUTES.has(normalizedTarget)) {
-      const visibleRows = getVisibleRows(readables, normalizedTarget);
-      if (!visibleRows) {
+      const listReadable = getListReadable(readables, normalizedTarget);
+      if (!listReadable) {
         return {
           ready: false,
           requirement: `route "${normalizedTarget}" with visible_rows`,
           summary: { route, visibleRowsCount: null },
         };
       }
+      if (isListLoading(listReadable)) {
+        return {
+          ready: false,
+          requirement: `route "${normalizedTarget}" with loaded visible_rows`,
+          summary: { route, visibleRowsCount: null, loading: true },
+        };
+      }
+      const visibleRows = listReadable.visible_rows;
       return {
         ready: true,
-        summary: { route, visibleRowsCount: visibleRows.length },
+        summary: {
+          route,
+          visibleRowsCount: Array.isArray(visibleRows)
+            ? visibleRows.length
+            : null,
+        },
       };
     }
 
