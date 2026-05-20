@@ -91,6 +91,27 @@ describe("copilot action readiness", () => {
     });
   });
 
+  it("recognizes active forms nested inside route-scoped readable values", () => {
+    expect(
+      getCopilotActionReadiness("open_form", { form_id: "category_create" }, [
+        runtime("/categories"),
+        {
+          id: "category-form-runtime",
+          value: {
+            route: "/categories",
+            activeForm: {
+              formId: "category-create",
+              fields: [{ name: "name" }],
+            },
+          },
+        },
+      ]),
+    ).toMatchObject({
+      ready: true,
+      summary: { activeFormId: "category-create", writableFieldsCount: 1 },
+    });
+  });
+
   it("only gates page-changing and form-opening actions", () => {
     expect(actionNeedsReadyPageContext("set_form_values")).toBe(false);
     expect(actionNeedsReadyPageContext("navigate_to_route")).toBe(true);

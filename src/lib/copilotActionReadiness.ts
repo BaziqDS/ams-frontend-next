@@ -110,12 +110,15 @@ function getActiveForm(
 
   for (const readable of readables) {
     if (!isRecord(readable.value)) continue;
-    const formId = readable.value.formId ?? readable.value.form_id;
+    const value = isRecord(readable.value.activeForm)
+      ? readable.value.activeForm
+      : readable.value;
+    const formId = value.formId ?? value.form_id;
     if (normalizedRequested && typeof formId === "string") {
       if (normalizeFormId(formId) !== normalizedRequested) continue;
     }
     if (normalizedRequested && typeof formId !== "string") continue;
-    const fields = readable.value.fields;
+    const fields = value.fields;
     if (Array.isArray(fields) && fields.length > 0) {
       return { formId, fields };
     }

@@ -393,6 +393,8 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
       parent_category: parentCategory
         ? { id: parentCategory.id, name: parentCategory.name, code: parentCategory.code }
         : null,
+      loading: isLoading || capsLoading,
+      load_state: isLoading || capsLoading ? "loading" : "loaded",
     },
   }), [
     variant,
@@ -406,6 +408,8 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
     statusFilter,
     canManageCategories,
     canDeleteCategories,
+    capsLoading,
+    isLoading,
     page,
     totalPages,
   ]);
