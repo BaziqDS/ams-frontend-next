@@ -355,6 +355,7 @@ export function InspectionModal({
 
   const errors: Record<string, string> = {};
   if (canEditBasic) {
+    if (!date) errors.date = "Required";
     if (!contractNo.trim()) errors.contract_no = "Required";
     if (!contractorName.trim()) errors.contractor_name = "Required";
     if (!indenter.trim()) errors.indenter = "Required";

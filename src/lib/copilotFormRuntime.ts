@@ -40,6 +40,11 @@ export type CopilotSubmitFailure = {
 
 export type CopilotSubmitResult = CopilotSubmitSuccess | CopilotSubmitFailure;
 
+export type CopilotPatchField = {
+  name: string;
+  type?: string;
+};
+
 function stableSerialize(value: unknown): string {
   if (value === undefined) return "__undefined__";
   try {
@@ -57,6 +62,98 @@ function stableSerialize(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function formatDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseMonthName(value: string) {
+  const months: Record<string, number> = {
+    jan: 1,
+    january: 1,
+    feb: 2,
+    february: 2,
+    mar: 3,
+    march: 3,
+    apr: 4,
+    april: 4,
+    may: 5,
+    jun: 6,
+    june: 6,
+    jul: 7,
+    july: 7,
+    aug: 8,
+    august: 8,
+    sep: 9,
+    sept: 9,
+    september: 9,
+    oct: 10,
+    october: 10,
+    nov: 11,
+    november: 11,
+    dec: 12,
+    december: 12,
+  };
+  return months[value.toLowerCase()] ?? null;
+}
+
+function normalizeDateValue(value: unknown, now: Date) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return formatDateInputValue(value);
+  }
+  if (typeof value !== "string") return value;
+
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const lower = trimmed.toLowerCase();
+  const relative = new Date(now);
+  if (lower === "today") return formatDateInputValue(relative);
+  if (lower === "tomorrow") {
+    relative.setDate(relative.getDate() + 1);
+    return formatDateInputValue(relative);
+  }
+  if (lower === "yesterday") {
+    relative.setDate(relative.getDate() - 1);
+    return formatDateInputValue(relative);
+  }
+
+  const isoMatch = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2].padStart(2, "0")}-${isoMatch[3].padStart(2, "0")}`;
+  }
+
+  const monthNameMatch = trimmed.match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/);
+  if (monthNameMatch) {
+    const month = parseMonthName(monthNameMatch[2]);
+    if (month) {
+      return `${monthNameMatch[3]}-${String(month).padStart(2, "0")}-${monthNameMatch[1].padStart(2, "0")}`;
+    }
+  }
+
+  const dayFirstMatch = trimmed.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (dayFirstMatch) {
+    return `${dayFirstMatch[3]}-${dayFirstMatch[2].padStart(2, "0")}-${dayFirstMatch[1].padStart(2, "0")}`;
+  }
+
+  return value;
+}
+
+export function normalizeCopilotFormPatchValues(
+  fields: CopilotPatchField[],
+  values: Record<string, unknown>,
+  now = new Date(),
+) {
+  const fieldTypes = new Map(fields.map(field => [field.name, field.type]));
+  return Object.fromEntries(
+    Object.entries(values).map(([field, value]) => [
+      field,
+      fieldTypes.get(field) === "date" ? normalizeDateValue(value, now) : value,
+    ]),
+  );
 }
 
 function sortedUnique(values: Iterable<string>): string[] {

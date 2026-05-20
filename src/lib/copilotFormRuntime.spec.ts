@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createCopilotFormRuntimeState,
+  normalizeCopilotFormPatchValues,
   normalizeCopilotSubmitResult,
   updateCopilotFormRuntimeState,
 } from "./copilotFormRuntime";
@@ -76,5 +77,39 @@ describe("normalizeCopilotSubmitResult", () => {
       ok: false,
       errorType: "unverified_submit_result",
     });
+  });
+});
+
+describe("normalizeCopilotFormPatchValues", () => {
+  it("normalizes date fields to browser date input format", () => {
+    expect(
+      normalizeCopilotFormPatchValues(
+        [
+          { name: "contract_date", type: "date" },
+          { name: "date_of_inspection", type: "date" },
+          { name: "name", type: "string" },
+        ],
+        {
+          contract_date: "20 May 2026",
+          date_of_inspection: "2026/05/21",
+          name: "Inspection",
+        },
+        new Date("2026-05-20T10:00:00Z"),
+      ),
+    ).toEqual({
+      contract_date: "2026-05-20",
+      date_of_inspection: "2026-05-21",
+      name: "Inspection",
+    });
+  });
+
+  it("normalizes relative date words for date fields", () => {
+    expect(
+      normalizeCopilotFormPatchValues(
+        [{ name: "date", type: "date" }],
+        { date: "tomorrow" },
+        new Date("2026-05-20T10:00:00Z"),
+      ),
+    ).toEqual({ date: "2026-05-21" });
   });
 });

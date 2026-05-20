@@ -8,6 +8,7 @@ import { useCopilotReadable } from "@/hooks/useCopilotReadable";
 import type { CapabilityLevel } from "@/contexts/CapabilitiesContext";
 import {
   createCopilotFormRuntimeState,
+  normalizeCopilotFormPatchValues,
   normalizeCopilotSubmitError,
   normalizeCopilotSubmitResult,
   updateCopilotFormRuntimeState,
@@ -257,7 +258,10 @@ export function useCopilotForm(config: CopilotFormConfig) {
         return { ok: false, reason: "This form is read-only right now." };
       }
 
-      const incoming = values && typeof values === "object" ? values : {};
+      const incoming = normalizeCopilotFormPatchValues(
+        config.fields,
+        values && typeof values === "object" ? values : {},
+      );
       const accepted: Record<string, unknown> = {};
       const unknown: string[] = [];
 
