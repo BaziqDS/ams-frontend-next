@@ -1177,6 +1177,7 @@ export function ItemListView() {
       create_item: canManageItems,
       filter_items: true,
     },
+    loading: isLoading || capsLoading,
   }), [
     items.length,
     filteredItems.length,
@@ -1187,6 +1188,8 @@ export function ItemListView() {
     getItemOpenHref,
     canManageItems,
     canDeleteItems,
+    capsLoading,
+    isLoading,
     page,
     totalPages,
   ]);

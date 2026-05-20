@@ -18,6 +18,8 @@ export type CopilotListContext = {
   route: string;
   page_kind: "list";
   entity: string;
+  loading: boolean;
+  load_state: "loading" | "loaded" | "error";
   total: number;
   filtered_total: number;
   filters: CopilotFilters;
@@ -54,6 +56,8 @@ type BuildListContextArgs = {
   };
   rows: CopilotVisibleRow[];
   actions?: CopilotActions;
+  loading?: boolean;
+  loadState?: "loading" | "loaded" | "error";
   extra?: Record<string, unknown>;
 };
 
@@ -123,12 +127,17 @@ export function buildCopilotListContext({
   pagination,
   rows,
   actions,
+  loading = false,
+  loadState,
   extra,
 }: BuildListContextArgs): CopilotListContext {
+  const resolvedLoadState = loadState ?? (loading ? "loading" : "loaded");
   return {
     route,
     page_kind: "list",
     entity,
+    loading,
+    load_state: resolvedLoadState,
     total,
     filtered_total: filteredTotal,
     filters,

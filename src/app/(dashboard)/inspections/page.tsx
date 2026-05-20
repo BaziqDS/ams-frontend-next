@@ -630,10 +630,7 @@ export default function InspectionsPage() {
       filter_by_stage: true,
       filter_by_location: canFilterByLocation,
     },
-    extra: {
-      loading: loading || capsLoading,
-      load_state: loading || capsLoading ? "loading" : "loaded",
-    },
+    loading: loading || capsLoading,
   }), [
     inspections.length,
     filtered.length,

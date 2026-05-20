@@ -11,6 +11,7 @@ import { apiFetch, type Page } from "@/lib/api";
 import { LOCATION_TYPE_LABELS, locationTypeLabel, relTime, type LocationRecord } from "@/lib/userUiShared";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
 import { useCopilotReadable } from "@/hooks/useCopilotReadable";
+import { buildCopilotListContext } from "@/lib/copilotPageContext";
 import { useClientPagination } from "@/lib/listPagination";
 
 const LOCATIONS_PAGE_SIZE = 15;
@@ -371,21 +372,18 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
   // displayed so the agent can resolve names → ids without SQL. The
   // inspections "department" foreign key is a Location id; this readable
   // is the source of truth for that lookup when /locations is the page.
-  const locationsListReadable = useMemo(() => ({
+  const locationsListReadable = useMemo(() => buildCopilotListContext({
     route: isChildrenView ? `/locations/${parentId}` : "/locations",
-    variant,
-    parent_location: parentLocation
-      ? { id: parentLocation.id, name: parentLocation.name, code: parentLocation.code }
-      : null,
+    entity: "location",
     total: locations.length,
-    filtered_total: filteredLocations.length,
+    filteredTotal: filteredLocations.length,
     filters: {
       search: search || null,
       type: typeFilter,
       status: statusFilter,
     },
-    pagination: { page, page_size: LOCATIONS_PAGE_SIZE, total_pages: totalPages },
-    visible_rows: pagedLocations.map((loc) => ({
+    pagination: { page, pageSize: LOCATIONS_PAGE_SIZE, totalPages },
+    rows: pagedLocations.map((loc) => ({
       id: loc.id,
       name: loc.name,
       code: loc.code,
@@ -397,6 +395,13 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
       is_active: loc.is_active,
       detail_route: `/locations/${loc.id}`,
     })),
+    loading: isLoading || capsLoading,
+    extra: {
+      variant,
+      parent_location: parentLocation
+        ? { id: parentLocation.id, name: parentLocation.name, code: parentLocation.code }
+        : null,
+    },
   }), [
     isChildrenView,
     parentId,
@@ -408,6 +413,8 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
     search,
     typeFilter,
     statusFilter,
+    capsLoading,
+    isLoading,
     page,
     totalPages,
   ]);

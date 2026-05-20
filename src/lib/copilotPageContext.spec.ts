@@ -38,6 +38,24 @@ describe("copilot page context helpers", () => {
     ]);
   });
 
+  it("builds standard list load-state fields for readiness gates", () => {
+    const context = buildCopilotListContext({
+      route: "/stock-entries",
+      entity: "stock_entry",
+      total: 0,
+      filteredTotal: 0,
+      filters: {},
+      pagination: { page: 1, pageSize: 15, totalPages: 1 },
+      rows: [],
+      loading: true,
+    });
+
+    expect(context).toMatchObject({
+      loading: true,
+      load_state: "loading",
+    });
+  });
+
   it("builds inspection workflow context for the current and next stage", () => {
     expect(buildInspectionWorkflowContext("CENTRAL_REGISTER")).toMatchObject({
       current_stage: "CENTRAL_REGISTER",

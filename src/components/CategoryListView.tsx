@@ -388,13 +388,12 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
       create_category: canManageCategories && variant !== "children",
       create_subcategory: canManageCategories && variant === "children" && Boolean(parentCategory),
     },
+    loading: isLoading || capsLoading,
     extra: {
       variant,
       parent_category: parentCategory
         ? { id: parentCategory.id, name: parentCategory.name, code: parentCategory.code }
         : null,
-      loading: isLoading || capsLoading,
-      load_state: isLoading || capsLoading ? "loading" : "loaded",
     },
   }), [
     variant,
