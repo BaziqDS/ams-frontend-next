@@ -59,11 +59,17 @@ export async function POST(request: NextRequest) {
   );
   groqForm.set("response_format", "json");
   groqForm.set("temperature", "0");
+  groqForm.set(
+    "language",
+    readString(body.get("language")) ??
+      process.env.GROQ_STT_LANGUAGE ??
+      "ur",
+  );
 
   const prompt =
     readString(body.get("prompt")) ??
     process.env.GROQ_STT_PROMPT ??
-    "AMS asset management assistant. Common terms include inspections, stock register, central register, finance review, categories, items, locations, maintenance, depreciation, contractor, consignee, indenter, and inspection certificate.";
+    "Transcribe the user's AMS voice command in the same language they spoke. If they speak Urdu, keep the transcript in Urdu. Common AMS terms include inspections, stock register, central register, finance review, categories, items, locations, maintenance, depreciation, contractor, consignee, indenter, inspection certificate, Jamia Masjid, and Core i5.";
   groqForm.set("prompt", prompt);
 
   const groqResponse = await fetch(getGroqAudioUrl(), {
@@ -83,7 +89,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (!groqResponse.ok) {
-    return jsonError("Groq audio translation failed.", groqResponse.status, payload);
+    return jsonError("Groq audio transcription failed.", groqResponse.status, payload);
   }
 
   const text =
