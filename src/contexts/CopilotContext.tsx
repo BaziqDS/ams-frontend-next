@@ -33,16 +33,30 @@ import {
   getCopilotActionAccess,
 } from "@/lib/copilotPermissionContext";
 import { filterCopilotReadablesForRoute } from "@/lib/copilotPageContext";
+import {
+  actionNeedsReadyPageContext,
+  getCopilotActionReadiness,
+} from "@/lib/copilotActionReadiness";
 
 const TRUSTED_ORIGIN =
   process.env.NEXT_PUBLIC_COPILOT_URL?.replace(/\/$/, "") ??
   "http://localhost:3001";
 const ACTIVITY_READABLE_ID = "__ams_activity_context";
 const PERMISSION_READABLE_ID = "__ams_permission_context";
+const ACTION_CONTEXT_READY_TIMEOUT_MS = 10000;
 
 function currentRouteHref(pathname: string) {
   if (typeof window === "undefined") return pathname;
   return `${window.location.origin}${pathname}${window.location.search}${window.location.hash}`;
+}
+
+function isFailedActionResult(result: unknown) {
+  return (
+    Boolean(result) &&
+    typeof result === "object" &&
+    !Array.isArray(result) &&
+    (result as { ok?: unknown }).ok === false
+  );
 }
 
 type Readable = {
@@ -81,6 +95,17 @@ type CopilotContextValue = {
   emitSupportNudge: (nudge: CopilotSupportNudge) => void;
   sendVoiceCommand: (text: string) => CopilotVoiceCommand;
   sendHitlDecision: (decision: "approve" | "reject") => boolean;
+};
+
+type ActionResultPost = (msg: Record<string, unknown>) => void;
+
+type PendingActionResult = {
+  callId: unknown;
+  name: string;
+  args: unknown;
+  result: unknown;
+  post: ActionResultPost;
+  timeoutId: ReturnType<typeof setTimeout>;
 };
 
 export type CopilotSupportNudge = {
@@ -137,6 +162,8 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
   const pushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSupportNudgesRef = useRef<CopilotSupportNudge[]>([]);
   const pendingVoiceCommandsRef = useRef<CopilotVoiceCommand[]>([]);
+  const pendingActionResultsRef = useRef<PendingActionResult[]>([]);
+  const contextVersionRef = useRef(0);
 
   const getActionAccess = useCallback(
     (action: ActionDef) => {
@@ -158,10 +185,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     [getActionAccess],
   );
 
-  const pushContextToIframe = useCallback(() => {
-    const iframe = iframeRef.current;
-    if (!iframe || !iframe.contentWindow) return;
-
+  const buildContextPayload = useCallback(() => {
     const readables = filterCopilotReadablesForRoute(
       Array.from(readablesRef.current.values()),
       pathname,
@@ -195,16 +219,64 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
       },
     );
 
+    contextVersionRef.current += 1;
+    return {
+      readables,
+      actions,
+      contextVersion: contextVersionRef.current,
+      contextObservedAt: new Date().toISOString(),
+    };
+  }, [getActionAccess, pathname]);
+
+  const flushReadyActionResults = useCallback((readables: Readable[]) => {
+    if (pendingActionResultsRef.current.length === 0) return;
+
+    const stillPending: PendingActionResult[] = [];
+    for (const pending of pendingActionResultsRef.current) {
+      const readiness = getCopilotActionReadiness(
+        pending.name,
+        pending.args,
+        readables,
+      );
+      if (!readiness.ready) {
+        stillPending.push(pending);
+        continue;
+      }
+
+      clearTimeout(pending.timeoutId);
+      pending.post({
+        type: "ACTION_RESULT",
+        callId: pending.callId,
+        result: {
+          ...(typeof pending.result === "object" &&
+          pending.result !== null &&
+          !Array.isArray(pending.result)
+            ? pending.result
+            : { value: pending.result }),
+          contextReady: true,
+          contextSummary: readiness.summary ?? {},
+        },
+      });
+    }
+
+    pendingActionResultsRef.current = stillPending;
+  }, []);
+
+  const pushContextToIframe = useCallback(() => {
+    const iframe = iframeRef.current;
+    if (!iframe || !iframe.contentWindow) return;
+
+    const payload = buildContextPayload();
+    flushReadyActionResults(payload.readables);
     iframe.contentWindow.postMessage(
       {
         source: "ams-copilot",
         type: "CONTEXT_UPDATE",
-        readables,
-        actions,
+        ...payload,
       },
       TRUSTED_ORIGIN,
     );
-  }, [getActionAccess, pathname]);
+  }, [buildContextPayload, flushReadyActionResults]);
 
   const schedulePush = useCallback(() => {
     if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
@@ -424,6 +496,82 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     return true;
   }, [trackActivity]);
 
+  const postActionResultWhenContextReady = useCallback(
+    ({
+      callId,
+      name,
+      args,
+      result,
+      post,
+    }: {
+      callId: unknown;
+      name: string;
+      args: unknown;
+      result: unknown;
+      post: ActionResultPost;
+    }) => {
+      if (!actionNeedsReadyPageContext(name) || isFailedActionResult(result)) {
+        post({ type: "ACTION_RESULT", callId, result: result ?? null });
+        return;
+      }
+
+      const payload = buildContextPayload();
+      const readiness = getCopilotActionReadiness(name, args, payload.readables);
+      if (readiness.ready) {
+        post({
+          type: "ACTION_RESULT",
+          callId,
+          result: {
+            ...(typeof result === "object" &&
+            result !== null &&
+            !Array.isArray(result)
+              ? result
+              : { value: result }),
+            contextReady: true,
+            contextSummary: readiness.summary ?? {},
+          },
+        });
+        return;
+      }
+
+      const pending: PendingActionResult = {
+        callId,
+        name,
+        args,
+        result,
+        post,
+        timeoutId: setTimeout(() => {
+          pendingActionResultsRef.current =
+            pendingActionResultsRef.current.filter((item) => item !== pending);
+          const latest = buildContextPayload();
+          const latestReadiness = getCopilotActionReadiness(
+            name,
+            args,
+            latest.readables,
+          );
+          post({
+            type: "ACTION_RESULT",
+            callId,
+            result: {
+              ok: false,
+              errorType: "context_not_ready",
+              message:
+                `Page context was not ready after frontend action "${name}". ` +
+                `Expected ${latestReadiness.requirement ?? "fresh page context"} before resuming the agent.`,
+              actionResult: result ?? null,
+              contextReady: false,
+              contextSummary: latestReadiness.summary ?? {},
+            },
+          });
+        }, ACTION_CONTEXT_READY_TIMEOUT_MS),
+      };
+
+      pendingActionResultsRef.current.push(pending);
+      pushContextToIframe();
+    },
+    [buildContextPayload, pushContextToIframe],
+  );
+
   useLayoutEffect(() => {
     publishActivitySnapshot();
     return () => {
@@ -439,6 +587,15 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
       schedulePush();
     };
   }, [publishPermissionSnapshot, schedulePush]);
+
+  useEffect(() => {
+    return () => {
+      for (const pending of pendingActionResultsRef.current) {
+        clearTimeout(pending.timeoutId);
+      }
+      pendingActionResultsRef.current = [];
+    };
+  }, []);
 
   useEffect(() => {
     trackActivity({
@@ -808,7 +965,13 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
             result,
             details: { name: action.name },
           });
-          post({ type: "ACTION_RESULT", callId, result: result ?? null });
+          postActionResultWhenContextReady({
+            callId,
+            name: action.name,
+            args: args ?? {},
+            result: result ?? null,
+            post,
+          });
         } catch (error: unknown) {
           const message =
             error instanceof Error ? error.message : String(error);
@@ -826,7 +989,13 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [canRunAction, getActionAccess, pushContextToIframe, trackActivity]);
+  }, [
+    canRunAction,
+    getActionAccess,
+    postActionResultWhenContextReady,
+    pushContextToIframe,
+    trackActivity,
+  ]);
 
   return (
     <CopilotContext.Provider
