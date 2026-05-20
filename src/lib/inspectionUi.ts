@@ -246,12 +246,25 @@ export function getCreateInspectionSubmitLabel(departmentHierarchyLevel: number 
 }
 
 export function getInspectionStageDisplayLabel(
-  inspection: Pick<InspectionRecord, "stage" | "status"> | { stage: InspectionStage; status?: string | null },
+  inspection:
+    | Pick<InspectionRecord, "stage" | "status">
+    | { stage?: InspectionStage | string | null; status?: string | null },
 ) {
   if (inspection.stage === "REJECTED" && inspection.status === "CANCELLED") {
     return "Cancelled";
   }
-  return INSPECTION_STAGE_LABELS[inspection.stage];
+  if (inspection.stage && inspection.stage in INSPECTION_STAGE_LABELS) {
+    return INSPECTION_STAGE_LABELS[inspection.stage as InspectionStage];
+  }
+  if (typeof inspection.stage === "string" && inspection.stage.trim()) {
+    return inspection.stage
+      .toLowerCase()
+      .split("_")
+      .filter(Boolean)
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
+  return "Unknown Stage";
 }
 
 export function getInspectionPreviousStage(

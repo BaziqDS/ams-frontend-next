@@ -101,4 +101,34 @@ describe("copilot activity memory", () => {
     expect(value).toHaveLength(81);
     expect(value.endsWith("…")).toBe(true);
   });
+  it("keeps assistant-set field values in recent activity for approval review", () => {
+    const events = [
+      createCopilotActivityEvent({
+        kind: "form_values_set",
+        actor: "assistant",
+        title: "Assistant set 3 fields in Create Category",
+        formId: "category-create",
+        formTitle: "Create Category",
+        fields: ["name", "code", "category_type"],
+        currentValues: {
+          name: "Laptop",
+          code: "LAPTOP",
+          category_type: "FIXED_ASSET",
+        },
+      }),
+    ];
+
+    const snapshot = buildCopilotActivitySnapshot(events);
+
+    expect(snapshot.recentActivity[0]).toMatchObject({
+      kind: "form_values_set",
+      formId: "category-create",
+      fields: ["name", "code", "category_type"],
+      currentValues: {
+        name: "Laptop",
+        code: "LAPTOP",
+        category_type: "FIXED_ASSET",
+      },
+    });
+  });
 });

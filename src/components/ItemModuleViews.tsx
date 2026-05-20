@@ -17,6 +17,7 @@ import {
   consumePendingOpen,
   SAME_PAGE_OPEN_EVENT,
 } from "@/lib/copilotPendingAction";
+import { buildCopilotListContext } from "@/lib/copilotPageContext";
 import { useClientPagination } from "@/lib/listPagination";
 import {
   buildItemsWorkspaceHref,
@@ -1142,17 +1143,18 @@ export function ItemListView() {
   // Expose the items currently visible on /items so the agent can resolve
   // references like "core i5" → id without firing SQL. Also serves as the
   // catalog when filling inspection stage rows from this page.
-  const itemsListReadable = useMemo(() => ({
+  const itemsListReadable = useMemo(() => buildCopilotListContext({
     route: "/items",
+    entity: "item",
     total: items.length,
-    filtered_total: filteredItems.length,
+    filteredTotal: filteredItems.length,
     filters: {
       search: search || null,
       filter_key: filterKey,
       scope_tokens: effectiveScopeTokens,
     },
-    pagination: { page, page_size: ITEMS_PAGE_SIZE, total_pages: totalPages },
-    visible_rows: pagedItems.map((item) => ({
+    pagination: { page, pageSize: ITEMS_PAGE_SIZE, totalPages },
+    rows: pagedItems.map((item) => ({
       id: item.id,
       name: item.name,
       code: item.code,
@@ -1160,8 +1162,21 @@ export function ItemListView() {
       tracking_type: item.tracking_type ?? null,
       acct_unit: item.acct_unit ?? null,
       total_quantity: item.total_quantity ?? null,
-      detail_route: `/items/${item.id}`,
+      low_stock_threshold: item.low_stock_threshold ?? null,
+      is_low_stock: isLowStock(item),
+      detail_route: getItemOpenHref(item),
+      available_actions: {
+        open_detail: true,
+        edit: canManageItems,
+        delete: canDeleteItems,
+        open_instances: canShowInstances(item.tracking_type),
+        open_batches: canShowBatches(item.tracking_type, item.category_type),
+      },
     })),
+    actions: {
+      create_item: canManageItems,
+      filter_items: true,
+    },
   }), [
     items.length,
     filteredItems.length,
@@ -1169,6 +1184,9 @@ export function ItemListView() {
     search,
     filterKey,
     effectiveScopeTokens,
+    getItemOpenHref,
+    canManageItems,
+    canDeleteItems,
     page,
     totalPages,
   ]);

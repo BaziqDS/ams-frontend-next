@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { useCopilotActivity } from "@/contexts/CopilotContext";
 import { useCopilotAction } from "@/hooks/useCopilotAction";
 import { useCopilotReadable } from "@/hooks/useCopilotReadable";
@@ -62,6 +63,7 @@ function matchesForm(formId: string, targetFormId: unknown) {
 }
 
 export function useCopilotForm(config: CopilotFormConfig) {
+  const pathname = usePathname();
   const trackActivity = useCopilotActivity();
   const pendingAssistantFieldsRef = useRef<string[]>([]);
   const runtimeFormIdRef = useRef(config.formId);
@@ -219,8 +221,8 @@ export function useCopilotForm(config: CopilotFormConfig) {
     ],
   );
   const readableValue = useMemo(
-    () => ({ activeForm: activeFormContext }),
-    [activeFormContext],
+    () => ({ route: pathname, activeForm: activeFormContext }),
+    [activeFormContext, pathname],
   );
 
   useCopilotReadable({
@@ -277,10 +279,16 @@ export function useCopilotForm(config: CopilotFormConfig) {
       ];
       const result = config.setValues(accepted);
       return Promise.resolve(result).then(extra => {
+        const extraResult = extra && typeof extra === "object"
+          ? extra as { applied?: unknown; ignored?: unknown; reason?: unknown }
+          : null;
         const response = {
           ok: true,
           applied: Object.keys(accepted),
           unknown,
+          ignored: Array.isArray(extraResult?.ignored)
+            ? extraResult.ignored.filter((field): field is string => typeof field === "string")
+            : [],
           result: extra ?? null,
         };
         trackActivity({

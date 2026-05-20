@@ -27,6 +27,11 @@ import {
   getInspectionQuantityUpdateError,
   getScopedInspectionLocations,
 } from "@/lib/inspectionStageForms";
+import {
+  applyInspectionItemCopilotPatches,
+  buildInspectionCertificateItemCopilotFields,
+  parseInspectionItemFieldPath,
+} from "@/lib/inspectionCopilotForm";
 
 export const InspectionIcon = ({ d, size = 16 }: { d: React.ReactNode | string; size?: number }) => (
   <svg
@@ -529,13 +534,14 @@ export function InspectionModal({
 
   const copilotFields = useMemo<CopilotFormField[]>(
     () => [
-      { name: "date", label: "Certificate Date", type: "date", readOnly: !canEditBasic },
+      { name: "date", label: "Certificate Date", type: "date", required: canEditBasic, readOnly: !canEditBasic },
       { name: "contract_no", label: "Contract Number", type: "string", required: canEditBasic, readOnly: !canEditBasic },
       { name: "contract_date", label: "Contract Date", type: "date", readOnly: !canEditBasic },
       {
         name: "delivery_type",
         label: "Delivery Type",
         type: "select",
+        required: canEditBasic,
         readOnly: !canEditBasic,
         options: [
           { label: "Full", value: "FULL" },
@@ -568,10 +574,30 @@ export function InspectionModal({
         required: canEditItems,
         readOnly: !(canEditItems || canEditStage2 || canEditStage3 || canEditStage4),
         description:
-          "Array of item rows. Rows may include item_description, item_specifications, tendered_quantity, accepted_quantity, rejected_quantity, unit_price, remarks, stock_register_no, stock_register_page_no, stock_entry_date, central_register_no, central_register_page_no, batch_number, manufactured_date, expiry_date, depreciation_asset_class, capitalization_cost, and capitalization_date.",
+          "Array of item rows. Prefer exact per-row fields like items.0.item_description, items.0.tendered_quantity, and items.0.remarks instead of replacing the full array.",
       },
+      ...buildInspectionCertificateItemCopilotFields({
+        items,
+        canEditItems,
+        canEditStock: canEditStage2,
+        canEditCentral: canEditStage3,
+        departmentRegisterOptions,
+        centralRegisterOptions,
+        itemOptions,
+      }),
     ],
-    [canEditBasic, canEditItems, canEditStage2, canEditStage3, canEditStage4, locations],
+    [
+      canEditBasic,
+      canEditItems,
+      canEditStage2,
+      canEditStage3,
+      canEditStage4,
+      centralRegisterOptions,
+      departmentRegisterOptions,
+      itemOptions,
+      items,
+      locations,
+    ],
   );
 
   const copilotFormValues = useMemo(
@@ -663,6 +689,7 @@ export function InspectionModal({
     (values: Record<string, unknown>) => {
       const applied: string[] = [];
       const ignored: string[] = [];
+      const itemValues: Record<string, unknown> = {};
 
       for (const [field, value] of Object.entries(values)) {
         const fieldDef = copilotFields.find(candidate => candidate.name === field);
@@ -671,36 +698,8 @@ export function InspectionModal({
           continue;
         }
 
-        if (field === "items") {
-          const list = Array.isArray(value) ? value : [];
-          const nextItems = list.map(row => {
-            const incoming = row && typeof row === "object"
-              ? row as Partial<InspectionItemRecord>
-              : {};
-            const base = blankItem();
-            return {
-              ...base,
-              ...incoming,
-              tendered_quantity:
-                typeof incoming.tendered_quantity === "number"
-                  ? incoming.tendered_quantity
-                  : base.tendered_quantity,
-              accepted_quantity:
-                typeof incoming.accepted_quantity === "number"
-                  ? incoming.accepted_quantity
-                  : base.accepted_quantity,
-              rejected_quantity:
-                typeof incoming.rejected_quantity === "number"
-                  ? incoming.rejected_quantity
-                  : base.rejected_quantity,
-              unit_price:
-                incoming.unit_price !== undefined && incoming.unit_price !== null
-                  ? incoming.unit_price
-                  : base.unit_price,
-            };
-          });
-          setItems(nextItems.length > 0 ? nextItems : [blankItem()]);
-          applied.push(field);
+        if (field === "items" || parseInspectionItemFieldPath(field)) {
+          itemValues[field] = value;
           continue;
         }
 
@@ -713,9 +712,20 @@ export function InspectionModal({
         applied.push(field);
       }
 
+      if (Object.keys(itemValues).length > 0) {
+        const itemPatch = applyInspectionItemCopilotPatches({
+          currentItems: items,
+          values: itemValues,
+          blankItem,
+        });
+        setItems(itemPatch.nextItems.length > 0 ? itemPatch.nextItems : [blankItem()]);
+        applied.push(...itemPatch.applied);
+        ignored.push(...itemPatch.ignored);
+      }
+
       return { applied, ignored };
     },
-    [copilotFields, scalarCopilotSetters],
+    [copilotFields, items, scalarCopilotSetters],
   );
 
   const canCopilotSetValues =

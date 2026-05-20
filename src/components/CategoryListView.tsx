@@ -15,6 +15,7 @@ import {
   consumePendingOpen,
   SAME_PAGE_OPEN_EVENT,
 } from "@/lib/copilotPendingAction";
+import { buildCopilotDetailContext, buildCopilotListContext } from "@/lib/copilotPageContext";
 import { useClientPagination } from "@/lib/listPagination";
 import { relTime } from "@/lib/userUiShared";
 
@@ -354,21 +355,18 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
 
   // Expose the categories (or subcategories under a parent) currently
   // displayed so the agent can resolve names → ids without a SQL lookup.
-  const categoriesListReadable = useMemo(() => ({
+  const categoriesListReadable = useMemo(() => buildCopilotListContext({
     route: variant === "children" ? `/categories/${parentId}` : "/categories",
-    variant,
-    parent_category: parentCategory
-      ? { id: parentCategory.id, name: parentCategory.name, code: parentCategory.code }
-      : null,
+    entity: "category",
     total: categories.length,
-    filtered_total: filteredCategories.length,
+    filteredTotal: filteredCategories.length,
     filters: {
       search: search || null,
       type: typeFilter,
       status: statusFilter,
     },
-    pagination: { page, page_size: CATEGORIES_PAGE_SIZE, total_pages: totalPages },
-    visible_rows: pagedCategories.map((c) => ({
+    pagination: { page, pageSize: CATEGORIES_PAGE_SIZE, totalPages },
+    rows: pagedCategories.map((c) => ({
       id: c.id,
       name: c.name,
       code: c.code,
@@ -379,7 +377,23 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
       parent_category_display: c.parent_category_display ?? null,
       is_active: c.is_active,
       detail_route: `/categories/${c.id}`,
+      available_actions: {
+        open_detail: true,
+        edit: canManageCategories,
+        delete: canDeleteCategories,
+        create_subcategory: canManageCategories && variant !== "children",
+      },
     })),
+    actions: {
+      create_category: canManageCategories && variant !== "children",
+      create_subcategory: canManageCategories && variant === "children" && Boolean(parentCategory),
+    },
+    extra: {
+      variant,
+      parent_category: parentCategory
+        ? { id: parentCategory.id, name: parentCategory.name, code: parentCategory.code }
+        : null,
+    },
   }), [
     variant,
     parentId,
@@ -390,6 +404,8 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
     search,
     typeFilter,
     statusFilter,
+    canManageCategories,
+    canDeleteCategories,
     page,
     totalPages,
   ]);
@@ -398,6 +414,83 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
     description:
       "Categories (or subcategories under the current parent) displayed on this page after filters/pagination. Use 'visible_rows' to resolve names → ids without SQL. When variant='children', the page is /categories/{parent_category.id} and subcategory_create is available there.",
     value: categoriesListReadable,
+  });
+
+  const categoryDetailReadable = useMemo(() => (
+    variant === "children"
+      ? buildCopilotDetailContext({
+          route: `/categories/${parentId}`,
+          entity: "category",
+          selectedRecord: parentCategory
+            ? {
+                id: parentCategory.id,
+                name: parentCategory.name,
+                code: parentCategory.code,
+                category_type: parentCategory.category_type,
+                tracking_type: parentCategory.tracking_type,
+                resolved_category_type: parentCategory.resolved_category_type,
+                resolved_tracking_type: parentCategory.resolved_tracking_type,
+                is_active: parentCategory.is_active,
+                parent_category: parentCategory.parent_category,
+                parent_category_display: parentCategory.parent_category_display,
+                created_at: parentCategory.created_at,
+                updated_at: parentCategory.updated_at,
+              }
+            : null,
+          actions: {
+            create_subcategory: canManageCategories && Boolean(parentCategory),
+            edit: canManageCategories && Boolean(parentCategory),
+            delete: canDeleteCategories && Boolean(parentCategory),
+          },
+          extra: {
+            children_total: categories.length,
+            children_filtered_total: filteredCategories.length,
+            child_categories: categories.map(category => ({
+              id: category.id,
+              name: category.name,
+              code: category.code,
+              category_type: category.category_type,
+              tracking_type: category.tracking_type,
+              resolved_category_type: category.resolved_category_type,
+              resolved_tracking_type: category.resolved_tracking_type,
+              is_active: category.is_active,
+              detail_route: `/categories/${category.id}`,
+            })),
+            visible_child_categories: pagedCategories.map(category => ({
+              id: category.id,
+              name: category.name,
+              code: category.code,
+              category_type: category.category_type,
+              tracking_type: category.tracking_type,
+              is_active: category.is_active,
+              detail_route: `/categories/${category.id}`,
+            })),
+            filters: {
+              search: search || null,
+              type: typeFilter,
+              status: statusFilter,
+            },
+          },
+        })
+      : null
+  ), [
+    canDeleteCategories,
+    canManageCategories,
+    categories,
+    filteredCategories.length,
+    pagedCategories,
+    parentCategory,
+    parentId,
+    search,
+    statusFilter,
+    typeFilter,
+    variant,
+  ]);
+
+  useCopilotReadable({
+    description:
+      "Category detail page contract. On /categories/{id}, selected_record is the parent category and child_categories are the subcategories currently loaded for that parent.",
+    value: categoryDetailReadable,
   });
 
   const openCreateModal = useCallback(() => {

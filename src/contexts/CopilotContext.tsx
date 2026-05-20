@@ -32,6 +32,7 @@ import {
   buildCopilotPermissionSnapshot,
   getCopilotActionAccess,
 } from "@/lib/copilotPermissionContext";
+import { filterCopilotReadablesForRoute } from "@/lib/copilotPageContext";
 
 const TRUSTED_ORIGIN =
   process.env.NEXT_PUBLIC_COPILOT_URL?.replace(/\/$/, "") ??
@@ -77,7 +78,49 @@ type CopilotContextValue = {
   registerAction: (action: CopilotAction) => () => void;
   setIframe: (element: HTMLIFrameElement | null) => void;
   trackActivity: (event: CopilotActivityEventInput) => CopilotActivityEvent;
+  emitSupportNudge: (nudge: CopilotSupportNudge) => void;
+  sendVoiceCommand: (text: string) => CopilotVoiceCommand;
+  sendHitlDecision: (decision: "approve" | "reject") => boolean;
 };
+
+export type CopilotSupportNudge = {
+  id: string;
+  kind: string;
+  title: string;
+  message: string;
+  route?: string;
+  module?: string;
+  severity?: string;
+  prompt?: string;
+  createdAt?: string;
+};
+
+export type CopilotVoiceCommand = {
+  id: string;
+  text: string;
+  source: "voice";
+  createdAt: string;
+};
+
+export type CopilotAssistantMessageEvent = {
+  messageId?: string;
+  text: string;
+};
+
+export type CopilotHitlActionRequest = {
+  name: string;
+  args: Record<string, unknown>;
+  description?: string;
+};
+
+export type CopilotHitlInterrupt = {
+  actionRequests: CopilotHitlActionRequest[];
+  reviewConfigs?: unknown[];
+};
+
+export const COPILOT_ASSISTANT_MESSAGE_EVENT =
+  "ams-copilot-assistant-message";
+export const COPILOT_HITL_INTERRUPT_EVENT = "ams-copilot-hitl-interrupt";
 
 const CopilotContext = createContext<CopilotContextValue | null>(null);
 
@@ -92,6 +135,8 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const iframeLoadCleanupRef = useRef<(() => void) | null>(null);
   const pushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSupportNudgesRef = useRef<CopilotSupportNudge[]>([]);
+  const pendingVoiceCommandsRef = useRef<CopilotVoiceCommand[]>([]);
 
   const getActionAccess = useCallback(
     (action: ActionDef) => {
@@ -117,7 +162,10 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     const iframe = iframeRef.current;
     if (!iframe || !iframe.contentWindow) return;
 
-    const readables = Array.from(readablesRef.current.values());
+    const readables = filterCopilotReadablesForRoute(
+      Array.from(readablesRef.current.values()),
+      pathname,
+    );
     const actions: ActionDef[] = Array.from(actionsRef.current.values()).map(
       ({
         name,
@@ -156,7 +204,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
       },
       TRUSTED_ORIGIN,
     );
-  }, [getActionAccess]);
+  }, [getActionAccess, pathname]);
 
   const schedulePush = useCallback(() => {
     if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
@@ -247,6 +295,134 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     },
     [pathname, schedulePush],
   );
+
+  const postSupportNudge = useCallback((nudge: CopilotSupportNudge) => {
+    const iframe = iframeRef.current;
+    if (!iframe?.contentWindow) return false;
+
+    iframe.contentWindow.postMessage(
+      {
+        source: "ams-copilot",
+        type: "SUPPORT_NUDGE",
+        nudge,
+      },
+      TRUSTED_ORIGIN,
+    );
+    return true;
+  }, []);
+
+  const postVoiceCommand = useCallback((command: CopilotVoiceCommand) => {
+    const iframe = iframeRef.current;
+    if (!iframe?.contentWindow) return false;
+
+    iframe.contentWindow.postMessage(
+      {
+        source: "ams-copilot",
+        type: "VOICE_COMMAND",
+        command,
+      },
+      TRUSTED_ORIGIN,
+    );
+    return true;
+  }, []);
+
+  const flushPendingSupportNudges = useCallback(() => {
+    if (pendingSupportNudgesRef.current.length === 0) return;
+    const pending = pendingSupportNudgesRef.current;
+    pendingSupportNudgesRef.current = [];
+    for (const nudge of pending) {
+      if (!postSupportNudge(nudge)) {
+        pendingSupportNudgesRef.current.push(nudge);
+      }
+    }
+  }, [postSupportNudge]);
+
+  const flushPendingVoiceCommands = useCallback(() => {
+    if (pendingVoiceCommandsRef.current.length === 0) return;
+    const pending = pendingVoiceCommandsRef.current;
+    pendingVoiceCommandsRef.current = [];
+    for (const command of pending) {
+      if (!postVoiceCommand(command)) {
+        pendingVoiceCommandsRef.current.push(command);
+      }
+    }
+  }, [postVoiceCommand]);
+
+  const emitSupportNudge = useCallback((nudge: CopilotSupportNudge) => {
+    if (!postSupportNudge(nudge)) {
+      pendingSupportNudgesRef.current = [
+        ...pendingSupportNudgesRef.current.filter((item) => item.id !== nudge.id),
+        nudge,
+      ].slice(-10);
+    }
+
+    trackActivity({
+      kind: "support_nudge",
+      actor: "system",
+      title: `Support nudge: ${nudge.title}`,
+      route: nudge.route,
+      details: {
+        id: nudge.id,
+        kind: nudge.kind,
+        module: nudge.module,
+        severity: nudge.severity,
+      },
+    });
+  }, [postSupportNudge, trackActivity]);
+
+  const sendVoiceCommand = useCallback((text: string) => {
+    const command: CopilotVoiceCommand = {
+      id:
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `voice-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      text,
+      source: "voice",
+      createdAt: new Date().toISOString(),
+    };
+
+    if (!postVoiceCommand(command)) {
+      pendingVoiceCommandsRef.current = [
+        ...pendingVoiceCommandsRef.current,
+        command,
+      ].slice(-5);
+    }
+
+    trackActivity({
+      kind: "voice_command",
+      actor: "user",
+      title: "Voice command sent to assistant",
+      details: {
+        id: command.id,
+        transcript: text,
+      },
+    });
+
+    return command;
+  }, [postVoiceCommand, trackActivity]);
+
+  const sendHitlDecision = useCallback((decision: "approve" | "reject") => {
+    const iframe = iframeRef.current;
+    if (!iframe?.contentWindow) return false;
+
+    iframe.contentWindow.postMessage(
+      {
+        source: "ams-copilot",
+        type: "HITL_DECISION",
+        decision,
+      },
+      TRUSTED_ORIGIN,
+    );
+
+    trackActivity({
+      kind: "approval_decision",
+      actor: "user",
+      title: `User ${decision === "approve" ? "approved" : "rejected"} assistant action`,
+      details: { decision },
+    });
+
+    return true;
+  }, [trackActivity]);
 
   useLayoutEffect(() => {
     publishActivitySnapshot();
@@ -432,6 +608,8 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
       if (element) {
         const handleLoad = () => {
           setTimeout(pushContextToIframe, 250);
+          setTimeout(flushPendingSupportNudges, 300);
+          setTimeout(flushPendingVoiceCommands, 300);
         };
         element.addEventListener("load", handleLoad);
         iframeLoadCleanupRef.current = () => {
@@ -439,10 +617,12 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         };
         if (element.contentWindow) {
           setTimeout(pushContextToIframe, 250);
+          setTimeout(flushPendingSupportNudges, 300);
+          setTimeout(flushPendingVoiceCommands, 300);
         }
       }
     },
-    [pushContextToIframe],
+    [flushPendingSupportNudges, flushPendingVoiceCommands, pushContextToIframe],
   );
 
   const systemContext = useMemo<Readable>(() => {
@@ -509,6 +689,58 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
 
       if (event.data.type === "REQUEST_CONTEXT") {
         pushContextToIframe();
+        return;
+      }
+
+      if (event.data.type === "ASSISTANT_MESSAGE") {
+        const detail: CopilotAssistantMessageEvent = {
+          messageId:
+            typeof event.data.messageId === "string"
+              ? event.data.messageId
+              : undefined,
+          text: typeof event.data.text === "string" ? event.data.text : "",
+        };
+        window.dispatchEvent(
+          new CustomEvent<CopilotAssistantMessageEvent>(
+            COPILOT_ASSISTANT_MESSAGE_EVENT,
+            { detail },
+          ),
+        );
+        return;
+      }
+
+      if (event.data.type === "HITL_INTERRUPT") {
+        const interrupt = event.data.interrupt;
+        if (
+          interrupt &&
+          typeof interrupt === "object" &&
+          Array.isArray(interrupt.actionRequests)
+        ) {
+          window.dispatchEvent(
+            new CustomEvent<CopilotHitlInterrupt>(
+              COPILOT_HITL_INTERRUPT_EVENT,
+              { detail: interrupt as CopilotHitlInterrupt },
+            ),
+          );
+          trackActivity({
+            kind: "approval_requested",
+            actor: "assistant",
+            title: "Assistant requested approval",
+            details: {
+              actionCount: interrupt.actionRequests.length,
+            },
+          });
+        }
+        return;
+      }
+
+      if (event.data.type === "HITL_INTERRUPT_CLEARED") {
+        window.dispatchEvent(
+          new CustomEvent<CopilotHitlInterrupt | null>(
+            COPILOT_HITL_INTERRUPT_EVENT,
+            { detail: null },
+          ),
+        );
         return;
       }
 
@@ -598,7 +830,15 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
 
   return (
     <CopilotContext.Provider
-      value={{ registerReadable, registerAction, setIframe, trackActivity }}
+      value={{
+        registerReadable,
+        registerAction,
+        setIframe,
+        trackActivity,
+        emitSupportNudge,
+        sendVoiceCommand,
+        sendHitlDecision,
+      }}
     >
       {children}
     </CopilotContext.Provider>
@@ -615,4 +855,16 @@ export function useCopilotInternal(): CopilotContextValue {
 
 export function useCopilotActivity() {
   return useCopilotInternal().trackActivity;
+}
+
+export function useCopilotSupportNudge() {
+  return useCopilotInternal().emitSupportNudge;
+}
+
+export function useCopilotVoiceCommand() {
+  return useCopilotInternal().sendVoiceCommand;
+}
+
+export function useCopilotHitlDecision() {
+  return useCopilotInternal().sendHitlDecision;
 }

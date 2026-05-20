@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCopilotInternal } from "@/contexts/CopilotContext";
 
 const CHAT_URL = process.env.NEXT_PUBLIC_COPILOT_URL ?? "http://localhost:3001";
+const CHAT_ORIGIN = CHAT_URL.replace(/\/$/, "");
 
-const BUTTON_W = 132;
-const BUTTON_H = 40;
+const BUTTON_W = 56;
+const BUTTON_H = 56;
 const VIEWPORT_PADDING = 12;
 const DRAG_THRESHOLD_PX = 5;
 const POS_STORAGE_KEY = "ams-copilot-button-pos";
@@ -139,6 +140,7 @@ export function CopilotSidePanel() {
   ));
   const [buttonPos, setButtonPos] = useState<Pos>(() => loadSavedPos() ?? defaultPos());
   const [isDragging, setIsDragging] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const dragRef = useRef<{
     startX: number;
     startY: number;
@@ -167,6 +169,19 @@ export function CopilotSidePanel() {
 
   useEffect(() => {
     window.localStorage.setItem("ams-copilot-open", isOpen ? "true" : "false");
+    if (isOpen) setUnreadCount(0);
+  }, [isOpen]);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== CHAT_ORIGIN) return;
+      if (event.data?.source !== "ams-copilot-iframe") return;
+      if (event.data?.type !== "ASSISTANT_MESSAGE") return;
+      setUnreadCount((current) => (isOpen ? 0 : Math.min(99, current + 1)));
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
   }, [isOpen]);
 
   // Re-clamp on viewport resize so the button never ends up off-screen.
@@ -250,7 +265,7 @@ export function CopilotSidePanel() {
         <button
           type="button"
           aria-label="Open AI assistant (drag to move)"
-          title="Click to open · Drag to move"
+          title="Open assistant - drag to move"
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
@@ -262,11 +277,11 @@ export function CopilotSidePanel() {
             top: buttonPos.y,
             width: BUTTON_W,
             height: BUTTON_H,
-            padding: "0 14px",
-            borderRadius: "var(--radius)",
+            padding: 0,
+            borderRadius: 999,
             background: "var(--primary)",
             color: "var(--primary-ink)",
-            border: "1px solid var(--primary)",
+            border: "1px solid color-mix(in oklab, var(--primary), white 18%)",
             boxShadow: isDragging
               ? "0 16px 32px -8px rgba(15, 23, 42, 0.35), 0 4px 12px -2px rgba(15, 23, 42, 0.18)"
               : "var(--shadow-md)",
@@ -275,7 +290,7 @@ export function CopilotSidePanel() {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            gap: 8,
+            gap: 0,
             fontFamily: "var(--font-sans)",
             fontSize: 13,
             fontWeight: 500,
@@ -300,8 +315,8 @@ export function CopilotSidePanel() {
           }}
         >
           <svg
-            width="14"
-            height="14"
+            width="24"
+            height="24"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -310,9 +325,34 @@ export function CopilotSidePanel() {
             strokeLinejoin="round"
             aria-hidden="true"
           >
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            <path d="M12 3l1.9 4.9L19 10l-4 3.3.9 5.2L12 16l-3.9 2.5.9-5.2L5 10l5.1-2.1L12 3z" />
           </svg>
-          <span>Assistant</span>
+          {unreadCount > 0 ? (
+            <span
+              aria-label={`${unreadCount} unread assistant message${unreadCount === 1 ? "" : "s"}`}
+              style={{
+                position: "absolute",
+                right: -4,
+                top: -5,
+                minWidth: 20,
+                height: 20,
+                padding: "0 5px",
+                borderRadius: 999,
+                background: "#dc2626",
+                color: "#fff",
+                border: "2px solid var(--card)",
+                boxShadow: "0 6px 16px rgba(220, 38, 38, 0.28)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 11,
+                fontWeight: 700,
+                lineHeight: 1,
+              }}
+            >
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+          ) : null}
         </button>
       )}
 

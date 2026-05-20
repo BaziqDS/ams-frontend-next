@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
 import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
 import { useCopilotReadable } from "@/hooks/useCopilotReadable";
+import { useCopilotSupportNudge } from "@/contexts/CopilotContext";
 import {
   InspectionIcon,
   RejectInspectionModal,
@@ -32,6 +33,8 @@ import {
   getInspectionReturnActionLabel,
   getInspectionStageDisplayLabel,
   getInspectionStageGuidance,
+  getInspectionTotals,
+  getInspectionWorkflowContract,
   getInspectionValueTotals,
   getInspectionWorkflowSteps,
   INSPECTION_STAGE_LABELS,
@@ -51,7 +54,10 @@ import {
 import {
   applyInspectionItemCopilotPatches,
   buildInspectionItemCopilotFields,
+  syncInspectionItemReferences,
 } from "@/lib/inspectionCopilotForm";
+import { buildCopilotDetailContext } from "@/lib/copilotPageContext";
+import { createInspectionWorkflowNudge } from "@/lib/copilotSupportNudgeTemplates";
 
 type InspectionLocationDetail = {
   id: number;
@@ -138,11 +144,15 @@ function StageStatusPill({ inspection }: { inspection: InspectionRecord }) {
   const steps = visibleWorkflowSteps(inspection);
   const effectiveStage = inspection.stage === "REJECTED" ? inspection.rejection_stage : inspection.stage;
   const index = steps.findIndex(step => step.key === effectiveStage);
+  const effectiveStageLabel = getInspectionStageDisplayLabel({
+    stage: effectiveStage ?? inspection.stage,
+    status: inspection.status,
+  });
   const label = inspection.stage === "DRAFT" || index < 0
     ? getInspectionStageDisplayLabel(inspection)
     : inspection.stage === "REJECTED"
-      ? `${getInspectionStageDisplayLabel(inspection)} at Stage ${index + 1} of ${steps.length} - ${INSPECTION_STAGE_LABELS[effectiveStage ?? inspection.stage]}`
-      : `Stage ${index + 1} of ${steps.length} - ${INSPECTION_STAGE_LABELS[effectiveStage ?? inspection.stage]}`;
+      ? `${getInspectionStageDisplayLabel(inspection)} at Stage ${index + 1} of ${steps.length} - ${effectiveStageLabel}`
+      : `Stage ${index + 1} of ${steps.length} - ${effectiveStageLabel}`;
 
   return (
     <span className={`pill pill-lg ${getStagePillClass(inspection.stage)}`}>
@@ -428,12 +438,13 @@ function SupportingDocuments({ inspection }: { inspection: InspectionRecord }) {
 
 function StageActionCue({ inspection }: { inspection: InspectionRecord }) {
   if (inspection.stage === "COMPLETED" || inspection.stage === "REJECTED") return null;
+  const stageLabel = getInspectionStageDisplayLabel(inspection);
 
   return (
-    <a className="inspection-stage-cue" href="#active-stage-form" aria-label={`Jump to ${INSPECTION_STAGE_LABELS[inspection.stage]} form`}>
+    <a className="inspection-stage-cue" href="#active-stage-form" aria-label={`Jump to ${stageLabel} form`}>
       <span className="inspection-stage-cue-icon">!</span>
       <span className="inspection-stage-cue-copy">
-        <span className="inspection-stage-cue-title">{INSPECTION_STAGE_LABELS[inspection.stage]} requires input</span>
+        <span className="inspection-stage-cue-title">{stageLabel} requires input</span>
         <span className="inspection-stage-cue-sub">Jump to the active form before moving this certificate forward.</span>
       </span>
     </a>
@@ -681,42 +692,6 @@ function blankInspectionItem(): InspectionItemRecord {
   };
 }
 
-function syncCopilotItemReferences({
-  items,
-  departmentRegisterOptions,
-  centralRegisterOptions,
-  itemOptions,
-}: {
-  items: InspectionItemRecord[];
-  departmentRegisterOptions: InspectionStockRegisterOption[];
-  centralRegisterOptions: InspectionStockRegisterOption[];
-  itemOptions: InspectionItemOption[];
-}) {
-  const departmentRegistersById = new Map(departmentRegisterOptions.map(option => [option.id, option]));
-  const centralRegistersById = new Map(centralRegisterOptions.map(option => [option.id, option]));
-  const itemsById = new Map(itemOptions.map(option => [option.id, option]));
-
-  return items.map(item => {
-    const departmentRegister = item.stock_register ? departmentRegistersById.get(item.stock_register) : null;
-    const centralRegister = item.central_register ? centralRegistersById.get(item.central_register) : null;
-    const catalogItem = item.item ? itemsById.get(item.item) : null;
-
-    return {
-      ...item,
-      ...(departmentRegister ? { stock_register_no: departmentRegister.register_number } : {}),
-      ...(centralRegister ? { central_register_no: centralRegister.register_number } : {}),
-      ...(catalogItem
-        ? {
-            item_name: catalogItem.name,
-            item_code: catalogItem.code,
-            item_category_type: catalogItem.category_type ?? null,
-            item_tracking_type: catalogItem.tracking_type ?? null,
-          }
-        : {}),
-    };
-  });
-}
-
 function getTransitionPath(inspection: InspectionRecord) {
   if (inspection.stage === "DRAFT") return "initiate";
   if (inspection.stage === "STOCK_DETAILS") return "submit_to_central_register";
@@ -729,6 +704,7 @@ export default function InspectionDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const { can, hasInspectionStage, isLoading: capsLoading, isSuperuser } = useCapabilities();
+  const emitSupportNudge = useCopilotSupportNudge();
 
   const canView = can("inspections", "view");
   const canManage = can("inspections", "manage");
@@ -887,7 +863,15 @@ export default function InspectionDetailPage() {
         body: JSON.stringify(buildStagePayload(editableInspection)),
       });
       await apiFetch(`/api/inventory/inspections/${editableInspection.id}/${transition}/`, { method: "POST" });
-      await loadInspection();
+      const previousStage = editableInspection.stage;
+      const refreshedInspection = await loadInspection();
+      emitSupportNudge(createInspectionWorkflowNudge({
+        inspectionId: editableInspection.id,
+        contractNo: editableInspection.contract_no,
+        fromStage: previousStage,
+        toStage: refreshedInspection?.stage,
+        transition,
+      }));
       return {
         ok: true,
         message: "Inspection stage submitted successfully.",
@@ -905,7 +889,7 @@ export default function InspectionDetailPage() {
     } finally {
       setBusyAction(null);
     }
-  }, [editableInspection, loadInspection]);
+  }, [editableInspection, emitSupportNudge, loadInspection]);
 
   const departmentRegisterOptions = useMemo(
     () => getInspectionMainStoreRegisters(copilotRegisters, copilotLocation),
@@ -1004,6 +988,133 @@ export default function InspectionDetailPage() {
     editableInspection,
   ]);
 
+  const inspectionDetailReadable = useMemo(() => buildCopilotDetailContext({
+    route: `/inspections/${params.id}`,
+    entity: "inspection",
+    selectedRecord: editableInspection
+      ? {
+          id: editableInspection.id,
+          contract_no: editableInspection.contract_no,
+          indent_no: editableInspection.indent_no,
+          contractor_name: editableInspection.contractor_name,
+          contractor_address: editableInspection.contractor_address,
+          certificate_date: editableInspection.date,
+          contract_date: editableInspection.contract_date,
+          department: editableInspection.department,
+          department_name: editableInspection.department_name,
+          department_hierarchy_level: editableInspection.department_hierarchy_level,
+          delivery_type: editableInspection.delivery_type,
+          date_of_delivery: editableInspection.date_of_delivery,
+          inspected_by: editableInspection.inspected_by,
+          date_of_inspection: editableInspection.date_of_inspection,
+          consignee_name: editableInspection.consignee_name,
+          consignee_designation: editableInspection.consignee_designation,
+          stage: editableInspection.stage,
+          status: editableInspection.status,
+          remarks: editableInspection.remarks,
+        }
+      : null,
+    workflow: editableInspection
+      ? getInspectionWorkflowContract(editableInspection, {
+          canManage,
+          hasStage: hasInspectionStage,
+          busyAction,
+        })
+      : null,
+    actions: {
+      save_progress: Boolean(canEdit && busyAction === null),
+      submit_current_stage: Boolean(canEdit && busyAction === null),
+      return_stage: canReturn,
+      cancel: canCancel,
+      delete: canDelete,
+    },
+    extra: {
+      active_revision_request: activeRevisionRequest,
+      guidance: editableInspection ? getInspectionStageGuidance(editableInspection) : null,
+      writable_field_names: copilotFields.map(field => field.name),
+      readonly_context_fields: ["finance_check_date", "items", "stage"],
+      totals: editableInspection
+        ? {
+            quantities: getInspectionTotals(editableInspection),
+            values: getInspectionValueTotals(editableInspection),
+          }
+        : null,
+      register_coverage: editableInspection
+        ? getInspectionRegisterCoverage(editableInspection)
+        : null,
+      register_rows: editableInspection
+        ? getInspectionRegisterDetailRows(editableInspection)
+        : [],
+      items: editableInspection
+        ? editableInspection.items.map((item, index) => ({
+            index,
+            id: item.id,
+            item: item.item,
+            item_name: item.item_name,
+            item_code: item.item_code,
+            item_description: item.item_description,
+            item_specifications: item.item_specifications,
+            tendered_quantity: item.tendered_quantity,
+            accepted_quantity: item.accepted_quantity,
+            rejected_quantity: item.rejected_quantity,
+            unit_price: item.unit_price,
+            stock_register: item.stock_register,
+            stock_register_name: item.stock_register_name,
+            stock_register_no: item.stock_register_no,
+            stock_register_page_no: item.stock_register_page_no,
+            stock_entry_date: item.stock_entry_date,
+            central_register: item.central_register,
+            central_register_name: item.central_register_name,
+            central_register_no: item.central_register_no,
+            central_register_page_no: item.central_register_page_no,
+            batch_number: item.batch_number,
+            manufactured_date: item.manufactured_date,
+            expiry_date: item.expiry_date,
+            capitalization_cost: item.capitalization_cost,
+            capitalization_date: item.capitalization_date,
+            depreciation_asset_class_name: item.depreciation_asset_class_name,
+            distribution_route: `/inspections/${editableInspection.id}/items/${item.id}/distribution`,
+          }))
+        : [],
+      documents: editableInspection
+        ? editableInspection.documents.map(document => ({
+            id: document.id,
+            label: document.label,
+            file: document.file,
+            uploaded_at: document.uploaded_at,
+          }))
+        : [],
+      stock_entries: editableInspection
+        ? editableInspection.stock_entries.map(entry => ({
+            id: entry.id,
+            entry_number: entry.entry_number,
+            entry_type: entry.entry_type,
+            status: entry.status,
+            entry_date: entry.entry_date,
+          }))
+        : [],
+      audit_entries: editableInspection ? getInspectionAuditEntries(editableInspection) : [],
+    },
+  }), [
+    activeRevisionRequest,
+    busyAction,
+    canCancel,
+    canDelete,
+    canEdit,
+    canManage,
+    canReturn,
+    copilotFields,
+    editableInspection,
+    hasInspectionStage,
+    params.id,
+  ]);
+
+  useCopilotReadable({
+    description:
+      "Inspection detail page contract. Use selected_record for the current inspection, workflow for current/next stage and transition, and writable_field_names plus the active form schema before setting values.",
+    value: inspectionDetailReadable,
+  });
+
   const copilotFormValues = useMemo(
     () => editableInspection
       ? {
@@ -1065,7 +1176,7 @@ export default function InspectionDetailPage() {
       if (itemPatch.applied.length > 0) {
         nextInspection = {
           ...nextInspection,
-          items: syncCopilotItemReferences({
+          items: syncInspectionItemReferences({
             items: itemPatch.nextItems,
             departmentRegisterOptions,
             centralRegisterOptions,

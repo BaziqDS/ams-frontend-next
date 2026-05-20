@@ -40,6 +40,10 @@ import {
   normalizeInspectionList,
   relTime,
 } from "@/lib/inspectionUi";
+import {
+  buildCopilotListContext,
+  buildInspectionWorkflowContext,
+} from "@/lib/copilotPageContext";
 
 const busyActionStyle = { opacity: 0.75, cursor: "wait" } as const;
 const unavailableActionStyle = {
@@ -592,38 +596,51 @@ export default function InspectionsPage() {
   // Expose the inspections currently visible to the user so the agent can
   // resolve references like "the first one", "the pending ones", or
   // "CTR-2026-001" without firing a SQL query.
-  const inspectionsListReadable = useMemo(() => {
-    return {
-      route: "/inspections",
-      total: inspections.length,
-      filtered_total: filtered.length,
-      filters: {
-        search: search || null,
-        stage: stageFilter,
-        location_ids: selectedLocationIds,
+  const inspectionsListReadable = useMemo(() => buildCopilotListContext({
+    route: "/inspections",
+    entity: "inspection",
+    total: inspections.length,
+    filteredTotal: filtered.length,
+    filters: {
+      search: search || null,
+      stage: stageFilter,
+      location_ids: selectedLocationIds,
+    },
+    pagination: { page, pageSize: INSPECTIONS_PAGE_SIZE, totalPages },
+    rows: pagedInspections.map((i) => ({
+      id: i.id,
+      contract_no: i.contract_no,
+      indent_no: i.indent_no,
+      contractor_name: i.contractor_name,
+      department_name: i.department_name,
+      stage: i.stage,
+      status: i.status ?? null,
+      date_of_inspection: i.date_of_inspection ?? null,
+      detail_route: `/inspections/${i.id}`,
+      workflow: buildInspectionWorkflowContext(i.stage),
+      available_actions: {
+        open_detail: true,
+        view_pdf: true,
+        cancel: canCancelInspection && !["COMPLETED", "REJECTED", "DRAFT"].includes(i.stage),
+        delete: canFull && i.stage === "DRAFT",
       },
-      pagination: { page, page_size: INSPECTIONS_PAGE_SIZE, total_pages: totalPages },
-      // Rows currently RENDERED on screen (paged). Use this for "the first",
-      // "the top one", "this row" references.
-      visible_rows: pagedInspections.map((i) => ({
-        id: i.id,
-        contract_no: i.contract_no,
-        indent_no: i.indent_no,
-        contractor_name: i.contractor_name,
-        department_name: i.department_name,
-        stage: i.stage,
-        status: i.status ?? null,
-        date_of_inspection: i.date_of_inspection ?? null,
-        detail_route: `/inspections/${i.id}`,
-      })),
-    };
-  }, [
+    })),
+    actions: {
+      create_inspection: canInitiateInspection,
+      filter_by_stage: true,
+      filter_by_location: canFilterByLocation,
+    },
+  }), [
     inspections.length,
     filtered.length,
     pagedInspections,
     search,
     stageFilter,
     selectedLocationIds,
+    canCancelInspection,
+    canFilterByLocation,
+    canFull,
+    canInitiateInspection,
     page,
     totalPages,
   ]);

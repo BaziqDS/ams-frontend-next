@@ -12,7 +12,11 @@ export type CopilotActivityKind =
   | "frontend_action_requested"
   | "frontend_action_result"
   | "frontend_action_denied"
-  | "frontend_action_failed";
+  | "frontend_action_failed"
+  | "support_nudge"
+  | "voice_command"
+  | "approval_requested"
+  | "approval_decision";
 
 export type CopilotActivityEventInput = {
   kind: CopilotActivityKind;
@@ -75,6 +79,10 @@ export type CopilotActivitySnapshot = {
     formId?: string;
     field?: string;
     fields?: string[];
+    previousValue?: unknown;
+    currentValue?: unknown;
+    previousValues?: Record<string, unknown>;
+    currentValues?: Record<string, unknown>;
     result?: unknown;
   }>;
   totalEvents: number;
@@ -237,6 +245,10 @@ export function buildCopilotActivitySnapshot(
     formId: event.formId,
     field: event.field,
     fields: event.fields,
+    previousValue: event.previousValue,
+    currentValue: event.currentValue,
+    previousValues: event.previousValues,
+    currentValues: event.currentValues,
     result: event.result,
   }));
 

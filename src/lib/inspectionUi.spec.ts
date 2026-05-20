@@ -233,6 +233,12 @@ describe("inspection UI helpers", () => {
     expect(getInspectionStageDisplayLabel({ stage: "REJECTED", status: "REJECTED" })).toBe("Rejected");
   });
 
+  it("falls back for legacy or unknown inspection stage values from the API", () => {
+    expect(getInspectionStageDisplayLabel({ stage: "PENDING", status: "PENDING" } as any)).toBe("Pending");
+    expect(getInspectionStageDisplayLabel({ stage: "FINANCE", status: "IN_PROGRESS" } as any)).toBe("Finance");
+    expect(getInspectionStageDisplayLabel({ stage: null, status: "PENDING" } as any)).toBe("Unknown Stage");
+  });
+
   it("allows finance review to reopen through the shared resume helper", () => {
     expect(
       canResumeInspectionEditor(

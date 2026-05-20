@@ -7,7 +7,9 @@ import { Topbar } from "@/components/Topbar";
 import { MultiSelectFilter } from "@/components/MultiSelectFilter";
 import type { CategoryRecord } from "@/components/CategoryModal";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
+import { useCopilotReadable } from "@/hooks/useCopilotReadable";
 import { apiFetch, type Page } from "@/lib/api";
+import { buildCopilotDetailContext } from "@/lib/copilotPageContext";
 import {
   buildItemsWorkspaceHref,
   normalizeItemsWorkspaceState,
@@ -232,6 +234,106 @@ export function ItemDetailDossierView({ itemId }: { itemId: string }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [item]);
+
+  const itemDetailReadable = useMemo(() => buildCopilotDetailContext({
+    route: `/items/${itemId}`,
+    entity: "item",
+    selectedRecord: item
+      ? {
+          id: item.id,
+          name: item.name,
+          code: item.code,
+          category: item.category,
+          category_display: buildCategoryPath(item.category, categories, item.category_display) ?? item.category_display,
+          category_type: item.category_type,
+          tracking_type: item.tracking_type,
+          description: item.description,
+          specifications: item.specifications,
+          acct_unit: item.acct_unit,
+          is_active: item.is_active,
+          is_low_stock: isLowStock(item),
+          low_stock_threshold: toNumber(item.low_stock_threshold),
+          total_quantity: toNumber(item.total_quantity),
+          available_quantity: toNumber(item.available_quantity),
+          in_transit_quantity: toNumber(item.in_transit_quantity),
+          created_by_name: item.created_by_name,
+          created_at: item.created_at,
+          updated_at: item.updated_at,
+          depreciation_summary: item.depreciation_summary ?? null,
+        }
+      : null,
+    actions: {
+      edit: canManageItems && Boolean(item),
+      view_transactions: Boolean(item),
+      locate_distribution: Boolean(item && units.length > 0),
+      view_instances: Boolean(item && canShowInstances(item.tracking_type)),
+      view_batches: Boolean(item && canShowBatches(item.tracking_type, item.category_type)),
+    },
+    extra: {
+      loading: isLoading,
+      fetch_error: fetchError,
+      current_section: section,
+      selected_location_id: selectedLocationId,
+      selected_scope_tokens: effectiveScopeTokens,
+      distribution_unit_count: units.length,
+      distribution_units_truncated: units.length > 40,
+      distribution_units: units.slice(0, 40).map(unit => ({
+        id: unit.id,
+        name: unit.name,
+        code: unit.code,
+        total_quantity: unit.totalQuantity,
+        available_quantity: unit.availableQuantity,
+        in_transit_quantity: unit.inTransitQuantity,
+        allocated_quantity: unit.allocatedQuantity,
+        stores_truncated: unit.stores.length > 10,
+        stores: unit.stores.slice(0, 10).map(store => ({
+          id: store.id,
+          location_id: store.locationId,
+          location_name: store.locationName,
+          is_store: store.isStore,
+          batch_number: store.batchNumber,
+          batch_id: store.batchId,
+          quantity: store.quantity,
+          available_quantity: store.availableQuantity,
+          in_transit_quantity: store.inTransitQuantity,
+          allocated_total: store.allocatedTotal,
+          last_updated: store.lastUpdated,
+        })),
+        allocations_truncated: unit.allocations.length > 10,
+        allocations: unit.allocations.slice(0, 10).map(allocation => ({
+          id: allocation.id,
+          target_name: allocation.targetName,
+          target_type: allocation.targetType,
+          target_location_id: allocation.targetLocationId,
+          source_store_id: allocation.sourceStoreId,
+          source_store_name: allocation.sourceStoreName,
+          batch_number: allocation.batchNumber,
+          batch_id: allocation.batchId,
+          quantity: allocation.quantity,
+          allocated_at: allocation.allocatedAt,
+          stock_entry_ids: allocation.stockEntryIds,
+          location_id: allocation.locationId,
+        })),
+      })),
+    },
+  }), [
+    canManageItems,
+    categories,
+    effectiveScopeTokens,
+    fetchError,
+    isLoading,
+    item,
+    itemId,
+    section,
+    selectedLocationId,
+    units,
+  ]);
+
+  useCopilotReadable({
+    description:
+      "Item detail page contract. Use selected_record for the current item and distribution_units for stock by location/store/allocation before SQL.",
+    value: itemDetailReadable,
+  });
 
   const closeModal = () => {
     setModalOpen(false);
