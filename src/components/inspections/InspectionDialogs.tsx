@@ -357,10 +357,17 @@ export function InspectionModal({
   if (canEditBasic) {
     if (!date) errors.date = "Required";
     if (!contractNo.trim()) errors.contract_no = "Required";
+    if (!contractDate) errors.contract_date = "Required";
     if (!contractorName.trim()) errors.contractor_name = "Required";
+    if (!contractorAddress.trim()) errors.contractor_address = "Required";
     if (!indenter.trim()) errors.indenter = "Required";
     if (!indentNo.trim()) errors.indent_no = "Required";
     if (!department) errors.department = "Required";
+    if (!dateOfDelivery) errors.date_of_delivery = "Required";
+    if (!inspectedBy.trim()) errors.inspected_by = "Required";
+    if (!dateOfInspection) errors.date_of_inspection = "Required";
+    if (!consigneeName.trim()) errors.consignee_name = "Required";
+    if (!consigneeDesignation.trim()) errors.consignee_designation = "Required";
     if (items.length === 0) errors.items = "At least one item is required";
     items.forEach((item, index) => {
       if (!item.item_description.trim()) errors[`item_${index}_desc`] = "Required";
@@ -537,7 +544,7 @@ export function InspectionModal({
     () => [
       { name: "date", label: "Certificate Date", type: "date", required: canEditBasic, readOnly: !canEditBasic },
       { name: "contract_no", label: "Contract Number", type: "string", required: canEditBasic, readOnly: !canEditBasic },
-      { name: "contract_date", label: "Contract Date", type: "date", readOnly: !canEditBasic },
+      { name: "contract_date", label: "Contract Date", type: "date", required: canEditBasic, readOnly: !canEditBasic },
       {
         name: "delivery_type",
         label: "Delivery Type",
@@ -550,7 +557,7 @@ export function InspectionModal({
         ],
       },
       { name: "contractor_name", label: "Contractor Name", type: "string", required: canEditBasic, readOnly: !canEditBasic },
-      { name: "contractor_address", label: "Contractor Address", type: "string", readOnly: !canEditBasic },
+      { name: "contractor_address", label: "Contractor Address", type: "string", required: canEditBasic, readOnly: !canEditBasic },
       { name: "indenter", label: "Indenter", type: "string", required: canEditBasic, readOnly: !canEditBasic },
       { name: "indent_no", label: "Indent Number", type: "string", required: canEditBasic, readOnly: !canEditBasic },
       {
@@ -561,12 +568,12 @@ export function InspectionModal({
         readOnly: !canEditBasic,
         options: locations.map(location => ({ label: location.name, value: location.id })),
       },
-      { name: "date_of_delivery", label: "Date of Delivery", type: "date", readOnly: !canEditBasic },
+      { name: "date_of_delivery", label: "Date of Delivery", type: "date", required: canEditBasic, readOnly: !canEditBasic },
       { name: "remarks", label: "Remarks", type: "string", readOnly: !canEditBasic },
-      { name: "inspected_by", label: "Inspected By", type: "string", readOnly: !canEditBasic },
-      { name: "date_of_inspection", label: "Date of Inspection", type: "date", readOnly: !canEditBasic },
-      { name: "consignee_name", label: "Consignee Name", type: "string", readOnly: !canEditBasic },
-      { name: "consignee_designation", label: "Consignee Designation", type: "string", readOnly: !canEditBasic },
+      { name: "inspected_by", label: "Inspected By", type: "string", required: canEditBasic, readOnly: !canEditBasic },
+      { name: "date_of_inspection", label: "Date of Inspection", type: "date", required: canEditBasic, readOnly: !canEditBasic },
+      { name: "consignee_name", label: "Consignee Name", type: "string", required: canEditBasic, readOnly: !canEditBasic },
+      { name: "consignee_designation", label: "Consignee Designation", type: "string", required: canEditBasic, readOnly: !canEditBasic },
       { name: "finance_check_date", label: "Finance Check Date", type: "date", readOnly: !canEditStage4 },
       {
         name: "items",
@@ -811,7 +818,7 @@ export function InspectionModal({
                 <Field label="Contract Number" required={canEditBasic} error={touched ? errors.contract_no : undefined}>
                   <input value={contractNo} onChange={event => setContractNo(event.target.value)} placeholder="e.g. NED/2026/001" disabled={!canEditBasic} />
                 </Field>
-                <Field label="Contract Date">
+                <Field label="Contract Date" required={canEditBasic} error={touched ? errors.contract_date : undefined}>
                   <input type="date" value={contractDate} onChange={event => setContractDate(event.target.value)} disabled={!canEditBasic} />
                 </Field>
                 <Field label="Delivery Type">
@@ -827,7 +834,7 @@ export function InspectionModal({
                 <Field label="Contractor Name" required={canEditBasic} error={touched ? errors.contractor_name : undefined}>
                   <input value={contractorName} onChange={event => setContractorName(event.target.value)} placeholder="Contractor name" disabled={!canEditBasic} />
                 </Field>
-                <Field label="Contractor Address">
+                <Field label="Contractor Address" required={canEditBasic} error={touched ? errors.contractor_address : undefined}>
                   <input value={contractorAddress} onChange={event => setContractorAddress(event.target.value)} placeholder="Address" disabled={!canEditBasic} />
                 </Field>
                 <Field label="Indenter" required={canEditBasic} error={touched ? errors.indenter : undefined}>
@@ -850,7 +857,7 @@ export function InspectionModal({
                     />
                   )}
                 </Field>
-                <Field label="Date of Delivery">
+                <Field label="Date of Delivery" required={canEditBasic} error={touched ? errors.date_of_delivery : undefined}>
                   <input type="date" value={dateOfDelivery} onChange={event => setDateOfDelivery(event.target.value)} disabled={!canEditBasic} />
                 </Field>
               </div>
@@ -858,16 +865,16 @@ export function InspectionModal({
 
             <Section n={2} title="Inspection Details" sub="Information about the inspection process.">
               <div className="form-grid-2">
-                <Field label="Inspected By">
+                <Field label="Inspected By" required={canEditBasic} error={touched ? errors.inspected_by : undefined}>
                   <input value={inspectedBy} onChange={event => setInspectedBy(event.target.value)} placeholder="Inspector name" disabled={!canEditBasic} />
                 </Field>
-                <Field label="Date of Inspection">
+                <Field label="Date of Inspection" required={canEditBasic} error={touched ? errors.date_of_inspection : undefined}>
                   <input type="date" value={dateOfInspection} onChange={event => setDateOfInspection(event.target.value)} disabled={!canEditBasic} />
                 </Field>
-                <Field label="Consignee Name">
+                <Field label="Consignee Name" required={canEditBasic} error={touched ? errors.consignee_name : undefined}>
                   <input value={consigneeName} onChange={event => setConsigneeName(event.target.value)} placeholder="Consignee" disabled={!canEditBasic} />
                 </Field>
-                <Field label="Consignee Designation">
+                <Field label="Consignee Designation" required={canEditBasic} error={touched ? errors.consignee_designation : undefined}>
                   <input value={consigneeDesignation} onChange={event => setConsigneeDesignation(event.target.value)} placeholder="Designation" disabled={!canEditBasic} />
                 </Field>
                 <Field label="Remarks" span={2}>
