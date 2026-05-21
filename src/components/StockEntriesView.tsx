@@ -12,7 +12,13 @@ import { getIssueAvailableQuantity, getIssueBatchOptions, getIssueInstanceOption
 import { buildStockEntryPayload, validateStockEntryForm, type CreatableStockEntryType, type StockEntryFormItem, type StockEntryFormState } from "@/lib/stockEntryFormRules";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCopilotAction } from "@/hooks/useCopilotAction";
+import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
+import { useCopilotReadable } from "@/hooks/useCopilotReadable";
 import { relTime, type LocationRecord } from "@/lib/userUiShared";
+import { normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
+import { buildCopilotListContext } from "@/lib/copilotPageContext";
+import { consumePendingOpen, SAME_PAGE_OPEN_EVENT } from "@/lib/copilotPendingAction";
 
 type Density = "compact" | "balanced" | "comfortable";
 type EntryType = "RECEIPT" | "ISSUE" | "RETURN";
@@ -521,6 +527,52 @@ function formFromEntry(entry: StockEntryRecord | null, locations: LocationRecord
   };
 }
 
+function toStringValue(value: unknown) {
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  return undefined;
+}
+
+function toStringArray(value: unknown) {
+  if (!Array.isArray(value)) return undefined;
+  return value
+    .map(item => toStringValue(item))
+    .filter((item): item is string => item !== undefined);
+}
+
+function buildStockEntryCopilotValuePatch(
+  values: Record<string, unknown>,
+): Partial<StockEntryFormState> {
+  const patch: Partial<StockEntryFormState> = {};
+
+  if (values.entry_type === "ISSUE" || values.entry_type === "RECEIPT") {
+    patch.entry_type = values.entry_type;
+  }
+  if (values.issue_target === "STORE" || values.issue_target === "LOCATION" || values.issue_target === "PERSON") {
+    patch.issue_target = values.issue_target;
+  }
+  if (values.return_source === "LOCATION" || values.return_source === "PERSON") {
+    patch.return_source = values.return_source;
+  }
+  for (const key of ["from_location", "to_location", "issued_to", "purpose", "remarks"] as const) {
+    const next = toStringValue(values[key]);
+    if (next !== undefined) patch[key] = next;
+  }
+  if (Array.isArray(values.items)) {
+    patch.items = values.items
+      .filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+      .map(row => ({
+        item: toStringValue(row.item) ?? "",
+        batch: toStringValue(row.batch) ?? "",
+        quantity: toStringValue(row.quantity) ?? "1",
+        instances: toStringArray(row.instances) ?? [],
+        stock_register: toStringValue(row.stock_register) ?? "",
+        page_number: toStringValue(row.page_number) ?? "",
+      }));
+  }
+
+  return patch;
+}
+
 function entryTarget(entry: StockEntryRecord) {
   if (entry.issued_to_name) return entry.issued_to_name;
   return entry.to_location_name ?? "—";
@@ -605,8 +657,6 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
       cancelled = true;
     };
   }, [open, form.entry_type, form.from_location]);
-
-  if (!open) return null;
 
   const issueStoreOptions = transferrableStores.filter(location => location.is_active && location.is_store);
   const issueNonStoreOptions = getAllocatableTargetLocations(form.from_location, refs.locations);
@@ -730,7 +780,14 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
       }
     });
     setErrors(nextErrors);
-    if (Object.keys(nextErrors).length) return;
+    if (Object.keys(nextErrors).length) {
+      return {
+        ok: false,
+        errorType: "validation_error",
+        message: "Resolve highlighted stock-entry fields before submitting.",
+        fieldErrors: nextErrors,
+      };
+    }
 
     setSubmitting(true);
     setSubmitError(null);
@@ -740,14 +797,21 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
         payload.reference_entry = entry.id;
         payload.reference_purpose = "REPLACEMENT";
       }
-      await apiFetch(mode === "edit" && entry ? `/api/inventory/stock-entries/${entry.id}/` : "/api/inventory/stock-entries/", {
+      const saved = await apiFetch<StockEntryRecord>(mode === "edit" && entry ? `/api/inventory/stock-entries/${entry.id}/` : "/api/inventory/stock-entries/", {
         method: mode === "edit" ? "PATCH" : "POST",
         body: JSON.stringify(payload),
       });
       await onSave();
       onClose();
+      return {
+        ok: true,
+        message: mode === "edit" ? "Stock entry updated successfully." : "Stock entry created successfully.",
+        recordId: saved.id,
+      };
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Failed to save stock entry");
+      const failure = normalizeCopilotSubmitError(err);
+      setSubmitError(failure.message || "Failed to save stock entry");
+      return failure;
     } finally {
       setSubmitting(false);
     }
@@ -756,6 +820,174 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
   const issueLocationOptions = form.issue_target === "LOCATION" ? issueNonStoreOptions : issueStoreOptions;
   const selectedItemIds = new Set(form.items.map(row => row.item).filter(Boolean));
   const canSubmit = !refsLoading && !submitting;
+
+  const copilotFields = useMemo<CopilotFormField[]>(() => [
+    {
+      name: "entry_type",
+      label: "Entry type",
+      type: "select",
+      required: true,
+      options: [
+        { value: "ISSUE", label: "Transfer / Allocation" },
+        { value: "RECEIPT", label: "Receipt / Return" },
+      ],
+    },
+    {
+      name: "issue_target",
+      label: "Issue target",
+      type: "select",
+      required: form.entry_type === "ISSUE",
+      options: [
+        { value: "STORE", label: "Destination Store" },
+        { value: "LOCATION", label: "Destination Non-store" },
+        { value: "PERSON", label: "Receiving Person" },
+      ],
+    },
+    {
+      name: "return_source",
+      label: "Return source",
+      type: "select",
+      required: form.entry_type === "RECEIPT",
+      options: [
+        { value: "PERSON", label: "Returning Person" },
+        { value: "LOCATION", label: "Returning Non-store" },
+      ],
+    },
+    {
+      name: "from_location",
+      label: form.entry_type === "ISSUE" ? "Source store" : "Returning non-store",
+      type: "select",
+      required:
+        form.entry_type === "ISSUE" ||
+        (form.entry_type === "RECEIPT" && form.return_source === "LOCATION"),
+      options: (form.entry_type === "ISSUE" ? selectableStoreOptions : receiptNonStoreOptions)
+        .map(location => ({
+          value: String(location.id),
+          label: location.name,
+        })),
+    },
+    {
+      name: "to_location",
+      label: form.entry_type === "ISSUE" ? "Destination" : "Receiving store",
+      type: "select",
+      required:
+        (form.entry_type === "ISSUE" && form.issue_target !== "PERSON") ||
+        form.entry_type === "RECEIPT",
+      options: (form.entry_type === "ISSUE" ? issueLocationOptions : selectableStoreOptions)
+        .map(location => ({
+          value: String(location.id),
+          label: location.name,
+        })),
+    },
+    {
+      name: "issued_to",
+      label: form.entry_type === "ISSUE" ? "Receiving person" : "Returning person",
+      type: "select",
+      required:
+        (form.entry_type === "ISSUE" && form.issue_target === "PERSON") ||
+        (form.entry_type === "RECEIPT" && form.return_source === "PERSON"),
+      options: (form.entry_type === "ISSUE" ? issuePersonOptions : receiptPersonOptions)
+        .map(person => ({
+          value: String(person.id),
+          label: person.name,
+        })),
+    },
+    { name: "purpose", label: "Purpose", type: "string" },
+    { name: "remarks", label: "Remarks", type: "string" },
+    {
+      name: "items",
+      label: "Line items",
+      type: "array",
+      required: true,
+      arrayItemFields: [
+        {
+          name: "item",
+          label: "Item",
+          type: "select",
+          required: true,
+          options: getItemOptions().map(item => ({
+            value: String(item.id),
+            label: `${item.name}${item.code ? ` (${item.code})` : ""}`,
+          })),
+        },
+        {
+          name: "batch",
+          label: "Batch",
+          type: "select",
+          options: refs.batches.map(batch => ({
+            value: String(batch.id),
+            label: batch.batch_number,
+          })),
+        },
+        { name: "quantity", label: "Quantity", type: "number", required: true },
+        {
+          name: "instances",
+          label: "Instance IDs",
+          type: "array",
+          description:
+            "For individual-tracked items, provide the selected instance IDs from the visible form options/context.",
+        },
+        {
+          name: "stock_register",
+          label: "Source register",
+          type: "select",
+          options: sourceRegisterOptions.map(register => ({
+            value: String(register.id),
+            label: register.register_number,
+          })),
+        },
+        { name: "page_number", label: "Page number", type: "number" },
+      ],
+    },
+  ], [
+    form.entry_type,
+    form.issue_target,
+    form.return_source,
+    getItemOptions,
+    issueLocationOptions,
+    issuePersonOptions,
+    receiptNonStoreOptions,
+    receiptPersonOptions,
+    refs.batches,
+    selectableStoreOptions,
+    sourceRegisterOptions,
+  ]);
+
+  const validateForCopilot = useCallback(() => {
+    const nextErrors = validateStockEntryForm(form);
+    setErrors(nextErrors);
+    return {
+      ok: Object.keys(nextErrors).length === 0,
+      errors: nextErrors,
+    };
+  }, [form]);
+
+  useCopilotForm({
+    formId: mode === "edit" && entry ? `stock-entry-edit-${entry.id}` : "stock-entry-create",
+    title: mode === "edit" ? "Edit Stock Entry" : entry ? "Create Replacement Stock Entry" : "Create Stock Entry",
+    description: "Create or edit a stock movement entry on the Stock Entries page.",
+    mode,
+    active: open,
+    fields: copilotFields,
+    values: form as unknown as Record<string, unknown>,
+    errors,
+    canSetValues: !submitting && !refsLoading,
+    canValidate: true,
+    canSubmit,
+    requirements: {
+      setValues: { requiredCapabilities: [{ module: "stock-entries", level: "manage" }] },
+      validate: { requiredCapabilities: [{ module: "stock-entries", level: "manage" }] },
+      submit: { requiredCapabilities: [{ module: "stock-entries", level: "manage" }] },
+    },
+    setValues: values => {
+      setForm(prev => ({ ...prev, ...buildStockEntryCopilotValuePatch(values) }));
+      return { updated: Object.keys(values) };
+    },
+    validate: validateForCopilot,
+    submit: () => submit(),
+  });
+
+  if (!open) return null;
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
@@ -1211,23 +1443,132 @@ export function StockEntriesView() {
     setPage,
   } = useClientPagination(filteredEntries, STOCK_ENTRIES_PAGE_SIZE, [search, typeFilter, statusFilter, storeScope]);
 
-  const openCreateModal = async () => {
+  const openCreateModal = useCallback(async () => {
     setModalMode("create");
     setEditingEntry(null);
     setModalOpen(true);
     void loadRefs();
-  };
-  const openEditModal = async (entry: StockEntryRecord) => {
+  }, [loadRefs]);
+  const openEditModal = useCallback(async (entry: StockEntryRecord) => {
     setModalMode("edit");
     setEditingEntry(entry);
     setModalOpen(true);
     void loadRefs();
-  };
-  const closeModal = () => {
+  }, [loadRefs]);
+  const closeModal = useCallback(() => {
     setModalOpen(false);
     setModalMode("create");
     setEditingEntry(null);
-  };
+  }, []);
+
+  const stockEntriesListReadable = useMemo(() => buildCopilotListContext({
+    route: "/stock-entries",
+    entity: "stock_entry",
+    total: entries.length,
+    filteredTotal: filteredEntries.length,
+    filters: {
+      search: search || null,
+      type: typeFilter,
+      status: statusFilter,
+      store: storeScope,
+    },
+    pagination: { page, pageSize: STOCK_ENTRIES_PAGE_SIZE, totalPages },
+    rows: pagedEntries.map(entry => ({
+      id: entry.id,
+      entry_number: entry.entry_number,
+      entry_type: entry.entry_type,
+      entry_date: entry.entry_date,
+      from_location: entry.from_location,
+      from_location_name: entry.from_location_name ?? null,
+      to_location: entry.to_location,
+      to_location_name: entry.to_location_name ?? null,
+      issued_to: entry.issued_to,
+      issued_to_name: entry.issued_to_name ?? null,
+      status: entry.status,
+      purpose: entry.purpose ?? null,
+      item_count: entry.items.length,
+      items: entry.items.slice(0, 5).map(item => ({
+        item: item.item,
+        item_name: item.item_name ?? null,
+        quantity: item.quantity,
+        stock_register: item.stock_register,
+        stock_register_name: item.stock_register_name ?? null,
+        page_number: item.page_number,
+      })),
+      detail_route: `/stock-entries/${entry.id}`,
+      available_actions: {
+        open_detail: true,
+        edit: canManage && entry.status === "DRAFT",
+        delete: canDelete && entry.can_delete !== false && entry.status === "DRAFT",
+        acknowledge: Boolean(entry.can_acknowledge) && entry.status === "PENDING_ACK",
+      },
+    })),
+    actions: {
+      create_stock_entry: canManage,
+    },
+    loading: isLoading || capsLoading || refsLoading,
+    extra: {
+      scope_stores: scopeStores.map(store => ({
+        id: store.id,
+        name: store.name,
+        code: store.code ?? null,
+        is_central: store.is_central ?? null,
+      })),
+    },
+  }), [
+    canDelete,
+    canManage,
+    capsLoading,
+    entries.length,
+    filteredEntries.length,
+    isLoading,
+    page,
+    pagedEntries,
+    refsLoading,
+    scopeStores,
+    search,
+    statusFilter,
+    storeScope,
+    totalPages,
+    typeFilter,
+  ]);
+
+  useCopilotReadable({
+    description:
+      "Stock entries displayed on this page after filters/pagination. Use visible_rows to resolve entry numbers, movement type, status, locations, and item summaries without SQL. Open stock_entry_create before filling a new stock movement.",
+    value: stockEntriesListReadable,
+  });
+
+  useCopilotAction({
+    name: "open_create_stock_entry_form",
+    description:
+      "Open the Create Stock Entry modal on the Stock Entries page before filling a new stock movement.",
+    parameters: {},
+    allowed: canManage,
+    enabled: true,
+    requiredCapabilities: [{ module: "stock-entries", level: "manage" }],
+    handler: async () => {
+      await openCreateModal();
+      return { ok: true };
+    },
+  });
+
+  useEffect(() => {
+    if (consumePendingOpen("stock_entry_create") && canManage) {
+      void openCreateModal();
+    }
+  }, [canManage, openCreateModal]);
+
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ formId?: string }>).detail;
+      if (detail?.formId !== "stock_entry_create") return;
+      if (!canManage) return;
+      void openCreateModal();
+    };
+    window.addEventListener(SAME_PAGE_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(SAME_PAGE_OPEN_EVENT, onOpen);
+  }, [canManage, openCreateModal]);
 
   const handleSave = async () => {
     const refreshed = await loadEntries({ showLoading: false });

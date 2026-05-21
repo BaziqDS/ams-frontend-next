@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { apiFetch } from "@/lib/api";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
+import { normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
 
 const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
   <svg aria-hidden="true" focusable="false" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -255,13 +256,9 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
             : category?.id,
       };
     } catch (err) {
-      const message = err instanceof Error ? err.message : (isEditMode ? "Failed to update category." : "Failed to create category.");
-      setSubmitError(message);
-      return {
-        ok: false,
-        errorType: "submit_failed",
-        message,
-      };
+      const failure = normalizeCopilotSubmitError(err);
+      setSubmitError(failure.message || (isEditMode ? "Failed to update category." : "Failed to create category."));
+      return failure;
     } finally {
       setSubmitting(false);
     }

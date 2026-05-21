@@ -63,6 +63,8 @@
   /* Transitions */
   --t-fast: 120ms cubic-bezier(0.2, 0, 0, 1);
   --t: 200ms cubic-bezier(0.2, 0, 0, 1);
+  --copilot-dock-width: min(620px, calc(100vw - 48px));
+  --copilot-scrollbar-gutter: 12px;
 }
 
 [data-density="compact"] { --row-h: 36px; }
@@ -575,6 +577,189 @@ kbd {
   background: var(--surface);
   height: 100vh;
   overflow-y: auto;
+  transition: margin-right var(--t);
+}
+
+.copilot-dock-launcher {
+  position: fixed;
+  right: calc(18px + var(--copilot-scrollbar-gutter));
+  top: 18px;
+  z-index: 1100;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid color-mix(in oklch, var(--primary) 20%, var(--border));
+  border-radius: var(--radius-md);
+  background: var(--card);
+  color: var(--primary);
+  box-shadow: var(--shadow-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--t-fast), border-color var(--t-fast), box-shadow var(--t-fast), transform var(--t-fast);
+}
+
+.copilot-dock-launcher:hover {
+  background: var(--primary-weak);
+  border-color: color-mix(in oklch, var(--primary) 36%, var(--border));
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-1px);
+}
+
+.copilot-dock-unread {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  border: 2px solid var(--card);
+  background: var(--danger);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.copilot-dock-panel {
+  position: fixed;
+  top: 0;
+  right: var(--copilot-scrollbar-gutter);
+  bottom: 0;
+  z-index: 1090;
+  width: var(--copilot-dock-width);
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border-left: 1px solid var(--hairline);
+  box-shadow: -18px 0 42px -32px rgba(14, 17, 22, 0.42);
+  transform: translateX(100%);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform var(--t), opacity var(--t-fast);
+}
+
+.ams-copilot-docked .copilot-dock-panel {
+  max-width: calc(100vw - var(--copilot-scrollbar-gutter));
+}
+
+.copilot-dock-panel.is-open {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.copilot-dock-head {
+  height: 56px;
+  flex: 0 0 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px 0 14px;
+  border-bottom: 1px solid var(--hairline);
+  background: color-mix(in oklch, var(--card) 94%, var(--surface));
+}
+
+.copilot-dock-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.copilot-dock-mark {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: var(--radius-md);
+  background: var(--primary);
+  color: var(--primary-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.copilot-dock-copy {
+  min-width: 0;
+}
+
+.copilot-dock-name {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.copilot-dock-sub {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.copilot-dock-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.copilot-dock-icon-btn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+}
+
+.copilot-dock-icon-btn:hover {
+  background: var(--surface-2);
+  border-color: var(--hairline);
+  color: var(--ink);
+}
+
+.copilot-dock-frame {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: var(--card);
+}
+
+.copilot-dock-iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--card);
+  z-index: 1;
+}
+
+.copilot-dock-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-2);
+}
+
+@media (max-width: 720px) {
+  :root {
+    --copilot-dock-width: min(100vw, 420px);
+    --copilot-scrollbar-gutter: 10px;
+  }
 }
 
 .topbar {

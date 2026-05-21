@@ -7,11 +7,15 @@ import { useCopilotAction } from "@/hooks/useCopilotAction";
 import { useCopilotReadable } from "@/hooks/useCopilotReadable";
 import type { CapabilityLevel } from "@/contexts/CapabilitiesContext";
 import {
+  buildCopilotSetFormValuesParameters,
   createCopilotFormRuntimeState,
+  findInvalidCopilotSelectValues,
   normalizeCopilotFormPatchValues,
+  normalizeCopilotSetValuesResponse,
   normalizeCopilotSubmitError,
   normalizeCopilotSubmitResult,
   updateCopilotFormRuntimeState,
+  validateCopilotFormPatchValues,
 } from "@/lib/copilotFormRuntime";
 
 export type CopilotFormFieldOption = {
@@ -27,6 +31,7 @@ export type CopilotFormField = {
   readOnly?: boolean;
   description?: string;
   options?: CopilotFormFieldOption[];
+  arrayItemFields?: CopilotFormField[];
 };
 
 export type CopilotFormActionRequirements = {
@@ -178,6 +183,10 @@ export function useCopilotForm(config: CopilotFormConfig) {
     () => new Set(config.fields.map(field => field.name)),
     [config.fields],
   );
+  const setValuesParameters = useMemo(
+    () => buildCopilotSetFormValuesParameters(config.fields),
+    [config.fields],
+  );
 
   const activeFormContext = useMemo(
     () =>
@@ -188,6 +197,7 @@ export function useCopilotForm(config: CopilotFormConfig) {
             description: config.description,
             mode: config.mode,
             fields: config.fields,
+            setValuesSchema: setValuesParameters.values,
             values: config.values,
             errors: config.errors ?? {},
             dirtyFields: runtimeState.dirtyFields,
@@ -219,6 +229,7 @@ export function useCopilotForm(config: CopilotFormConfig) {
       config.validate,
       config.values,
       runtimeState,
+      setValuesParameters.values,
     ],
   );
   const readableValue = useMemo(
@@ -237,15 +248,7 @@ export function useCopilotForm(config: CopilotFormConfig) {
     name: "set_form_values",
     description:
       "Patch fields on the active AMS form. Args: { formId?: string, values: Record<string, unknown>, reason?: string }.",
-    parameters: {
-      formId: { type: "string", description: "Optional target form id." },
-      values: {
-        type: "object",
-        description: "Field/value map using exact field names from activeForm.fields.",
-        required: true,
-      },
-      reason: { type: "string", description: "Optional reason for audit/debugging." },
-    },
+    parameters: setValuesParameters,
     allowed: config.canSetValues !== false,
     requiredPermissions: config.requirements?.setValues?.requiredPermissions,
     requiredCapabilities: config.requirements?.setValues?.requiredCapabilities,
@@ -262,10 +265,44 @@ export function useCopilotForm(config: CopilotFormConfig) {
         config.fields,
         values && typeof values === "object" ? values : {},
       );
+      const invalidSelects = findInvalidCopilotSelectValues(
+        config.fields,
+        incoming,
+      );
+      if (invalidSelects.length > 0) {
+        return {
+          ok: false,
+          errorType: "invalid_select_value",
+          message:
+            "One or more select fields used values that are not available in the active form options. Use the option value shown in the Writable field schema.",
+          fieldErrors: Object.fromEntries(
+            invalidSelects.map(failure => [
+              failure.field,
+              `Invalid option ${JSON.stringify(failure.value)}. Allowed: ${failure.allowedOptions
+                .map(option => `${String(option.label ?? option.value)}=${String(option.value)}`)
+                .join(", ")}`,
+            ]),
+          ),
+        };
+      }
+
+      const schemaResult = validateCopilotFormPatchValues(
+        config.fields,
+        incoming,
+      );
+      if (!schemaResult.ok) {
+        return {
+          ok: false,
+          errorType: "invalid_form_values_schema",
+          message:
+            "The submitted values do not match the active form schema. Use activeForm.setValuesSchema and exact writable field names.",
+          fieldErrors: schemaResult.fieldErrors,
+        };
+      }
       const accepted: Record<string, unknown> = {};
       const unknown: string[] = [];
 
-      for (const [field, value] of Object.entries(incoming)) {
+      for (const [field, value] of Object.entries(schemaResult.values)) {
         if (fieldNames.has(field)) {
           accepted[field] = value;
         } else {
@@ -283,22 +320,17 @@ export function useCopilotForm(config: CopilotFormConfig) {
       ];
       const result = config.setValues(accepted);
       return Promise.resolve(result).then(extra => {
-        const extraResult = extra && typeof extra === "object"
-          ? extra as { applied?: unknown; ignored?: unknown; reason?: unknown }
-          : null;
-        const response = {
-          ok: true,
-          applied: Object.keys(accepted),
-          unknown,
-          ignored: Array.isArray(extraResult?.ignored)
-            ? extraResult.ignored.filter((field): field is string => typeof field === "string")
-            : [],
-          result: extra ?? null,
-        };
+        const response = normalizeCopilotSetValuesResponse({
+          acceptedFields: Object.keys(accepted),
+          unknownFields: unknown,
+          setterResult: extra,
+        });
         trackActivity({
           kind: "form_values_set",
           actor: "assistant",
-          title: `Assistant set ${response.applied.length} field${response.applied.length === 1 ? "" : "s"} in ${config.title}`,
+          title: response.ok
+            ? `Assistant set ${response.applied.length} field${response.applied.length === 1 ? "" : "s"} in ${config.title}`
+            : `Assistant could not set fields in ${config.title}`,
           formId: config.formId,
           formTitle: config.title,
           fields: response.applied,

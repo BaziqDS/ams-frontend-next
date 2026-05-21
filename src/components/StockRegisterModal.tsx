@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { apiFetch } from "@/lib/api";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import type { LocationRecord, StockRegisterRecord } from "@/lib/userUiShared";
+import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
+import { normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
 
 const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
   <svg aria-hidden="true" focusable="false" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -78,6 +80,40 @@ function toPayload(form: StockRegisterFormState) {
   };
 }
 
+function validateStockRegisterForm(
+  form: StockRegisterFormState,
+  options: { canSave: boolean; storesReady: boolean },
+) {
+  const errors: Record<string, string> = {};
+  if (!form.register_number.trim()) errors.register_number = "Register number is required.";
+  if (!form.register_type) errors.register_type = "Register type is required.";
+  if (!form.store) errors.store = "Store is required.";
+  if (!options.storesReady) errors.store = "No store option is available for stock-register creation.";
+  if (!options.canSave) errors._form = "Resolve store loading before saving this register.";
+  return errors;
+}
+
+function buildStockRegisterCopilotValuePatch(
+  values: Record<string, unknown>,
+): Partial<StockRegisterFormState> {
+  const patch: Partial<StockRegisterFormState> = {};
+
+  if (typeof values.register_number === "string") {
+    patch.register_number = values.register_number;
+  }
+  if (values.register_type === "CSR" || values.register_type === "DSR" || values.register_type === "") {
+    patch.register_type = values.register_type;
+  }
+  if (typeof values.store === "string" || typeof values.store === "number") {
+    patch.store = String(values.store);
+  }
+  if (typeof values.is_active === "boolean") {
+    patch.is_active = values.is_active;
+  }
+
+  return patch;
+}
+
 interface StockRegisterModalProps {
   open: boolean;
   mode: "create" | "edit";
@@ -129,11 +165,70 @@ export function StockRegisterModal({ open, mode, register, stores, storesLoading
 
   const set = (patch: Partial<StockRegisterFormState>) => setForm((prev) => ({ ...prev, ...patch }));
 
+  const copilotFields = useMemo<CopilotFormField[]>(() => [
+    {
+      name: "register_number",
+      label: "Register number",
+      type: "string",
+      required: true,
+      description:
+        "Unique register number. Use a value provided by the user or visible business context; do not invent sequential codes if the user did not provide one.",
+    },
+    {
+      name: "register_type",
+      label: "Register type",
+      type: "select",
+      required: true,
+      options: [
+        { value: "CSR", label: "Consumable Stock Register" },
+        { value: "DSR", label: "Dead Stock Register" },
+      ],
+    },
+    {
+      name: "store",
+      label: "Store",
+      type: "select",
+      required: true,
+      options: stores.map((store) => ({
+        value: String(store.id),
+        label: store.name,
+      })),
+    },
+    {
+      name: "is_active",
+      label: "Active state",
+      type: "boolean",
+      readOnly: true,
+      description: "New registers are active by default; lifecycle actions close or reopen them later.",
+    },
+  ], [stores]);
+
+  const validateForCopilot = useCallback(() => {
+    setTouched(new Set(["register_number", "register_type", "store"]));
+    const nextErrors = validateStockRegisterForm(form, {
+      canSave,
+      storesReady: stores.length > 0 && !storesLoading && !storesError,
+    });
+    return {
+      ok: Object.keys(nextErrors).length === 0,
+      errors: nextErrors,
+    };
+  }, [canSave, form, stores.length, storesError, storesLoading]);
+
   const submit = async () => {
     setTouched(new Set(["register_number", "register_type", "store"]));
-    if (!form.register_number.trim() || !form.register_type || !form.store || !canSave) {
+    const validationErrors = validateStockRegisterForm(form, {
+      canSave,
+      storesReady: stores.length > 0 && !storesLoading && !storesError,
+    });
+    if (Object.keys(validationErrors).length > 0) {
       if (!canSave) setSubmitError("Resolve store loading before saving this register.");
-      return;
+      return {
+        ok: false,
+        errorType: "validation_error",
+        message: "Resolve highlighted stock-register fields before submitting.",
+        fieldErrors: validationErrors,
+      };
     }
 
     setSubmitting(true);
@@ -141,13 +236,14 @@ export function StockRegisterModal({ open, mode, register, stores, storesLoading
 
     try {
       const body = JSON.stringify(toPayload(form));
+      let saved: StockRegisterRecord;
       if (isEditMode && register) {
-        await apiFetch(`/api/inventory/stock-registers/${register.id}/`, {
+        saved = await apiFetch<StockRegisterRecord>(`/api/inventory/stock-registers/${register.id}/`, {
           method: "PATCH",
           body,
         });
       } else {
-        await apiFetch("/api/inventory/stock-registers/", {
+        saved = await apiFetch<StockRegisterRecord>("/api/inventory/stock-registers/", {
           method: "POST",
           body,
         });
@@ -155,12 +251,44 @@ export function StockRegisterModal({ open, mode, register, stores, storesLoading
 
       await onSave?.();
       onClose();
+      return {
+        ok: true,
+        message: isEditMode ? "Stock register updated successfully." : "Stock register created successfully.",
+        recordId: saved.id,
+      };
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : (isEditMode ? "Failed to update stock register." : "Failed to create stock register."));
+      const failure = normalizeCopilotSubmitError(err);
+      setSubmitError(failure.message || (isEditMode ? "Failed to update stock register." : "Failed to create stock register."));
+      return failure;
     } finally {
       setSubmitting(false);
     }
   };
+
+  useCopilotForm({
+    formId: isEditMode && register ? `stock-register-edit-${register.id}` : "stock-register-create",
+    title: isEditMode ? "Edit Stock Register" : "Create Stock Register",
+    description: "Create or edit a stock-register ledger on the Stock Registers page.",
+    mode,
+    active: open,
+    fields: copilotFields,
+    values: form as unknown as Record<string, unknown>,
+    errors: Object.fromEntries(Object.entries(errors).filter((entry): entry is [string, string] => Boolean(entry[1]))),
+    canSetValues: !submitting && !storesLoading,
+    canValidate: true,
+    canSubmit: canSave,
+    requirements: {
+      setValues: { requiredCapabilities: [{ module: "stock-registers", level: "manage" }] },
+      validate: { requiredCapabilities: [{ module: "stock-registers", level: "manage" }] },
+      submit: { requiredCapabilities: [{ module: "stock-registers", level: "manage" }] },
+    },
+    setValues: values => {
+      set(buildStockRegisterCopilotValuePatch(values));
+      return { updated: Object.keys(values) };
+    },
+    validate: validateForCopilot,
+    submit: () => submit(),
+  });
 
   if (!open) return null;
 

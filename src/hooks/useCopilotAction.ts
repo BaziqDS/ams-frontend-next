@@ -7,6 +7,7 @@ export function useCopilotAction(action: CopilotAction & { enabled?: boolean }) 
   const { registerAction } = useCopilotInternal();
   const actionRef = useRef(action);
   actionRef.current = action;
+  const parametersKey = JSON.stringify(action.parameters ?? {});
   const requiredPermissionsKey = JSON.stringify(action.requiredPermissions ?? []);
   const requiredCapabilitiesKey = JSON.stringify(action.requiredCapabilities ?? []);
 
@@ -29,6 +30,7 @@ export function useCopilotAction(action: CopilotAction & { enabled?: boolean }) 
     action.description,
     action.allowed,
     action.enabled,
+    parametersKey,
     requiredPermissionsKey,
     requiredCapabilitiesKey,
     registerAction,

@@ -9,7 +9,11 @@ import {
   useCopilotHitlDecision,
   useCopilotVoiceCommand,
 } from "@/contexts/CopilotContext";
-import { buildVoiceTranscriptDraft, formatVoiceCaptureError } from "@/lib/voiceCapture";
+import {
+  buildVoiceTranscriptDraft,
+  formatVoiceCaptureError,
+  getVoiceMediaStream,
+} from "@/lib/voiceCapture";
 
 type VoiceStatus =
   | "idle"
@@ -286,13 +290,7 @@ export function CopilotVoiceOverlay() {
       setFinalTranscript("");
       setDraftTranscript("");
       setAssistantPreview("");
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
+      const stream = await getVoiceMediaStream(navigator.mediaDevices);
       mediaStreamRef.current = stream;
       audioChunksRef.current = [];
 

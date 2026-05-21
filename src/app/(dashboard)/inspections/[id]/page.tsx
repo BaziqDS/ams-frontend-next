@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
 import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
 import { useCopilotReadable } from "@/hooks/useCopilotReadable";
-import { useCopilotSupportNudge } from "@/contexts/CopilotContext";
+import { normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
 import {
   InspectionIcon,
   RejectInspectionModal,
@@ -53,11 +53,12 @@ import {
 } from "@/lib/inspectionStageForms";
 import {
   applyInspectionItemCopilotPatches,
+  buildInspectionFinanceCopilotFields,
+  buildInspectionItemArrayCopilotFields,
   buildInspectionItemCopilotFields,
   syncInspectionItemReferences,
 } from "@/lib/inspectionCopilotForm";
 import { buildCopilotDetailContext } from "@/lib/copilotPageContext";
-import { createInspectionWorkflowNudge } from "@/lib/copilotSupportNudgeTemplates";
 
 type InspectionLocationDetail = {
   id: number;
@@ -66,6 +67,13 @@ type InspectionLocationDetail = {
   main_store_display?: string | null;
   root_main_store_id?: number | string | null;
   root_main_store_display?: string | null;
+};
+
+type CopilotDepreciationAssetClassOption = {
+  id: number;
+  name: string;
+  code: string;
+  current_rate?: string | null;
 };
 
 function normalizeApiList<T>(data: Page<T> | T[]) {
@@ -704,7 +712,6 @@ export default function InspectionDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const { can, hasInspectionStage, isLoading: capsLoading, isSuperuser } = useCapabilities();
-  const emitSupportNudge = useCopilotSupportNudge();
 
   const canView = can("inspections", "view");
   const canManage = can("inspections", "manage");
@@ -720,6 +727,7 @@ export default function InspectionDetailPage() {
   const [copilotItems, setCopilotItems] = useState<InspectionItemOption[]>([]);
   const [copilotRegisters, setCopilotRegisters] = useState<InspectionStockRegisterOption[]>([]);
   const [copilotLocation, setCopilotLocation] = useState<InspectionLocationDetail | null>(null);
+  const [copilotAssetClasses, setCopilotAssetClasses] = useState<CopilotDepreciationAssetClassOption[]>([]);
 
   const loadInspection = useCallback(async () => {
     setLoading(true);
@@ -782,6 +790,27 @@ export default function InspectionDetailPage() {
     };
   }, [editableInspection?.department, editableInspection?.stage]);
 
+  useEffect(() => {
+    if (!editableInspection || editableInspection.stage !== "FINANCE_REVIEW") {
+      setCopilotAssetClasses([]);
+      return;
+    }
+
+    let ignored = false;
+    apiFetch<Page<CopilotDepreciationAssetClassOption> | CopilotDepreciationAssetClassOption[]>("/api/inventory/depreciation/asset-classes/?page_size=500")
+      .then(data => {
+        if (ignored) return;
+        setCopilotAssetClasses(normalizeApiList(data).filter(assetClass => assetClass.code && assetClass.name));
+      })
+      .catch(() => {
+        if (!ignored) setCopilotAssetClasses([]);
+      });
+
+    return () => {
+      ignored = true;
+    };
+  }, [editableInspection?.id, editableInspection?.stage]);
+
   const canEdit = inspection ? canResumeInspectionEditor(inspection, canManage, hasInspectionStage) : false;
   const canDelete = Boolean(inspection && canFull && inspection.stage === "DRAFT");
   const canActStage1 = Boolean(inspection && inspection.stage === "DRAFT" && hasInspectionStage("initiate_inspection"));
@@ -827,13 +856,9 @@ export default function InspectionDetailPage() {
         recordId: editableInspection.id,
       };
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Failed to save inspection";
-      setError(message);
-      return {
-        ok: false,
-        errorType: "submit_failed",
-        message,
-      };
+      const failure = normalizeCopilotSubmitError(err);
+      setError(failure.message || "Failed to save inspection");
+      return failure;
     } finally {
       setBusyAction(null);
     }
@@ -863,15 +888,7 @@ export default function InspectionDetailPage() {
         body: JSON.stringify(buildStagePayload(editableInspection)),
       });
       await apiFetch(`/api/inventory/inspections/${editableInspection.id}/${transition}/`, { method: "POST" });
-      const previousStage = editableInspection.stage;
-      const refreshedInspection = await loadInspection();
-      emitSupportNudge(createInspectionWorkflowNudge({
-        inspectionId: editableInspection.id,
-        contractNo: editableInspection.contract_no,
-        fromStage: previousStage,
-        toStage: refreshedInspection?.stage,
-        transition,
-      }));
+      await loadInspection();
       return {
         ok: true,
         message: "Inspection stage submitted successfully.",
@@ -879,17 +896,13 @@ export default function InspectionDetailPage() {
         transition,
       };
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Failed to transition stage. Check required details and register links.";
-      setError(message);
-      return {
-        ok: false,
-        errorType: "submit_failed",
-        message,
-      };
+      const failure = normalizeCopilotSubmitError(err);
+      setError(failure.message || "Failed to transition stage. Check required details and register links.");
+      return failure;
     } finally {
       setBusyAction(null);
     }
-  }, [editableInspection, emitSupportNudge, loadInspection]);
+  }, [editableInspection, loadInspection]);
 
   const departmentRegisterOptions = useMemo(
     () => getInspectionMainStoreRegisters(copilotRegisters, copilotLocation),
@@ -923,7 +936,7 @@ export default function InspectionDetailPage() {
   // agent can resolve "core i5" → catalog item id, etc., without firing SQL.
   useCopilotReadable({
     description:
-      "Inspection detail dropdown catalogs (loaded for the current stage). Use 'items' to resolve inspection row 'item' foreign-key IDs by matching item_description/item_name to catalog name/code; use 'stock_registers' for stock_register/central_register IDs. When filling stage-2/stage-3 item rows, ALWAYS set the row's 'item' field to the catalog id from items[].id, do NOT leave it null when a name match exists. The items array is empty when the current stage does not need it.",
+      "Inspection detail dropdown catalogs (loaded for the current stage). Use 'items' to resolve inspection row 'item' foreign-key IDs by matching item_description/item_name to catalog name/code; use 'stock_registers' for stock_register/central_register IDs; use 'asset_classes' for finance-review depreciation_asset_class IDs. When filling stage-2/stage-3 item rows, ALWAYS set the row's 'item' field to the catalog id from items[].id, do NOT leave it null when a name match exists. The items array is empty when the current stage does not need it.",
     value: {
       route: `/inspections/${params.id}`,
       stage: editableInspection?.stage ?? null,
@@ -938,6 +951,12 @@ export default function InspectionDetailPage() {
       stock_registers: copilotRegisters.map(r => ({
         id: r.id,
         ...(r as unknown as Record<string, unknown>),
+      })),
+      asset_classes: copilotAssetClasses.map(assetClass => ({
+        id: assetClass.id,
+        name: assetClass.name,
+        code: assetClass.code,
+        current_rate: assetClass.current_rate ?? null,
       })),
       department_stock_registers: departmentRegisterOptions.map(r => r.id),
       central_stock_registers: centralRegisterOptions.map(r => r.id),
@@ -964,18 +983,47 @@ export default function InspectionDetailPage() {
           type: "array",
           description:
             "Current item rows. Prefer exact per-row fields like items.0.central_register and items.0.central_register_page_no; bulk item patches are merged over existing rows.",
+          arrayItemFields: buildInspectionItemArrayCopilotFields({
+            canEditItems: false,
+            canEditStock: canEdit && editableInspection.stage === "STOCK_DETAILS",
+            canEditCentral: canEdit && editableInspection.stage === "CENTRAL_REGISTER",
+          }),
         },
         ...stageFields,
       ];
     }
 
     if (canEdit && editableInspection.stage === "FINANCE_REVIEW") {
+      const financeFields = buildInspectionFinanceCopilotFields({
+        items: editableInspection.items ?? [],
+        assetClassOptions: copilotAssetClasses,
+      });
+
       return [
         {
           name: "finance_check_date",
           label: "Finance Check Date",
           type: "date",
+          required: true,
         },
+        ...(financeFields.length > 0
+          ? [
+              {
+                name: "items",
+                label: "Inspection item rows",
+                type: "array" as const,
+                description:
+                  "Current item rows. Prefer exact per-row finance fields like items.0.depreciation_asset_class, items.0.capitalization_date, and items.0.capitalization_cost; bulk item patches are merged over existing rows.",
+                arrayItemFields: buildInspectionItemArrayCopilotFields({
+                  canEditItems: false,
+                  canEditStock: false,
+                  canEditCentral: false,
+                  canEditFinance: true,
+                }),
+              },
+              ...financeFields,
+            ]
+          : []),
       ];
     }
 
@@ -983,6 +1031,7 @@ export default function InspectionDetailPage() {
   }, [
     canEdit,
     centralRegisterOptions,
+    copilotAssetClasses,
     copilotItemOptions,
     departmentRegisterOptions,
     editableInspection,
@@ -1032,7 +1081,7 @@ export default function InspectionDetailPage() {
       active_revision_request: activeRevisionRequest,
       guidance: editableInspection ? getInspectionStageGuidance(editableInspection) : null,
       writable_field_names: copilotFields.map(field => field.name),
-      readonly_context_fields: ["finance_check_date", "items", "stage"],
+      readonly_context_fields: ["items", "stage"],
       totals: editableInspection
         ? {
             quantities: getInspectionTotals(editableInspection),
@@ -1070,6 +1119,7 @@ export default function InspectionDetailPage() {
             batch_number: item.batch_number,
             manufactured_date: item.manufactured_date,
             expiry_date: item.expiry_date,
+            depreciation_asset_class: item.depreciation_asset_class,
             capitalization_cost: item.capitalization_cost,
             capitalization_date: item.capitalization_date,
             depreciation_asset_class_name: item.depreciation_asset_class_name,
@@ -1134,9 +1184,15 @@ export default function InspectionDetailPage() {
             central_register_page_no: item.central_register_page_no,
             item: item.item,
             item_name: item.item_name,
+            item_category_type: item.item_category_type,
+            unit_price: item.unit_price,
             batch_number: item.batch_number,
             manufactured_date: item.manufactured_date,
             expiry_date: item.expiry_date,
+            depreciation_asset_class: item.depreciation_asset_class,
+            depreciation_asset_class_name: item.depreciation_asset_class_name,
+            capitalization_cost: item.capitalization_cost,
+            capitalization_date: item.capitalization_date,
           })),
         }
       : {},

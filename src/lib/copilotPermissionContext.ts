@@ -12,10 +12,7 @@ type CapabilityRequirement = {
 export type CopilotPermissionAction = {
   name: string;
   description: string;
-  parameters: Record<
-    string,
-    { type: string; description?: string; required?: boolean }
-  >;
+  parameters: Record<string, Record<string, unknown>>;
   requiredPermissions?: string[];
   requiredCapabilities?: CapabilityRequirement[];
   allowed?: boolean;

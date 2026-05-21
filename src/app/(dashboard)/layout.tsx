@@ -7,7 +7,6 @@ import { CapabilitiesProvider } from "@/contexts/CapabilitiesContext";
 import { NotificationsProvider } from "@/contexts/NotificationsContext";
 import { AppSidebar } from "@/components/AppSidebar";
 import { CopilotSidePanel } from "@/components/CopilotSidePanel";
-import { CopilotSupportNudges } from "@/components/CopilotSupportNudges";
 import { CopilotVoiceOverlay } from "@/components/CopilotVoiceOverlay";
 import { CopilotProvider } from "@/contexts/CopilotContext";
 
@@ -44,7 +43,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <AppSidebar />
             <div className="main-col">
               {children}
-              <CopilotSupportNudges />
               <CopilotVoiceOverlay />
               <CopilotSidePanel />
             </div>

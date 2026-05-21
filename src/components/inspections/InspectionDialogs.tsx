@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, type Page } from "@/lib/api";
 import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
+import { normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -30,6 +31,7 @@ import {
 import {
   applyInspectionItemCopilotPatches,
   buildInspectionCertificateItemCopilotFields,
+  buildInspectionItemArrayCopilotFields,
   parseInspectionItemFieldPath,
 } from "@/lib/inspectionCopilotForm";
 
@@ -528,13 +530,9 @@ export function InspectionModal({
         recordId: savedInspection?.id ?? inspection?.id,
       };
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to save";
-      setSubmitError(message);
-      return {
-        ok: false,
-        errorType: "submit_failed",
-        message,
-      };
+      const failure = normalizeCopilotSubmitError(err);
+      setSubmitError(failure.message || "Failed to save");
+      return failure;
     } finally {
       setSubmitting(false);
     }
@@ -583,6 +581,12 @@ export function InspectionModal({
         readOnly: !(canEditItems || canEditStage2 || canEditStage3 || canEditStage4),
         description:
           "Array of item rows. Prefer exact per-row fields like items.0.item_description, items.0.tendered_quantity, and items.0.remarks instead of replacing the full array.",
+        arrayItemFields: buildInspectionItemArrayCopilotFields({
+          canEditItems,
+          canEditStock: canEditStage2,
+          canEditCentral: canEditStage3,
+          canEditFinance: canEditStage4,
+        }),
       },
       ...buildInspectionCertificateItemCopilotFields({
         items,

@@ -8,7 +8,11 @@ import { Topbar } from "@/components/Topbar";
 import { StockRegisterModal } from "@/components/StockRegisterModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
+import { useCopilotAction } from "@/hooks/useCopilotAction";
+import { useCopilotReadable } from "@/hooks/useCopilotReadable";
 import { apiFetch, type Page } from "@/lib/api";
+import { buildCopilotListContext } from "@/lib/copilotPageContext";
+import { consumePendingOpen, SAME_PAGE_OPEN_EVENT } from "@/lib/copilotPendingAction";
 import { useClientPagination } from "@/lib/listPagination";
 import { filterStockRegisters, getCreatableStockRegisterStoreOptions } from "@/lib/stockRegisterUi";
 import { relTime, type LocationRecord, type StockRegisterRecord } from "@/lib/userUiShared";
@@ -533,6 +537,104 @@ export function StockRegisterListView() {
   const pageBusy = busyAction !== null;
   const deleteBusyRegisterId = busyAction?.kind === "delete" ? busyAction.registerId : null;
 
+  const stockRegistersListReadable = useMemo(() => buildCopilotListContext({
+    route: "/stock-registers",
+    entity: "stock_register",
+    total: registers.length,
+    filteredTotal: filteredRegisters.length,
+    filters: {
+      search: search || null,
+      type: typeFilter,
+      status: statusFilter,
+    },
+    pagination: { page, pageSize: STOCK_REGISTERS_PAGE_SIZE, totalPages },
+    rows: pagedRegisters.map(register => ({
+      id: register.id,
+      register_number: register.register_number,
+      register_type: register.register_type,
+      store: register.store,
+      store_name: register.store_name ?? null,
+      is_active: register.is_active,
+      can_delete: register.can_delete,
+      detail_route: `/stock-registers/${register.id}`,
+      available_actions: {
+        edit: canManageRegisters,
+        delete: canDeleteRegisters && register.can_delete !== false,
+        close: canManageRegisters && register.is_active,
+        reopen: canManageRegisters && !register.is_active,
+      },
+    })),
+    actions: {
+      create_stock_register: canManageRegisters,
+    },
+    loading: isLoading || capsLoading || storesLoading,
+    extra: {
+      creatable_stores: storeOptions.map(store => ({
+        id: store.id,
+        name: store.name,
+        code: store.code ?? null,
+        location_type: store.location_type ?? null,
+      })),
+    },
+  }), [
+    canDeleteRegisters,
+    canManageRegisters,
+    capsLoading,
+    filteredRegisters.length,
+    isLoading,
+    page,
+    pagedRegisters,
+    registers.length,
+    search,
+    statusFilter,
+    storeOptions,
+    storesLoading,
+    totalPages,
+    typeFilter,
+  ]);
+
+  useCopilotReadable({
+    description:
+      "Stock registers displayed on this page after filters/pagination. Use visible_rows to resolve register numbers, stores, and active/closed status without SQL. Use extra.creatable_stores as the allowed store option source for stock_register_create.",
+    value: stockRegistersListReadable,
+  });
+
+  const openCreateModal = useCallback(() => {
+    setEditingRegister(null);
+    setModalOpen(true);
+  }, []);
+
+  useCopilotAction({
+    name: "open_create_stock_register_form",
+    description:
+      "Open the Create Stock Register modal on the Stock Registers page before filling a new stock-register ledger.",
+    parameters: {},
+    allowed: canManageRegisters,
+    enabled: true,
+    requiredCapabilities: [{ module: "stock-registers", level: "manage" }],
+    handler: () => {
+      openCreateModal();
+      return { ok: true };
+    },
+  });
+
+  useEffect(() => {
+    if (consumePendingOpen("stock_register_create") && canManageRegisters) {
+      openCreateModal();
+    }
+  }, [canManageRegisters, openCreateModal]);
+
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ formId?: string }>).detail;
+      if (detail?.formId !== "stock_register_create") return;
+      if (!canManageRegisters) return;
+      openCreateModal();
+    };
+    window.addEventListener(SAME_PAGE_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(SAME_PAGE_OPEN_EVENT, onOpen);
+  }, [canManageRegisters, openCreateModal]);
+
   return (
     <div data-density={density}>
       <Topbar breadcrumb={["Operations", "Stock Registers"]} />
@@ -616,7 +718,7 @@ export function StockRegisterListView() {
               </button>
             </div>
             {canManageRegisters && (
-              <button type="button" className="btn btn-sm btn-primary" onClick={() => { setEditingRegister(null); setModalOpen(true); }} disabled={pageBusy}>
+              <button type="button" className="btn btn-sm btn-primary" onClick={openCreateModal} disabled={pageBusy}>
                 <Ic d="M12 5v14M5 12h14" size={14} />
                 Add Register
               </button>

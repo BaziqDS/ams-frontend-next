@@ -5,6 +5,8 @@ import { apiFetch, type Page } from "@/lib/api";
 import type { CategoryRecord } from "@/components/CategoryModal";
 import { ItemModal } from "@/components/ItemModuleViews";
 import { ThemedSelect } from "@/components/ThemedSelect";
+import { useCopilotAction } from "@/hooks/useCopilotAction";
+import { resolveCentralRegisterCreateItemTarget } from "@/lib/inspectionCentralRegisterActions";
 import { formatItemLabel, type ItemRecord } from "@/lib/itemUi";
 import {
   buildStageItemsPayload,
@@ -667,10 +669,6 @@ export function Stage3Form({ data, onChange, readOnly }: StageFormProps) {
   }, [data.department]);
 
   const rows = acceptedItems(data.items || []);
-  if (rows.length === 0) {
-    return <EmptyStage>No accepted items are available for central registry mapping.</EmptyStage>;
-  }
-
   const leafCategories = categories.filter(category => category.parent_category !== null && category.is_active);
   const itemOptions = useMemo(() => {
     const byId = new Map(items.map(option => [option.id, option]));
@@ -719,6 +717,94 @@ export function Stage3Form({ data, onChange, readOnly }: StageFormProps) {
     });
     setPreviewByIndex(prev => ({ ...prev, [sourceIndex]: null }));
   };
+
+  useCopilotAction({
+    name: "open_create_inspection_catalog_item_form",
+    description:
+      "Open the inspection-scoped provisional item create form for a Central Register row when no existing catalog item matches that accepted inspection item.",
+    parameters: {
+      row_index: {
+        type: "number",
+        description: "Zero-based source index of the inspection item row.",
+      },
+      row_number: {
+        type: "number",
+        description: "One-based visible row number when the user says first, second, third, etc.",
+      },
+      item_description: {
+        type: "string",
+        description: "Inspection item description/name to match when no row index is supplied.",
+      },
+    },
+    allowed: !readOnly && !loading && leafCategories.length > 0,
+    requiredCapabilities: [{ module: "inspections", level: "manage" }],
+    handler: (rawArgs: unknown) => {
+      if (readOnly) {
+        return {
+          ok: false,
+          errorType: "read_only",
+          message: "The Central Register form is read-only right now.",
+        };
+      }
+      if (loading) {
+        return {
+          ok: false,
+          errorType: "catalog_loading",
+          message: "Catalog and category options are still loading.",
+        };
+      }
+      if (leafCategories.length === 0) {
+        return {
+          ok: false,
+          errorType: "missing_subcategory",
+          message: "Create an active subcategory before adding a new catalog item from Central Register.",
+        };
+      }
+
+      const args = rawArgs && typeof rawArgs === "object"
+        ? rawArgs as Record<string, unknown>
+        : {};
+      const parseIndex = (value: unknown) => {
+        if (value === null || value === undefined || value === "") return null;
+        const numeric = Number(value);
+        return Number.isInteger(numeric) ? numeric : null;
+      };
+      const rowIndex = parseIndex(args.row_index ?? args.rowIndex);
+      const rowNumber = parseIndex(args.row_number ?? args.rowNumber);
+      const itemDescription = typeof args.item_description === "string"
+        ? args.item_description
+        : typeof args.itemDescription === "string"
+          ? args.itemDescription
+          : null;
+
+      const target = resolveCentralRegisterCreateItemTarget({
+        rows: data.items || [],
+        rowIndex: rowIndex ?? (rowNumber === null ? null : rowNumber - 1),
+        itemDescription,
+      });
+
+      if (!target.ok) {
+        return {
+          ok: false,
+          errorType: target.errorType,
+          message: target.message,
+        };
+      }
+
+      setCreateModalRowIndex(target.sourceIndex);
+      return {
+        ok: true,
+        opened: true,
+        row_index: target.sourceIndex,
+        activeFormExpected: "item-create",
+        provisionalInspectionId: data.id,
+      };
+    },
+  });
+
+  if (rows.length === 0) {
+    return <EmptyStage>No accepted items are available for central registry mapping.</EmptyStage>;
+  }
 
   return (
     <div className="stage-form-list">

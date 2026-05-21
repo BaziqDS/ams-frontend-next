@@ -34,9 +34,15 @@ import {
 } from "@/lib/copilotPermissionContext";
 import { filterCopilotReadablesForRoute } from "@/lib/copilotPageContext";
 import {
+  actionNeedsReadyBeforeExecution,
   actionNeedsReadyPageContext,
   getCopilotActionReadiness,
 } from "@/lib/copilotActionReadiness";
+import {
+  getCopilotOpenFormContract,
+  getCopilotOpenFormIds,
+  routeMatchesCopilotPattern,
+} from "@/lib/copilotModuleManifest";
 
 const TRUSTED_ORIGIN =
   process.env.NEXT_PUBLIC_COPILOT_URL?.replace(/\/$/, "") ??
@@ -44,6 +50,7 @@ const TRUSTED_ORIGIN =
 const ACTIVITY_READABLE_ID = "__ams_activity_context";
 const PERMISSION_READABLE_ID = "__ams_permission_context";
 const ACTION_CONTEXT_READY_TIMEOUT_MS = 10000;
+const SUPPORTED_OPEN_FORM_IDS = getCopilotOpenFormIds();
 
 function currentRouteHref(pathname: string) {
   if (typeof window === "undefined") return pathname;
@@ -73,10 +80,7 @@ type CopilotCapabilityRequirement = {
 type ActionDef = {
   name: string;
   description: string;
-  parameters: Record<
-    string,
-    { type: string; description?: string; required?: boolean }
-  >;
+  parameters: Record<string, Record<string, unknown>>;
   requiredPermissions?: string[];
   requiredCapabilities?: CopilotCapabilityRequirement[];
   allowed?: boolean;
@@ -92,7 +96,6 @@ type CopilotContextValue = {
   registerAction: (action: CopilotAction) => () => void;
   setIframe: (element: HTMLIFrameElement | null) => void;
   trackActivity: (event: CopilotActivityEventInput) => CopilotActivityEvent;
-  emitSupportNudge: (nudge: CopilotSupportNudge) => void;
   sendVoiceCommand: (text: string) => CopilotVoiceCommand;
   sendHitlDecision: (decision: "approve" | "reject") => boolean;
 };
@@ -108,16 +111,20 @@ type PendingActionResult = {
   timeoutId: ReturnType<typeof setTimeout>;
 };
 
-export type CopilotSupportNudge = {
-  id: string;
-  kind: string;
-  title: string;
-  message: string;
-  route?: string;
-  module?: string;
-  severity?: string;
-  prompt?: string;
-  createdAt?: string;
+type PendingActionExecution = {
+  callId: unknown;
+  name: string;
+  args: unknown;
+  post: ActionResultPost;
+  timeoutId: ReturnType<typeof setTimeout>;
+};
+
+type PostActionResultWhenContextReadyArgs = {
+  callId: unknown;
+  name: string;
+  args: unknown;
+  result: unknown;
+  post: ActionResultPost;
 };
 
 export type CopilotVoiceCommand = {
@@ -160,9 +167,15 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const iframeLoadCleanupRef = useRef<(() => void) | null>(null);
   const pushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingSupportNudgesRef = useRef<CopilotSupportNudge[]>([]);
   const pendingVoiceCommandsRef = useRef<CopilotVoiceCommand[]>([]);
   const pendingActionResultsRef = useRef<PendingActionResult[]>([]);
+  const pendingActionExecutionsRef = useRef<PendingActionExecution[]>([]);
+  const trackActivityRef =
+    useRef<((input: CopilotActivityEventInput) => CopilotActivityEvent) | null>(
+      null,
+    );
+  const postActionResultWhenContextReadyRef =
+    useRef<((args: PostActionResultWhenContextReadyArgs) => void) | null>(null);
   const contextVersionRef = useRef(0);
 
   const getActionAccess = useCallback(
@@ -228,6 +241,176 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     };
   }, [getActionAccess, pathname]);
 
+  const postContextNotReadyResult = useCallback(
+    ({
+      callId,
+      name,
+      args,
+      result,
+      post,
+      readables,
+    }: {
+      callId: unknown;
+      name: string;
+      args: unknown;
+      result?: unknown;
+      post: ActionResultPost;
+      readables: Readable[];
+    }) => {
+      const latestReadiness = getCopilotActionReadiness(
+        name,
+        args,
+        readables,
+      );
+      const actionRegistered = actionsRef.current.has(name);
+      post({
+        type: "ACTION_RESULT",
+        callId,
+        result: {
+          ok: false,
+          errorType: "context_not_ready",
+          message:
+            `Page context was not ready after frontend action "${name}". ` +
+            `Expected ${latestReadiness.requirement ?? `registered frontend action "${name}"`} before resuming the agent.`,
+          actionRegistered,
+          actionResult: result ?? null,
+          contextReady: false,
+          contextSummary: latestReadiness.summary ?? {},
+        },
+      });
+    },
+    [],
+  );
+
+  const postPermissionDeniedResult = useCallback(
+    ({
+      action,
+      callId,
+      post,
+    }: {
+      action: CopilotAction;
+      callId: unknown;
+      post: ActionResultPost;
+    }) => {
+      const access = getActionAccess(action);
+      const message =
+        access.blockedReason ??
+        `Permission denied for frontend action: ${action.name}`;
+      const deniedResult = {
+        ok: false,
+        errorType: "permission_denied",
+        message,
+        requiredPermissions: action.requiredPermissions ?? [],
+        requiredCapabilities: action.requiredCapabilities ?? [],
+      };
+      trackActivityRef.current?.({
+        kind: "frontend_action_denied",
+        actor: "system",
+        title: `Permission denied for ${action.name}`,
+        result: deniedResult,
+        details: { name: action.name },
+      });
+      post({
+        type: "ACTION_RESULT",
+        callId,
+        result: deniedResult,
+      });
+    },
+    [getActionAccess],
+  );
+
+  const executeActionRequest = useCallback(
+    async ({
+      callId,
+      name,
+      args,
+      post,
+    }: {
+      callId: unknown;
+      name: string;
+      args: unknown;
+      post: ActionResultPost;
+    }) => {
+      const action = actionsRef.current.get(name);
+      if (!action) return false;
+
+      if (!canRunAction(action)) {
+        postPermissionDeniedResult({ action, callId, post });
+        return true;
+      }
+
+      const payload = buildContextPayload();
+      const readiness = getCopilotActionReadiness(name, args, payload.readables);
+      if (actionNeedsReadyBeforeExecution(name) && !readiness.ready) {
+        return false;
+      }
+
+      try {
+        const result = await action.handler(args ?? {});
+        trackActivityRef.current?.({
+          kind: "frontend_action_result",
+          actor: "assistant",
+          title: `Frontend action completed: ${action.name}`,
+          result,
+          details: { name: action.name },
+        });
+        const postWhenReady = postActionResultWhenContextReadyRef.current;
+        if (!postWhenReady) {
+          post({ type: "ACTION_RESULT", callId, result: result ?? null });
+          return true;
+        }
+        postWhenReady({
+          callId,
+          name: action.name,
+          args: args ?? {},
+          result: result ?? null,
+          post,
+        });
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error ? error.message : String(error);
+        trackActivityRef.current?.({
+          kind: "frontend_action_failed",
+          actor: "system",
+          title: `Frontend action failed: ${action.name}`,
+          result: { ok: false, message },
+          details: { name: action.name },
+        });
+        post({ type: "ACTION_RESULT", callId, error: message });
+      }
+
+      return true;
+    },
+    [
+      buildContextPayload,
+      canRunAction,
+      postPermissionDeniedResult,
+    ],
+  );
+
+  const flushReadyActionExecutions = useCallback((readables: Readable[]) => {
+    if (pendingActionExecutionsRef.current.length === 0) return;
+
+    const stillPending: PendingActionExecution[] = [];
+    for (const pending of pendingActionExecutionsRef.current) {
+      const action = actionsRef.current.get(pending.name);
+      const readiness = getCopilotActionReadiness(
+        pending.name,
+        pending.args,
+        readables,
+      );
+      if (!action || !readiness.ready) {
+        stillPending.push(pending);
+        continue;
+      }
+
+      clearTimeout(pending.timeoutId);
+      void executeActionRequest(pending);
+    }
+
+    pendingActionExecutionsRef.current = stillPending;
+  }, [executeActionRequest]);
+
   const flushReadyActionResults = useCallback((readables: Readable[]) => {
     if (pendingActionResultsRef.current.length === 0) return;
 
@@ -267,6 +450,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     if (!iframe || !iframe.contentWindow) return;
 
     const payload = buildContextPayload();
+    flushReadyActionExecutions(payload.readables);
     flushReadyActionResults(payload.readables);
     iframe.contentWindow.postMessage(
       {
@@ -276,7 +460,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
       },
       TRUSTED_ORIGIN,
     );
-  }, [buildContextPayload, flushReadyActionResults]);
+  }, [buildContextPayload, flushReadyActionExecutions, flushReadyActionResults]);
 
   const schedulePush = useCallback(() => {
     if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
@@ -367,21 +551,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     },
     [pathname, schedulePush],
   );
-
-  const postSupportNudge = useCallback((nudge: CopilotSupportNudge) => {
-    const iframe = iframeRef.current;
-    if (!iframe?.contentWindow) return false;
-
-    iframe.contentWindow.postMessage(
-      {
-        source: "ams-copilot",
-        type: "SUPPORT_NUDGE",
-        nudge,
-      },
-      TRUSTED_ORIGIN,
-    );
-    return true;
-  }, []);
+  trackActivityRef.current = trackActivity;
 
   const postVoiceCommand = useCallback((command: CopilotVoiceCommand) => {
     const iframe = iframeRef.current;
@@ -398,17 +568,6 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     return true;
   }, []);
 
-  const flushPendingSupportNudges = useCallback(() => {
-    if (pendingSupportNudgesRef.current.length === 0) return;
-    const pending = pendingSupportNudgesRef.current;
-    pendingSupportNudgesRef.current = [];
-    for (const nudge of pending) {
-      if (!postSupportNudge(nudge)) {
-        pendingSupportNudgesRef.current.push(nudge);
-      }
-    }
-  }, [postSupportNudge]);
-
   const flushPendingVoiceCommands = useCallback(() => {
     if (pendingVoiceCommandsRef.current.length === 0) return;
     const pending = pendingVoiceCommandsRef.current;
@@ -420,28 +579,6 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     }
   }, [postVoiceCommand]);
 
-  const emitSupportNudge = useCallback((nudge: CopilotSupportNudge) => {
-    if (!postSupportNudge(nudge)) {
-      pendingSupportNudgesRef.current = [
-        ...pendingSupportNudgesRef.current.filter((item) => item.id !== nudge.id),
-        nudge,
-      ].slice(-10);
-    }
-
-    trackActivity({
-      kind: "support_nudge",
-      actor: "system",
-      title: `Support nudge: ${nudge.title}`,
-      route: nudge.route,
-      details: {
-        id: nudge.id,
-        kind: nudge.kind,
-        module: nudge.module,
-        severity: nudge.severity,
-      },
-    });
-  }, [postSupportNudge, trackActivity]);
-
   const sendVoiceCommand = useCallback((text: string) => {
     const command: CopilotVoiceCommand = {
       id:
@@ -452,7 +589,6 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
       source: "voice",
       createdAt: new Date().toISOString(),
     };
-
     if (!postVoiceCommand(command)) {
       pendingVoiceCommandsRef.current = [
         ...pendingVoiceCommandsRef.current,
@@ -544,24 +680,13 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
           pendingActionResultsRef.current =
             pendingActionResultsRef.current.filter((item) => item !== pending);
           const latest = buildContextPayload();
-          const latestReadiness = getCopilotActionReadiness(
+          postContextNotReadyResult({
+            callId,
             name,
             args,
-            latest.readables,
-          );
-          post({
-            type: "ACTION_RESULT",
-            callId,
-            result: {
-              ok: false,
-              errorType: "context_not_ready",
-              message:
-                `Page context was not ready after frontend action "${name}". ` +
-                `Expected ${latestReadiness.requirement ?? "fresh page context"} before resuming the agent.`,
-              actionResult: result ?? null,
-              contextReady: false,
-              contextSummary: latestReadiness.summary ?? {},
-            },
+            result,
+            post,
+            readables: latest.readables,
           });
         }, ACTION_CONTEXT_READY_TIMEOUT_MS),
       };
@@ -569,7 +694,45 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
       pendingActionResultsRef.current.push(pending);
       pushContextToIframe();
     },
-    [buildContextPayload, pushContextToIframe],
+    [buildContextPayload, postContextNotReadyResult, pushContextToIframe],
+  );
+  postActionResultWhenContextReadyRef.current = postActionResultWhenContextReady;
+
+  const queueActionExecutionUntilReady = useCallback(
+    ({
+      callId,
+      name,
+      args,
+      post,
+    }: {
+      callId: unknown;
+      name: string;
+      args: unknown;
+      post: ActionResultPost;
+    }) => {
+      const pending: PendingActionExecution = {
+        callId,
+        name,
+        args,
+        post,
+        timeoutId: setTimeout(() => {
+          pendingActionExecutionsRef.current =
+            pendingActionExecutionsRef.current.filter((item) => item !== pending);
+          const latest = buildContextPayload();
+          postContextNotReadyResult({
+            callId,
+            name,
+            args,
+            post,
+            readables: latest.readables,
+          });
+        }, ACTION_CONTEXT_READY_TIMEOUT_MS),
+      };
+
+      pendingActionExecutionsRef.current.push(pending);
+      pushContextToIframe();
+    },
+    [buildContextPayload, postContextNotReadyResult, pushContextToIframe],
   );
 
   useLayoutEffect(() => {
@@ -594,6 +757,10 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         clearTimeout(pending.timeoutId);
       }
       pendingActionResultsRef.current = [];
+      for (const pending of pendingActionExecutionsRef.current) {
+        clearTimeout(pending.timeoutId);
+      }
+      pendingActionExecutionsRef.current = [];
     };
   }, []);
 
@@ -642,50 +809,25 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     });
   }, [registerAction, router]);
 
-  // Registry of "create form" → route mappings. Each entry lets the agent
-  // open that form FROM ANY PAGE — the handler navigates if needed and queues
-  // a token that the destination page reads on mount.
+  // Registry-backed form opener. Module contracts live in
+  // copilotModuleManifest so new modules can reuse the same route/open flow.
   useEffect(() => {
-    const FORM_ROUTES: Record<
-      string,
-      { route: string; capability: CopilotCapabilityRequirement }
-    > = {
-      inspection_create: {
-        route: "/inspections",
-        capability: { module: "inspections", level: "manage" },
-      },
-      category_create: {
-        route: "/categories",
-        capability: { module: "categories", level: "manage" },
-      },
-      item_create: {
-        route: "/items",
-        capability: { module: "items", level: "manage" },
-      },
-      // Subcategory must be opened from a parent category's detail page —
-      // we can't navigate generically, so it's resolved on-page only.
-      // Inspection stage forms live on /inspections/[id] and are auto-active
-      // once the user navigates to a specific inspection detail page — they
-      // are not registered here because they need an inspection ID.
-    };
-
     return registerAction({
       name: "open_form",
       description:
         "Open a create form anywhere in the AMS. If the user is not on the form's page, this " +
         "automatically navigates first and opens the form once the page is ready. Use this " +
         "instead of chaining navigate_to_route with open_create_*_form. Supported form_id values: " +
-        "'inspection_create' (opens New Inspection modal on /inspections), 'category_create' " +
-        "(opens Add Category modal on /categories), 'item_create' (opens Add Item modal on /items). " +
-        "For subcategory create, the user must first be on a parent category's detail page " +
-        "(/categories/[id]). For inspection stage forms, the user must first be on the " +
-        "inspection detail page (/inspections/[id]) — call navigate_to_route with path " +
+        `${SUPPORTED_OPEN_FORM_IDS.join(", ")}. ` +
+        "Scoped forms such as subcategory_create must be opened from their parent detail page. " +
+        "For inspection stage forms, the user must first be on the inspection detail page " +
+        "(/inspections/[id]) - call navigate_to_route with path " +
         "'/inspections/{id}' to get there.",
       parameters: {
         form_id: {
           type: "string",
           description:
-            "Form identifier. Supported: inspection_create | category_create | item_create. Alias arg 'formId' is also accepted.",
+            `Form identifier. Supported: ${SUPPORTED_OPEN_FORM_IDS.join(" | ")}. Alias arg 'formId' is also accepted.`,
           required: true,
         },
       },
@@ -707,18 +849,18 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
             errorType: "missing_form_id",
             message:
               "open_form requires a 'form_id' string. Supported values: " +
-              `${Object.keys(FORM_ROUTES).join(", ")}.`,
+              `${SUPPORTED_OPEN_FORM_IDS.join(", ")}.`,
             received: args,
           };
         }
 
-        const target = FORM_ROUTES[formId];
+        const target = getCopilotOpenFormContract(formId);
         if (!target) {
           return {
             ok: false,
             errorType: "unknown_form_id",
             message:
-              `Unknown form_id "${formId}". Supported via open_form: ${Object.keys(FORM_ROUTES).join(", ")}. ` +
+              `Unknown form_id "${formId}". Supported via open_form: ${SUPPORTED_OPEN_FORM_IDS.join(", ")}. ` +
               "Subcategory and inspection-stage forms must be opened from their respective parent pages.",
           };
         }
@@ -734,6 +876,34 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
             errorType: "permission_denied",
             message: `You need ${target.capability.module}:${target.capability.level ?? "view"} capability to open ${formId}.`,
             requiredCapabilities: [target.capability],
+          };
+        }
+
+        if (target.samePageOnly) {
+          const routeMatches = routeMatchesCopilotPattern(
+            pathname,
+            target.routePattern,
+          );
+          if (!routeMatches) {
+            return {
+              ok: false,
+              errorType: "wrong_route_for_scoped_form",
+              message:
+                `${formId} is scoped to ${target.routePattern}. Navigate to the parent detail page first, ` +
+                "then call open_form again.",
+              expectedRoutePattern: target.routePattern,
+              currentRoute: pathname,
+            };
+          }
+          dispatchSamePageOpen(formId);
+          return { ok: true, opened: true, scoped: true };
+        }
+
+        if (!target.route) {
+          return {
+            ok: false,
+            errorType: "missing_form_route",
+            message: `Form ${formId} does not define a cross-page route.`,
           };
         }
 
@@ -765,7 +935,6 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
       if (element) {
         const handleLoad = () => {
           setTimeout(pushContextToIframe, 250);
-          setTimeout(flushPendingSupportNudges, 300);
           setTimeout(flushPendingVoiceCommands, 300);
         };
         element.addEventListener("load", handleLoad);
@@ -774,12 +943,11 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         };
         if (element.contentWindow) {
           setTimeout(pushContextToIframe, 250);
-          setTimeout(flushPendingSupportNudges, 300);
           setTimeout(flushPendingVoiceCommands, 300);
         }
       }
     },
-    [flushPendingSupportNudges, flushPendingVoiceCommands, pushContextToIframe],
+    [flushPendingVoiceCommands, pushContextToIframe],
   );
 
   const systemContext = useMemo<Readable>(() => {
@@ -912,9 +1080,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
           });
         }
 
-        const action =
-          typeof name === "string" ? actionsRef.current.get(name) : undefined;
-        if (!action) {
+        if (typeof name !== "string") {
           trackActivity({
             kind: "frontend_action_failed",
             actor: "system",
@@ -929,71 +1095,43 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        if (!canRunAction(action)) {
-          const access = getActionAccess(action);
-          const message =
-            access.blockedReason ??
-            `Permission denied for frontend action: ${action.name}`;
-          const deniedResult = {
-            ok: false,
-            errorType: "permission_denied",
-            message,
-            requiredPermissions: action.requiredPermissions ?? [],
-            requiredCapabilities: action.requiredCapabilities ?? [],
-          };
-          trackActivity({
-            kind: "frontend_action_denied",
-            actor: "system",
-            title: `Permission denied for ${action.name}`,
-            result: deniedResult,
-            details: { name: action.name },
-          });
-          post({
-            type: "ACTION_RESULT",
+        const ran = await executeActionRequest({
+          callId,
+          name,
+          args: args ?? {},
+          post,
+        });
+        if (ran) return;
+
+        if (actionNeedsReadyPageContext(name)) {
+          queueActionExecutionUntilReady({
             callId,
-            result: deniedResult,
+            name,
+            args: args ?? {},
+            post,
           });
           return;
         }
 
-        try {
-          const result = await action.handler(args ?? {});
-          trackActivity({
-            kind: "frontend_action_result",
-            actor: "assistant",
-            title: `Frontend action completed: ${action.name}`,
-            result,
-            details: { name: action.name },
-          });
-          postActionResultWhenContextReady({
-            callId,
-            name: action.name,
-            args: args ?? {},
-            result: result ?? null,
-            post,
-          });
-        } catch (error: unknown) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          trackActivity({
-            kind: "frontend_action_failed",
-            actor: "system",
-            title: `Frontend action failed: ${action.name}`,
-            result: { ok: false, message },
-            details: { name: action.name },
-          });
-          post({ type: "ACTION_RESULT", callId, error: message });
-        }
+        trackActivity({
+          kind: "frontend_action_failed",
+          actor: "system",
+          title: `Unknown frontend action: ${String(name)}`,
+          details: { name },
+        });
+        post({
+          type: "ACTION_RESULT",
+          callId,
+          error: `Unknown action: ${name}`,
+        });
       }
     };
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
   }, [
-    canRunAction,
-    getActionAccess,
-    postActionResultWhenContextReady,
-    pushContextToIframe,
+    executeActionRequest,
+    queueActionExecutionUntilReady,
     trackActivity,
   ]);
 
@@ -1004,7 +1142,6 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         registerAction,
         setIframe,
         trackActivity,
-        emitSupportNudge,
         sendVoiceCommand,
         sendHitlDecision,
       }}
@@ -1024,10 +1161,6 @@ export function useCopilotInternal(): CopilotContextValue {
 
 export function useCopilotActivity() {
   return useCopilotInternal().trackActivity;
-}
-
-export function useCopilotSupportNudge() {
-  return useCopilotInternal().emitSupportNudge;
 }
 
 export function useCopilotVoiceCommand() {

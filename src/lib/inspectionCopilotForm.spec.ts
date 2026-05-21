@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   applyInspectionItemCopilotPatches,
   buildInspectionCertificateItemCopilotFields,
+  buildInspectionFinanceCopilotFields,
+  buildInspectionItemArrayCopilotFields,
   buildInspectionItemCopilotFields,
   parseInspectionItemFieldPath,
   syncInspectionItemReferences,
@@ -90,6 +92,73 @@ describe("inspection copilot form helpers", () => {
       accepted_quantity: 11,
       central_register: 7,
       central_register_page_no: "50",
+    });
+  });
+
+  it("expands create-form bulk item patches into visible rows", () => {
+    const result = applyInspectionItemCopilotPatches({
+      currentItems: [
+        {
+          item_description: "",
+          tendered_quantity: 1,
+          accepted_quantity: 0,
+          rejected_quantity: 0,
+          unit_price: "0.00",
+          remarks: "",
+        },
+      ],
+      values: {
+        items: [
+          {
+            item_description: "Soccer Balls",
+            tendered_quantity: 50,
+            accepted_quantity: 48,
+            rejected_quantity: 2,
+            unit_price: 25,
+            remarks: "2 balls with minor stitching defects",
+          },
+          {
+            item_description: "Basketballs",
+            tendered_quantity: 30,
+            accepted_quantity: 30,
+            rejected_quantity: 0,
+            unit_price: 35,
+            remarks: "All items in good condition",
+          },
+          {
+            item_description: "Tennis Rackets",
+            tendered_quantity: 25,
+            accepted_quantity: 23,
+            rejected_quantity: 2,
+            unit_price: 60,
+            remarks: "2 rackets with frame scratches",
+          },
+        ],
+      },
+      blankItem: () => ({
+        item_description: "",
+        tendered_quantity: 1,
+        accepted_quantity: 0,
+        rejected_quantity: 0,
+        unit_price: "0.00",
+        remarks: "",
+      }),
+    });
+
+    expect(result.applied).toEqual(["items"]);
+    expect(result.ignored).toEqual([]);
+    expect(result.nextItems).toHaveLength(3);
+    expect(result.nextItems.map(item => item.item_description)).toEqual([
+      "Soccer Balls",
+      "Basketballs",
+      "Tennis Rackets",
+    ]);
+    expect(result.nextItems[0]).toMatchObject({
+      tendered_quantity: 50,
+      accepted_quantity: 48,
+      rejected_quantity: 2,
+      unit_price: 25,
+      remarks: "2 balls with minor stitching defects",
     });
   });
 
@@ -193,6 +262,43 @@ describe("inspection copilot form helpers", () => {
     });
   });
 
+  it("builds exact per-row writable fields for finance review fixed assets", () => {
+    const fields = buildInspectionFinanceCopilotFields({
+      items: [
+        {
+          item_description: "Dell laptop",
+          accepted_quantity: 2,
+          item_category_type: "FIXED_ASSET",
+        },
+        {
+          item_description: "Printer ink",
+          accepted_quantity: 4,
+          item_category_type: "CONSUMABLE",
+        },
+      ],
+      assetClassOptions: [{ id: 12, name: "Computer Equipment", code: "COMP" }],
+    });
+
+    expect(fields.map(field => field.name)).toEqual([
+      "items.0.depreciation_asset_class",
+      "items.0.capitalization_date",
+      "items.0.capitalization_cost",
+    ]);
+    expect(fields.find(field => field.name === "items.0.depreciation_asset_class")).toMatchObject({
+      type: "select",
+      required: true,
+      options: [{ label: "Computer Equipment (COMP)", value: 12 }],
+    });
+    expect(fields.find(field => field.name === "items.0.capitalization_date")).toMatchObject({
+      type: "date",
+      required: true,
+    });
+    expect(fields.find(field => field.name === "items.0.capitalization_cost")).toMatchObject({
+      type: "number",
+      required: true,
+    });
+  });
+
   it("builds exact per-row writable fields for inspection certificate item rows", () => {
     const fields = buildInspectionCertificateItemCopilotFields({
       items: [{ item_description: "Laptop", tendered_quantity: 2, accepted_quantity: 1, rejected_quantity: 1 }],
@@ -218,6 +324,24 @@ describe("inspection copilot form helpers", () => {
     expect(fields.find(field => field.name === "items.0.remarks")).toMatchObject({
       required: true,
     });
+  });
+
+  it("builds strict bulk array item fields for inspection certificate rows", () => {
+    expect(
+      buildInspectionItemArrayCopilotFields({
+        canEditItems: true,
+        canEditStock: false,
+        canEditCentral: false,
+      }).map(field => field.name),
+    ).toEqual([
+      "item_description",
+      "item_specifications",
+      "tendered_quantity",
+      "accepted_quantity",
+      "rejected_quantity",
+      "unit_price",
+      "remarks",
+    ]);
   });
 
   it("resolves copied register numbers and item names back to select ids", () => {

@@ -28,6 +28,12 @@ type InspectionCreateItem = {
   accepted_quantity?: number | string | null;
   rejected_quantity?: number | string | null;
 };
+type InspectionFinanceItem = {
+  item_description?: string | null;
+  item_name?: string | null;
+  accepted_quantity?: number | string | null;
+  item_category_type?: string | null;
+};
 
 const ITEM_FIELD_PATH_RE = /^items(?:\[(\d+)\]|\.(\d+))\.([A-Za-z_][A-Za-z0-9_]*)$/;
 const ID_FIELDS = new Set(["item", "stock_register", "central_register", "depreciation_asset_class"]);
@@ -366,6 +372,53 @@ export function buildInspectionItemCopilotFields({
   });
 }
 
+export function buildInspectionFinanceCopilotFields({
+  items,
+  assetClassOptions,
+}: {
+  items: InspectionFinanceItem[];
+  assetClassOptions: SelectOption[];
+}): CopilotFormField[] {
+  return items.flatMap((item, index) => {
+    if (
+      Number(item.accepted_quantity || 0) <= 0 ||
+      item.item_category_type !== "FIXED_ASSET"
+    ) {
+      return [];
+    }
+
+    const labelSource = item.item_name || item.item_description;
+    const labelPrefix = labelSource?.trim()
+      ? `Item ${index + 1} (${labelSource.trim()})`
+      : `Item ${index + 1}`;
+
+    return [
+      {
+        name: `items.${index}.depreciation_asset_class`,
+        label: `${labelPrefix} Depreciation Asset Class`,
+        type: "select",
+        required: true,
+        options: selectOptions(assetClassOptions),
+        description: "Patch this exact finance-review item row without replacing the full items array.",
+      },
+      {
+        name: `items.${index}.capitalization_date`,
+        label: `${labelPrefix} Capitalization Date`,
+        type: "date",
+        required: true,
+        description: "Patch this exact finance-review item row without replacing the full items array.",
+      },
+      {
+        name: `items.${index}.capitalization_cost`,
+        label: `${labelPrefix} Capitalized Cost`,
+        type: "number",
+        required: true,
+        description: "Patch this exact finance-review item row without replacing the full items array.",
+      },
+    ];
+  });
+}
+
 export function buildInspectionCertificateItemCopilotFields({
   items,
   canEditItems,
@@ -449,4 +502,61 @@ export function buildInspectionCertificateItemCopilotFields({
 
     return fields;
   });
+}
+
+export function buildInspectionItemArrayCopilotFields({
+  canEditItems,
+  canEditStock,
+  canEditCentral,
+  canEditFinance = false,
+}: {
+  canEditItems: boolean;
+  canEditStock: boolean;
+  canEditCentral: boolean;
+  canEditFinance?: boolean;
+}): CopilotFormField[] {
+  const fields: CopilotFormField[] = [];
+
+  if (canEditItems) {
+    fields.push(
+      { name: "item_description", label: "Item Description", type: "string", required: true },
+      { name: "item_specifications", label: "Item Specifications", type: "string" },
+      { name: "tendered_quantity", label: "Tendered Quantity", type: "number", required: true },
+      { name: "accepted_quantity", label: "Accepted Quantity", type: "number", required: true },
+      { name: "rejected_quantity", label: "Rejected Quantity", type: "number", required: true },
+      { name: "unit_price", label: "Unit Price", type: "number", required: true },
+      { name: "remarks", label: "Remarks / Rejection Reason", type: "string" },
+    );
+  }
+
+  if (canEditStock) {
+    fields.push(
+      { name: "stock_register", label: "Stock Register ID", type: "number" },
+      { name: "stock_register_no", label: "Stock Register Number", type: "string" },
+      { name: "stock_register_page_no", label: "Stock Register Page Number", type: "string" },
+      { name: "stock_entry_date", label: "Stock Entry Date", type: "date" },
+    );
+  }
+
+  if (canEditCentral) {
+    fields.push(
+      { name: "central_register", label: "Central Register ID", type: "number" },
+      { name: "central_register_no", label: "Central Register Number", type: "string" },
+      { name: "central_register_page_no", label: "Central Register Page Number", type: "string" },
+      { name: "item", label: "System Item ID", type: "number" },
+      { name: "batch_number", label: "Batch Number", type: "string" },
+      { name: "manufactured_date", label: "Manufactured Date", type: "date" },
+      { name: "expiry_date", label: "Expiry Date", type: "date" },
+    );
+  }
+
+  if (canEditFinance) {
+    fields.push(
+      { name: "depreciation_asset_class", label: "Depreciation Asset Class ID", type: "number" },
+      { name: "capitalization_cost", label: "Capitalization Cost", type: "number" },
+      { name: "capitalization_date", label: "Capitalization Date", type: "date" },
+    );
+  }
+
+  return fields;
 }

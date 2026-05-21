@@ -13,6 +13,7 @@ import { useCopilotAction } from "@/hooks/useCopilotAction";
 import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
 import { useCopilotReadable } from "@/hooks/useCopilotReadable";
 import { apiFetch, type Page } from "@/lib/api";
+import { normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
 import {
   consumePendingOpen,
   SAME_PAGE_OPEN_EVENT,
@@ -673,13 +674,9 @@ export function ItemModal({
         recordId: savedItem.id,
       };
     } catch (err) {
-      const message = err instanceof Error ? err.message : (isEdit ? "Failed to update item." : "Failed to create item.");
-      setSubmitError(message);
-      return {
-        ok: false,
-        errorType: "submit_failed",
-        message,
-      };
+      const failure = normalizeCopilotSubmitError(err);
+      setSubmitError(failure.message || (isEdit ? "Failed to update item." : "Failed to create item."));
+      return failure;
     } finally {
       setSubmitting(false);
     }
