@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { apiFetch, type Page } from "@/lib/api";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { LOCATION_TYPE_LABELS, locationTypeLabel, type LocationRecord } from "@/lib/userUiShared";
+import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
+import { normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
+import { focusCopilotFormField } from "@/lib/copilotFocus";
+import { buildLocationCopilotValuePatch, type LocationCopilotFormState } from "@/lib/locationCopilotForm";
 
 const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
   <svg aria-hidden="true" focusable="false" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -11,16 +15,17 @@ const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
   </svg>
 );
 
-function Field({ label, required, error, hint, children, span = 1 }: {
+function Field({ label, required, error, hint, children, span = 1, copilotField }: {
   label: string;
   required?: boolean;
   error?: string;
   hint?: string;
   children: ReactNode;
   span?: number;
+  copilotField?: string;
 }) {
   return (
-    <div className={"field" + (error ? " has-error" : "")} style={{ gridColumn: `span ${span}` }}>
+    <div className={"field" + (error ? " has-error" : "")} style={{ gridColumn: `span ${span}` }} data-copilot-field={copilotField}>
       <div className="field-label">{label}{required && <span className="field-req">*</span>}</div>
       {children}
       {error ? <div className="field-error">{error}</div> : hint ? <div className="field-hint">{hint}</div> : null}
@@ -43,20 +48,7 @@ function Section({ n, title, sub, children }: { n: number; title: string; sub?: 
   );
 }
 
-type LocationFormState = {
-  name: string;
-  code: string;
-  main_store_name: string;
-  parent_location: string;
-  location_type: string;
-  create_main_store: boolean;
-  is_store: boolean;
-  is_active: boolean;
-  description: string;
-  address: string;
-  in_charge: string;
-  contact_number: string;
-};
+type LocationFormState = LocationCopilotFormState;
 
 function emptyForm(): LocationFormState {
   return {
@@ -111,6 +103,17 @@ function toPayload(form: LocationFormState) {
     in_charge: form.in_charge.trim() || null,
     contact_number: form.contact_number.trim() || null,
   };
+}
+
+function validateLocationForm(
+  form: LocationFormState,
+  options: { blockedReason?: string | null } = {},
+) {
+  const errors: Record<string, string> = {};
+  if (!form.name.trim()) errors.name = "Location name is required.";
+  if (!form.location_type.trim()) errors.location_type = "Location type is required.";
+  if (options.blockedReason) errors._form = options.blockedReason;
+  return errors;
 }
 
 type LocationCreateContext = "default" | "standalone" | "child";
@@ -188,13 +191,31 @@ export function LocationModal({ open, mode, location, createContext = "default",
   const isClassificationOnly = !showParentSelector;
   const canCreateMissingMainStore = !isEditMode && createContext === "child" && Boolean(lockedParent?.is_standalone) && !lockedParent?.main_store_id;
   const canConfigureStoreCapability = !form.create_main_store && (createContext === "child" || (isEditMode && Boolean(location?.parent_location) && !location?.is_standalone));
+  const saveBlockedReason = parentError
+    ? "Parent locations must finish loading before this location can be saved."
+    : parentLoading
+    ? "Parent locations must finish loading before this location can be saved."
+    : createContext === "child" && !lockedParent && !isEditMode
+    ? "A parent location is required before creating a sub-location."
+    : null;
   const errors = {
     name: touched.has("name") && !form.name.trim() ? "Location name is required." : undefined,
     location_type: touched.has("location_type") && !form.location_type.trim() ? "Location type is required." : undefined,
   };
   const issueCount = Object.values(errors).filter(Boolean).length;
 
-  const canSave = !submitting && !parentLoading && !parentError && !(createContext === "child" && !lockedParent && !isEditMode);
+  const canSave = !submitting && !saveBlockedReason;
+
+  const parentSelectOptions = useMemo(() => parentLocations.map(parent => ({
+    value: String(parent.id),
+    label: parent.name,
+    meta: `${parent.code} / ${locationTypeLabel(parent.location_type)}`,
+  })), [parentLocations]);
+
+  const locationTypeOptions = useMemo(() => form.create_main_store
+    ? [{ value: "STORE", label: "Store" }]
+    : Object.entries(LOCATION_TYPE_LABELS).map(([value, label]) => ({ value, label })),
+  [form.create_main_store]);
 
   const loadStatusMessage = useMemo(() => {
     if (!isEditMode && createContext === "standalone") return "A main store will be created automatically for this location.";
@@ -206,29 +227,162 @@ export function LocationModal({ open, mode, location, createContext = "default",
     return null;
   }, [canCreateMissingMainStore, createContext, isEditMode, lockedParent, parentError, parentLoading, parentLocations.length]);
 
-  const set = (patch: Partial<LocationFormState>) => setForm(prev => ({ ...prev, ...patch }));
+  const set = useCallback((patch: Partial<LocationFormState>) => {
+    setForm(prev => ({ ...prev, ...patch }));
+  }, []);
+
+  const copilotFields = useMemo<CopilotFormField[]>(() => [
+    {
+      name: "name",
+      label: "Location name",
+      type: "string",
+      required: true,
+      description: "Unique location name shown in location lists and selectors.",
+    },
+    {
+      name: "code",
+      label: "Location code",
+      type: "string",
+      description: "Optional unique code. Leave blank to let the backend generate one.",
+    },
+    {
+      name: "main_store_name",
+      label: "Main store name",
+      type: "string",
+      readOnly: isEditMode || createContext !== "standalone",
+      description: "Optional name for the auto-created main store when creating a standalone location.",
+    },
+    {
+      name: "parent_location",
+      label: "Parent location",
+      type: "select",
+      readOnly: !showParentSelector,
+      options: [
+        { value: "", label: "No parent" },
+        ...parentSelectOptions.map(option => ({ value: option.value, label: option.label })),
+      ],
+      description: "Parent Location id. Empty means a root location when the default hierarchy flow allows it.",
+    },
+    {
+      name: "location_type",
+      label: "Location type",
+      type: "select",
+      required: true,
+      readOnly: form.create_main_store,
+      options: locationTypeOptions,
+    },
+    {
+      name: "create_main_store",
+      label: "Create main store",
+      type: "boolean",
+      readOnly: !canCreateMissingMainStore,
+      description: "Only available when creating a missing main store under a standalone location.",
+    },
+    {
+      name: "is_store",
+      label: "Store capability",
+      type: "boolean",
+      readOnly: !canConfigureStoreCapability,
+      description: "Enable when this sub-location maintains stock registers and can issue or receive stock.",
+    },
+    {
+      name: "is_active",
+      label: "Active state",
+      type: "boolean",
+    },
+    {
+      name: "description",
+      label: "Description",
+      type: "string",
+    },
+    {
+      name: "address",
+      label: "Address",
+      type: "string",
+    },
+    {
+      name: "in_charge",
+      label: "In charge",
+      type: "string",
+    },
+    {
+      name: "contact_number",
+      label: "Contact number",
+      type: "string",
+    },
+  ], [
+    canConfigureStoreCapability,
+    canCreateMissingMainStore,
+    createContext,
+    form.create_main_store,
+    isEditMode,
+    locationTypeOptions,
+    parentSelectOptions,
+    showParentSelector,
+  ]);
+
+  const applyCopilotValues = useCallback((values: Record<string, unknown>) => {
+    const patch = buildLocationCopilotValuePatch(values);
+    setForm(prev => {
+      const next = { ...prev, ...patch };
+      if (Object.prototype.hasOwnProperty.call(patch, "create_main_store")) {
+        if (patch.create_main_store) {
+          next.location_type = "STORE";
+          next.is_store = true;
+        } else if (prev.create_main_store && next.location_type === "STORE") {
+          next.location_type = typeof patch.location_type === "string" ? patch.location_type : "DEPARTMENT";
+          next.is_store = typeof patch.is_store === "boolean" ? patch.is_store : false;
+        }
+      }
+      return next;
+    });
+    return {
+      applied: Object.keys(patch),
+      ignored: Object.keys(values).filter((field) => !(field in patch)),
+    };
+  }, []);
+
+  const validateForCopilot = useCallback(() => {
+    setTouched(new Set(["name", "location_type"]));
+    const nextErrors = validateLocationForm(form, { blockedReason: saveBlockedReason });
+    return {
+      ok: Object.keys(nextErrors).length === 0,
+      errors: nextErrors,
+    };
+  }, [form, saveBlockedReason]);
 
   const submit = async () => {
     const allTouched = new Set(["name", "location_type"]);
     setTouched(allTouched);
     if (!canSave) {
-      setSubmitError(parentError ? "Parent locations must finish loading before this location can be saved." : "Please complete the required fields.");
-      return;
+      const message = saveBlockedReason ?? "Please complete the required fields.";
+      setSubmitError(message);
+      return {
+        ok: false,
+        errorType: "validation_error",
+        message,
+        fieldErrors: validateLocationForm(form, { blockedReason: saveBlockedReason }),
+      };
     }
 
-    const nextErrors = {
-      name: !form.name.trim() ? "Location name is required." : undefined,
-      location_type: !form.location_type.trim() ? "Location type is required." : undefined,
-    };
-    if (Object.values(nextErrors).some(Boolean)) return;
+    const nextErrors = validateLocationForm(form);
+    if (Object.keys(nextErrors).length > 0) {
+      return {
+        ok: false,
+        errorType: "validation_error",
+        message: "Resolve highlighted location fields before submitting.",
+        fieldErrors: nextErrors,
+      };
+    }
 
     setSubmitting(true);
     setSubmitError(null);
 
     try {
       const body = JSON.stringify(toPayload(form));
+      let saved: LocationRecord;
       if (isEditMode && location) {
-        await apiFetch(`/api/inventory/locations/${location.id}/`, {
+        saved = await apiFetch<LocationRecord>(`/api/inventory/locations/${location.id}/`, {
           method: "PATCH",
           body,
         });
@@ -238,7 +392,7 @@ export function LocationModal({ open, mode, location, createContext = "default",
           : createContext === "child" && lockedParent
           ? `/api/inventory/locations/${lockedParent.id}/children/`
           : "/api/inventory/locations/";
-        await apiFetch(createPath, {
+        saved = await apiFetch<LocationRecord>(createPath, {
           method: "POST",
           body,
         });
@@ -246,12 +400,42 @@ export function LocationModal({ open, mode, location, createContext = "default",
 
       await onSave?.();
       onClose();
+      return {
+        ok: true,
+        message: isEditMode ? "Location updated successfully." : "Location created successfully.",
+        recordId: saved.id,
+      };
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : (isEditMode ? "Failed to update location." : "Failed to create location."));
+      const failure = normalizeCopilotSubmitError(err);
+      setSubmitError(failure.message || (isEditMode ? "Failed to update location." : "Failed to create location."));
+      return failure;
     } finally {
       setSubmitting(false);
     }
   };
+
+  useCopilotForm({
+    formId: isEditMode && location ? `location-edit-${location.id}` : "location-create",
+    title: isEditMode ? "Edit Location" : "Create Location",
+    description: "Create or edit a location on the Locations page.",
+    mode,
+    active: open,
+    fields: copilotFields,
+    values: form as unknown as Record<string, unknown>,
+    errors: Object.fromEntries(Object.entries(errors).filter((entry): entry is [string, string] => Boolean(entry[1]))),
+    canSetValues: !submitting && !parentLoading,
+    canValidate: true,
+    canSubmit: canSave,
+    requirements: {
+      setValues: { requiredCapabilities: [{ module: "locations", level: "manage" }] },
+      validate: { requiredCapabilities: [{ module: "locations", level: "manage" }] },
+      submit: { requiredCapabilities: [{ module: "locations", level: "manage" }] },
+    },
+    setValues: applyCopilotValues,
+    focusField: focusCopilotFormField,
+    validate: validateForCopilot,
+    submit: () => submit(),
+  });
 
   if (!open) return null;
 
@@ -284,18 +468,18 @@ export function LocationModal({ open, mode, location, createContext = "default",
 
               <Section n={1} title="Identity" sub="Core values that identify the location record.">
                 <div className="form-grid cols-2">
-                  <Field label="Location name" required error={errors.name}>
+                  <Field label="Location name" required error={errors.name} copilotField="name">
                     <input value={form.name} onChange={e => set({ name: e.target.value })} onBlur={() => setTouched(prev => new Set(prev).add("name"))} placeholder="Enter location name" />
                   </Field>
-                  <Field label="Location code" hint="Leave blank to let the backend generate one.">
+                  <Field label="Location code" hint="Leave blank to let the backend generate one." copilotField="code">
                     <input value={form.code} onChange={e => set({ code: e.target.value.toUpperCase() })} placeholder="Enter location code" />
                   </Field>
                   {!isEditMode && createContext === "standalone" && (
-                    <Field label="Main store name" hint="Blank uses the location name followed by Main Store." span={2}>
+                    <Field label="Main store name" hint="Blank uses the location name followed by Main Store." span={2} copilotField="main_store_name">
                       <input value={form.main_store_name} onChange={e => set({ main_store_name: e.target.value })} placeholder="Optional main store name" />
                     </Field>
                   )}
-                  <Field label="Active state" span={2}>
+                  <Field label="Active state" span={2} copilotField="is_active">
                     <div className="seg seg-inline">
                       <button type="button" className={"seg-btn" + (form.is_active ? " active" : "")} onClick={() => set({ is_active: true })}>Active</button>
                       <button type="button" className={"seg-btn" + (!form.is_active ? " active" : "")} onClick={() => set({ is_active: false })}>Disabled</button>
@@ -311,22 +495,18 @@ export function LocationModal({ open, mode, location, createContext = "default",
               >
                 <div className="form-grid cols-2">
                   {showParentSelector && (
-                    <Field label="Parent location" hint="Leave empty for a root location.">
+                    <Field label="Parent location" hint="Leave empty for a root location." copilotField="parent_location">
                       <ThemedSelect
                         value={form.parent_location}
                         onChange={value => set({ parent_location: value })}
                         placeholder="No parent"
                         ariaLabel="Parent location"
                         disabled={parentLoading || Boolean(parentError)}
-                        options={parentLocations.map(parent => ({
-                          value: String(parent.id),
-                          label: parent.name,
-                          meta: `${parent.code} · ${locationTypeLabel(parent.location_type)}`,
-                        }))}
+                        options={parentSelectOptions}
                       />
                     </Field>
                   )}
-                  <Field label="Location type" required error={errors.location_type} span={isClassificationOnly ? 2 : 1}>
+                  <Field label="Location type" required error={errors.location_type} span={isClassificationOnly ? 2 : 1} copilotField="location_type">
                     <ThemedSelect
                       value={form.location_type}
                       onChange={value => {
@@ -335,9 +515,7 @@ export function LocationModal({ open, mode, location, createContext = "default",
                       }}
                       placeholder="Select location type"
                       ariaLabel="Location type"
-                      options={form.create_main_store
-                        ? [{ value: "STORE", label: "Store" }]
-                        : Object.entries(LOCATION_TYPE_LABELS).map(([value, label]) => ({ value, label }))}
+                      options={locationTypeOptions}
                       disabled={form.create_main_store}
                     />
                   </Field>
@@ -346,6 +524,7 @@ export function LocationModal({ open, mode, location, createContext = "default",
                       label="Main store"
                       hint="Creates the primary inventory store for this standalone location."
                       span={2}
+                      copilotField="create_main_store"
                     >
                       <label className="checkbox-row">
                         <input
@@ -366,6 +545,7 @@ export function LocationModal({ open, mode, location, createContext = "default",
                       label="Store capability"
                       hint="Enable when this sub-location maintains stock registers and can issue or receive stock."
                       span={2}
+                      copilotField="is_store"
                     >
                       <label className="checkbox-row">
                         <input
@@ -382,16 +562,16 @@ export function LocationModal({ open, mode, location, createContext = "default",
 
               <Section n={3} title="Details" sub="Descriptive information shown in admin views.">
                 <div className="form-grid cols-2">
-                  <Field label="Description" span={2}>
+                  <Field label="Description" span={2} copilotField="description">
                     <textarea className="textarea-field" rows={4} value={form.description} onChange={e => set({ description: e.target.value })} placeholder="Optional description" />
                   </Field>
-                  <Field label="Address" span={2}>
+                  <Field label="Address" span={2} copilotField="address">
                     <textarea className="textarea-field" rows={3} value={form.address} onChange={e => set({ address: e.target.value })} placeholder="Optional address" />
                   </Field>
-                  <Field label="In charge">
+                  <Field label="In charge" copilotField="in_charge">
                     <input value={form.in_charge} onChange={e => set({ in_charge: e.target.value })} placeholder="Optional contact name" />
                   </Field>
-                  <Field label="Contact number">
+                  <Field label="Contact number" copilotField="contact_number">
                     <input value={form.contact_number} onChange={e => set({ contact_number: e.target.value })} placeholder="Optional contact number" />
                   </Field>
                 </div>

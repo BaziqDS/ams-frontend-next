@@ -6,6 +6,7 @@ import { ThemedSelect } from "@/components/ThemedSelect";
 import type { LocationRecord, StockRegisterRecord } from "@/lib/userUiShared";
 import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
 import { normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
+import { focusCopilotFormField } from "@/lib/copilotFocus";
 
 const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
   <svg aria-hidden="true" focusable="false" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -13,16 +14,17 @@ const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
   </svg>
 );
 
-function Field({ label, required, error, hint, children, span = 1 }: {
+function Field({ label, required, error, hint, children, span = 1, copilotField }: {
   label: string;
   required?: boolean;
   error?: string;
   hint?: string;
   children: ReactNode;
   span?: number;
+  copilotField?: string;
 }) {
   return (
-    <div className={"field" + (error ? " has-error" : "")} style={{ gridColumn: `span ${span}` }}>
+    <div className={"field" + (error ? " has-error" : "")} style={{ gridColumn: `span ${span}` }} data-copilot-field={copilotField}>
       <div className="field-label">{label}{required && <span className="field-req">*</span>}</div>
       {children}
       {error ? <div className="field-error">{error}</div> : hint ? <div className="field-hint">{hint}</div> : null}
@@ -286,6 +288,7 @@ export function StockRegisterModal({ open, mode, register, stores, storesLoading
       set(buildStockRegisterCopilotValuePatch(values));
       return { updated: Object.keys(values) };
     },
+    focusField: focusCopilotFormField,
     validate: validateForCopilot,
     submit: () => submit(),
   });
@@ -321,10 +324,10 @@ export function StockRegisterModal({ open, mode, register, stores, storesLoading
 
               <Section n={1} title="Register Details" sub="Reference number and register classification for the store ledger.">
                 <div className="form-grid cols-2">
-                  <Field label="Register number" required error={errors.register_number}>
+                  <Field label="Register number" required error={errors.register_number} copilotField="register_number">
                     <input value={form.register_number} onChange={(e) => set({ register_number: e.target.value })} onBlur={() => setTouched((prev) => new Set(prev).add("register_number"))} placeholder="Enter register number" />
                   </Field>
-                  <Field label="Register type" required error={errors.register_type}>
+                  <Field label="Register type" required error={errors.register_type} copilotField="register_type">
                     <ThemedSelect
                       value={form.register_type}
                       onChange={(value) => {
@@ -344,7 +347,7 @@ export function StockRegisterModal({ open, mode, register, stores, storesLoading
 
               <Section n={2} title="Store Assignment" sub="Registers must belong to a store inside your current creation scope.">
                 <div className="form-grid cols-2">
-                  <Field label="Store" required error={errors.store} span={2}>
+                  <Field label="Store" required error={errors.store} span={2} copilotField="store">
                     <ThemedSelect
                       value={form.store}
                       onChange={(value) => {
@@ -360,6 +363,7 @@ export function StockRegisterModal({ open, mode, register, stores, storesLoading
                   <Field
                     label="Status"
                     span={2}
+                    copilotField="is_active"
                     hint={isEditMode
                       ? "Use the Close or Reopen action from the stock-register list to change register availability."
                       : "New registers are created as active and can be closed later from the list page."}

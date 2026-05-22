@@ -595,7 +595,7 @@ export function StockRegisterListView() {
 
   useCopilotReadable({
     description:
-      "Stock registers displayed on this page after filters/pagination. Use visible_rows to resolve register numbers, stores, and active/closed status without SQL. Use extra.creatable_stores as the allowed store option source for stock_register_create.",
+      "Stock registers displayed after filters/pagination. Use visible_rows to resolve register numbers, stores, and active/closed status without SQL. Use extra.creatable_stores as the allowed store option source for the create form.",
     value: stockRegistersListReadable,
   });
 

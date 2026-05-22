@@ -1193,7 +1193,7 @@ export function ItemListView() {
 
   useCopilotReadable({
     description:
-      "Items (asset catalog) currently displayed on the /items list page after filters/pagination. Use 'visible_rows' to resolve references like 'core i5', 'the first item', 'low-stock items' to specific catalog ids without a SQL lookup.",
+      "Items in the asset catalog currently displayed after filters/pagination. Use visible_rows to resolve references like 'core i5', 'the first item', or 'low-stock items' to specific catalog ids without a SQL lookup.",
     value: itemsListReadable,
   });
   const handleScopeChange = (nextTokens: string[]) => {

@@ -17,6 +17,7 @@ import {
   updateCopilotFormRuntimeState,
   validateCopilotFormPatchValues,
 } from "@/lib/copilotFormRuntime";
+import { copilotFormIdsMatch } from "@/lib/copilotFormIds";
 
 export type CopilotFormFieldOption = {
   label: string;
@@ -27,6 +28,7 @@ export type CopilotFormField = {
   name: string;
   label: string;
   type?: "string" | "number" | "boolean" | "date" | "select" | "array" | "object";
+  arrayItemType?: "string" | "number" | "boolean" | "unknown";
   required?: boolean;
   readOnly?: boolean;
   description?: string;
@@ -65,7 +67,7 @@ export type CopilotFormConfig = {
 };
 
 function matchesForm(formId: string, targetFormId: unknown) {
-  return !targetFormId || targetFormId === formId;
+  return copilotFormIdsMatch(formId, targetFormId);
 }
 
 export function useCopilotForm(config: CopilotFormConfig) {

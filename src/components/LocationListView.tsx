@@ -10,8 +10,10 @@ import { LocationModal } from "@/components/LocationModal";
 import { apiFetch, type Page } from "@/lib/api";
 import { LOCATION_TYPE_LABELS, locationTypeLabel, relTime, type LocationRecord } from "@/lib/userUiShared";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
+import { useCopilotAction } from "@/hooks/useCopilotAction";
 import { useCopilotReadable } from "@/hooks/useCopilotReadable";
 import { buildCopilotListContext } from "@/lib/copilotPageContext";
+import { consumePendingOpen, SAME_PAGE_OPEN_EVENT } from "@/lib/copilotPendingAction";
 import { useClientPagination } from "@/lib/listPagination";
 
 const LOCATIONS_PAGE_SIZE = 15;
@@ -358,6 +360,11 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
   const modalCreateContext = isChildrenView ? "child" : "standalone";
   const modalLockedParent = isChildrenView ? parentLocation : rootLocation;
   const openLocation = isChildrenView ? undefined : (location: LocationRecord) => router.push(`/locations/${location.id}`);
+  const openCreateModal = useCallback(() => {
+    clearActionError();
+    setEditingLocation(null);
+    setModalOpen(true);
+  }, [clearActionError]);
 
   const {
     page,
@@ -395,6 +402,9 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
       is_active: loc.is_active,
       detail_route: `/locations/${loc.id}`,
     })),
+    actions: {
+      create_location: canAddLocation,
+    },
     loading: isLoading || capsLoading,
     extra: {
       variant,
@@ -403,6 +413,7 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
         : null,
     },
   }), [
+    canAddLocation,
     isChildrenView,
     parentId,
     variant,
@@ -424,6 +435,37 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
       "Locations (or child locations under the current parent) displayed on this page after filters/pagination. Use 'visible_rows' to resolve names → ids when filling foreign-key fields like inspection 'department' or item 'location' without a SQL lookup.",
     value: locationsListReadable,
   });
+
+  useCopilotAction({
+    name: "open_create_location_form",
+    description:
+      "Open the Create Location modal on the Locations page before filling a new location.",
+    parameters: {},
+    allowed: canAddLocation,
+    enabled: true,
+    requiredCapabilities: [{ module: "locations", level: "manage" }],
+    handler: () => {
+      openCreateModal();
+      return { ok: true };
+    },
+  });
+
+  useEffect(() => {
+    if (consumePendingOpen("location_create") && canAddLocation) {
+      openCreateModal();
+    }
+  }, [canAddLocation, openCreateModal]);
+
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ formId?: string }>).detail;
+      if (detail?.formId !== "location_create") return;
+      if (!canAddLocation) return;
+      openCreateModal();
+    };
+    window.addEventListener(SAME_PAGE_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(SAME_PAGE_OPEN_EVENT, onOpen);
+  }, [canAddLocation, openCreateModal]);
 
   return (
     <div data-density={density}>
@@ -527,7 +569,7 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
               </button>
             </div>
             {canAddLocation && (
-              <button type="button" className="btn btn-sm btn-primary" onClick={() => setModalOpen(true)} disabled={pageBusy}>
+              <button type="button" className="btn btn-sm btn-primary" onClick={openCreateModal} disabled={pageBusy}>
                 <Ic d="M12 5v14M5 12h14" size={14} />
                 {createLabel}
               </button>

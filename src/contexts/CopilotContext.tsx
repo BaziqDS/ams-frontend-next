@@ -34,8 +34,20 @@ import {
 } from "@/lib/copilotPermissionContext";
 import { filterCopilotReadablesForRoute } from "@/lib/copilotPageContext";
 import {
+  buildCopilotAppMap,
+  COPILOT_APP_MAP_READABLE_ID,
+} from "@/lib/copilotAppMap";
+import {
+  COPILOT_GET_APP_MAP_DESCRIPTION,
+  COPILOT_NAVIGATE_ROUTE_PARAMETER_DESCRIPTION,
+  COPILOT_NAVIGATE_TO_ROUTE_DESCRIPTION,
+  COPILOT_OPEN_FORM_DESCRIPTION,
+  COPILOT_OPEN_FORM_ID_PARAMETER_DESCRIPTION,
+} from "@/lib/copilotActionCopy";
+import {
   actionNeedsReadyBeforeExecution,
   actionNeedsReadyPageContext,
+  buildCopilotInterruptionActionResult,
   getCopilotActionReadiness,
 } from "@/lib/copilotActionReadiness";
 import {
@@ -109,6 +121,7 @@ type PendingActionResult = {
   result: unknown;
   post: ActionResultPost;
   timeoutId: ReturnType<typeof setTimeout>;
+  actionStartedAt: string;
 };
 
 type PendingActionExecution = {
@@ -117,6 +130,7 @@ type PendingActionExecution = {
   args: unknown;
   post: ActionResultPost;
   timeoutId: ReturnType<typeof setTimeout>;
+  actionStartedAt: string;
 };
 
 type PostActionResultWhenContextReadyArgs = {
@@ -125,6 +139,7 @@ type PostActionResultWhenContextReadyArgs = {
   args: unknown;
   result: unknown;
   post: ActionResultPost;
+  actionStartedAt: string;
 };
 
 export type CopilotVoiceCommand = {
@@ -342,10 +357,20 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
       const payload = buildContextPayload();
       const readiness = getCopilotActionReadiness(name, args, payload.readables);
       if (actionNeedsReadyBeforeExecution(name) && !readiness.ready) {
+        const interruptedResult = buildCopilotInterruptionActionResult(readiness);
+        if (interruptedResult) {
+          post({
+            type: "ACTION_RESULT",
+            callId,
+            result: interruptedResult,
+          });
+          return true;
+        }
         return false;
       }
 
       try {
+        const actionStartedAt = new Date().toISOString();
         const result = await action.handler(args ?? {});
         trackActivityRef.current?.({
           kind: "frontend_action_result",
@@ -365,6 +390,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
           args: args ?? {},
           result: result ?? null,
           post,
+          actionStartedAt,
         });
       } catch (error: unknown) {
         const message =
@@ -399,6 +425,18 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         pending.args,
         readables,
       );
+      const interruptedResult = buildCopilotInterruptionActionResult(readiness, null, {
+        occurredAfter: pending.actionStartedAt,
+      });
+      if (interruptedResult) {
+        clearTimeout(pending.timeoutId);
+        pending.post({
+          type: "ACTION_RESULT",
+          callId: pending.callId,
+          result: interruptedResult,
+        });
+        continue;
+      }
       if (!action || !readiness.ready) {
         stillPending.push(pending);
         continue;
@@ -421,6 +459,20 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         pending.args,
         readables,
       );
+      const interruptedResult = buildCopilotInterruptionActionResult(
+        readiness,
+        pending.result,
+        { occurredAfter: pending.actionStartedAt },
+      );
+      if (interruptedResult) {
+        clearTimeout(pending.timeoutId);
+        pending.post({
+          type: "ACTION_RESULT",
+          callId: pending.callId,
+          result: interruptedResult,
+        });
+        continue;
+      }
       if (!readiness.ready) {
         stillPending.push(pending);
         continue;
@@ -512,6 +564,27 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     },
     [publishPermissionSnapshot, schedulePush],
   );
+
+  const buildAppMapSnapshot = useCallback(
+    (observedAt = new Date().toISOString()) =>
+      buildCopilotAppMap({
+        currentRoute: pathname,
+        observedAt,
+        canAccess: (capability) =>
+          capabilities.can(capability.module, capability.level),
+      }),
+    [capabilities, pathname],
+  );
+
+  const publishAppMapSnapshot = useCallback(() => {
+    readablesRef.current.set(COPILOT_APP_MAP_READABLE_ID, {
+      id: COPILOT_APP_MAP_READABLE_ID,
+      description:
+        "AMS app map: machine-readable module, route, create-form, and capability catalog. Use this before guessing routes or form ids. It does not contain writable form fields; use activeForm after opening a form.",
+      value: buildAppMapSnapshot(),
+    });
+    schedulePush();
+  }, [buildAppMapSnapshot, schedulePush]);
 
   const publishActivitySnapshot = useCallback(() => {
     readablesRef.current.set(ACTIVITY_READABLE_ID, {
@@ -639,12 +712,14 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
       args,
       result,
       post,
+      actionStartedAt,
     }: {
       callId: unknown;
       name: string;
       args: unknown;
       result: unknown;
       post: ActionResultPost;
+      actionStartedAt: string;
     }) => {
       if (!actionNeedsReadyPageContext(name) || isFailedActionResult(result)) {
         post({ type: "ACTION_RESULT", callId, result: result ?? null });
@@ -653,6 +728,15 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
 
       const payload = buildContextPayload();
       const readiness = getCopilotActionReadiness(name, args, payload.readables);
+      const interruptedResult = buildCopilotInterruptionActionResult(
+        readiness,
+        result,
+        { occurredAfter: actionStartedAt },
+      );
+      if (interruptedResult) {
+        post({ type: "ACTION_RESULT", callId, result: interruptedResult });
+        return;
+      }
       if (readiness.ready) {
         post({
           type: "ACTION_RESULT",
@@ -676,6 +760,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         args,
         result,
         post,
+        actionStartedAt,
         timeoutId: setTimeout(() => {
           pendingActionResultsRef.current =
             pendingActionResultsRef.current.filter((item) => item !== pending);
@@ -715,6 +800,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         name,
         args,
         post,
+        actionStartedAt: new Date().toISOString(),
         timeoutId: setTimeout(() => {
           pendingActionExecutionsRef.current =
             pendingActionExecutionsRef.current.filter((item) => item !== pending);
@@ -734,6 +820,14 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     },
     [buildContextPayload, postContextNotReadyResult, pushContextToIframe],
   );
+
+  useLayoutEffect(() => {
+    publishAppMapSnapshot();
+    return () => {
+      readablesRef.current.delete(COPILOT_APP_MAP_READABLE_ID);
+      schedulePush();
+    };
+  }, [publishAppMapSnapshot, schedulePush]);
 
   useLayoutEffect(() => {
     publishActivitySnapshot();
@@ -778,14 +872,24 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     return registerAction({
+      name: "get_app_map",
+      description: COPILOT_GET_APP_MAP_DESCRIPTION,
+      parameters: {},
+      handler: () => ({
+        ok: true,
+        appMap: buildAppMapSnapshot(),
+      }),
+    });
+  }, [buildAppMapSnapshot, registerAction]);
+
+  useEffect(() => {
+    return registerAction({
       name: "navigate_to_route",
-      description:
-        "Navigate the AMS browser to a relative route such as /inspections, /locations, or /categories. Use ONLY for navigation without opening a form. To open a create form from any page, prefer the open_form action. Accepts the path under arg key 'path' (preferred) or 'route' (alias).",
+      description: COPILOT_NAVIGATE_TO_ROUTE_DESCRIPTION,
       parameters: {
         path: {
           type: "string",
-          description:
-            "Safe relative AMS route beginning with /. Alias arg 'route' is also accepted.",
+          description: COPILOT_NAVIGATE_ROUTE_PARAMETER_DESCRIPTION,
           required: true,
         },
       },
@@ -799,7 +903,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
             ok: false,
             errorType: "invalid_route",
             message:
-              "Invalid AMS route. Pass a relative path starting with '/' under the arg key 'path' (e.g., { path: '/inspections/13' }).",
+              "Invalid AMS route. Pass a relative path starting with '/' under the arg key 'path'. Call get_app_map if you need route options.",
             received: args,
           };
         }
@@ -814,20 +918,11 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     return registerAction({
       name: "open_form",
-      description:
-        "Open a create form anywhere in the AMS. If the user is not on the form's page, this " +
-        "automatically navigates first and opens the form once the page is ready. Use this " +
-        "instead of chaining navigate_to_route with open_create_*_form. Supported form_id values: " +
-        `${SUPPORTED_OPEN_FORM_IDS.join(", ")}. ` +
-        "Scoped forms such as subcategory_create must be opened from their parent detail page. " +
-        "For inspection stage forms, the user must first be on the inspection detail page " +
-        "(/inspections/[id]) - call navigate_to_route with path " +
-        "'/inspections/{id}' to get there.",
+      description: COPILOT_OPEN_FORM_DESCRIPTION,
       parameters: {
         form_id: {
           type: "string",
-          description:
-            `Form identifier. Supported: ${SUPPORTED_OPEN_FORM_IDS.join(" | ")}. Alias arg 'formId' is also accepted.`,
+          description: COPILOT_OPEN_FORM_ID_PARAMETER_DESCRIPTION,
           required: true,
         },
       },
@@ -848,8 +943,8 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
             ok: false,
             errorType: "missing_form_id",
             message:
-              "open_form requires a 'form_id' string. Supported values: " +
-              `${SUPPORTED_OPEN_FORM_IDS.join(", ")}.`,
+              "open_form requires a 'form_id' string. Call get_app_map to discover supported form ids.",
+            supportedFormIds: SUPPORTED_OPEN_FORM_IDS,
             received: args,
           };
         }
@@ -860,8 +955,8 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
             ok: false,
             errorType: "unknown_form_id",
             message:
-              `Unknown form_id "${formId}". Supported via open_form: ${SUPPORTED_OPEN_FORM_IDS.join(", ")}. ` +
-              "Subcategory and inspection-stage forms must be opened from their respective parent pages.",
+              `Unknown form_id "${formId}". Call get_app_map to discover supported form ids and scoped route rules.`,
+            supportedFormIds: SUPPORTED_OPEN_FORM_IDS,
           };
         }
 

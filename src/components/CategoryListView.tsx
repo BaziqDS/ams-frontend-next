@@ -415,7 +415,7 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
 
   useCopilotReadable({
     description:
-      "Categories (or subcategories under the current parent) displayed on this page after filters/pagination. Use 'visible_rows' to resolve names → ids without SQL. When variant='children', the page is /categories/{parent_category.id} and subcategory_create is available there.",
+      "Categories or subcategories under the current parent displayed after filters/pagination. Use visible_rows to resolve names to ids without SQL. When variant is children, parent_category identifies the subcategory scope; use get_app_map for form ids.",
     value: categoriesListReadable,
   });
 
@@ -492,7 +492,7 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
 
   useCopilotReadable({
     description:
-      "Category detail page contract. On /categories/{id}, selected_record is the parent category and child_categories are the subcategories currently loaded for that parent.",
+      "Category detail page contract. selected_record is the parent category and child_categories are the subcategories currently loaded for that parent.",
     value: categoryDetailReadable,
   });
 

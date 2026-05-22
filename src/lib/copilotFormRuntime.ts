@@ -62,6 +62,7 @@ export type CopilotSetValuesResponse = {
 export type CopilotPatchField = {
   name: string;
   type?: string;
+  arrayItemType?: "string" | "number" | "boolean" | "unknown";
   options?: Array<{
     label?: string;
     value?: unknown;
@@ -250,9 +251,23 @@ function buildZodFieldSchema(field: CopilotPatchField): z.ZodTypeAny {
     case "select":
       return enumSchemaForOptions(field);
     case "array":
-      return z.array(buildZodObjectSchema(field.arrayItemFields ?? [], {
-        includeArrayMetaFields: true,
-      }));
+      if ((field.arrayItemFields ?? []).length > 0) {
+        return z.array(buildZodObjectSchema(field.arrayItemFields ?? [], {
+          includeArrayMetaFields: true,
+        }));
+      }
+      if ((field.options ?? []).length > 0) return z.array(enumSchemaForOptions(field));
+      switch (field.arrayItemType) {
+        case "number":
+          return z.array(z.coerce.number());
+        case "boolean":
+          return z.array(z.boolean());
+        case "string":
+          return z.array(z.coerce.string());
+        case "unknown":
+        default:
+          return z.array(z.unknown());
+      }
     case "object":
       return z.record(z.string(), z.unknown());
     default:
@@ -311,15 +326,40 @@ function jsonTypeForField(field: CopilotPatchField): CopilotJsonSchema {
       return {
         ...base,
         type: "array",
-        items: buildJsonObjectSchema(field.arrayItemFields ?? [], {
-          includeArrayMetaFields: true,
-        }),
+        items: jsonArrayItemSchemaForField(field),
       };
     case "object":
       return { ...base, type: "object", additionalProperties: true };
     case "string":
     default:
       return { ...base, type: "string" };
+  }
+}
+
+function jsonArrayItemSchemaForField(field: CopilotPatchField): CopilotJsonSchema {
+  if ((field.arrayItemFields ?? []).length > 0) {
+    return buildJsonObjectSchema(field.arrayItemFields ?? [], {
+      includeArrayMetaFields: true,
+    });
+  }
+  if ((field.options ?? []).length > 0) {
+    return {
+      ...(field.arrayItemType && field.arrayItemType !== "unknown"
+        ? { type: field.arrayItemType }
+        : {}),
+      enum: field.options?.map(option => option.value) ?? [],
+    };
+  }
+  switch (field.arrayItemType) {
+    case "number":
+      return { type: "number" };
+    case "boolean":
+      return { type: "boolean" };
+    case "string":
+      return { type: "string" };
+    case "unknown":
+    default:
+      return {};
   }
 }
 
@@ -471,6 +511,9 @@ function normalizeFieldPatchValue(
   if (field.type === "date") return normalizeDateValue(value, now);
   if (field.type === "select") return normalizeSelectValue(field, value);
   if (field.type === "array" && Array.isArray(value)) {
+    if ((field.arrayItemFields ?? []).length === 0) {
+      return value.map(item => normalizeSelectValue(field, item));
+    }
     const itemFieldsByName = new Map(
       (field.arrayItemFields ?? []).map(itemField => [itemField.name, itemField]),
     );
@@ -531,16 +574,29 @@ function collectInvalidSelectValues(
     }
 
     if (field.type === "array" && Array.isArray(value)) {
-      value.forEach((row, index) => {
-        if (!row || typeof row !== "object" || Array.isArray(row)) return;
-        failures.push(
-          ...collectInvalidSelectValues(
-            field.arrayItemFields ?? [],
-            row as Record<string, unknown>,
-            `${fieldPath}.${index}`,
-          ),
-        );
-      });
+      if ((field.arrayItemFields ?? []).length === 0) {
+        if ((field.options ?? []).length > 0) {
+          value.forEach((item, index) => {
+            if (matchesSelectOptionValue(field, item)) return;
+            failures.push({
+              field: `${fieldPath}.${index}`,
+              value: item,
+              allowedOptions: field.options ?? [],
+            });
+          });
+        }
+      } else {
+        value.forEach((row, index) => {
+          if (!row || typeof row !== "object" || Array.isArray(row)) return;
+          failures.push(
+            ...collectInvalidSelectValues(
+              field.arrayItemFields ?? [],
+              row as Record<string, unknown>,
+              `${fieldPath}.${index}`,
+            ),
+          );
+        });
+      }
     }
   }
 

@@ -10,6 +10,7 @@ import { useClientPagination } from "@/lib/listPagination";
 import { getAllocatableTargetLocations, getAllocatableTargetPersons, getAllocatedReturnLocations, getAllocatedReturnPersons, getUserAssignedStores, type StockAllocationRecord } from "@/lib/stockEntryLocationRules";
 import { getIssueAvailableQuantity, getIssueBatchOptions, getIssueInstanceOptions, getIssueItemOptions, getReturnBatchOptions, getReturnInstanceOptions, getReturnItemOptions, getReturnQuantityLimit, type StockEntryItemInstance, type StockEntryStockRecord, type StockEntryReturnTarget } from "@/lib/stockEntryItemRules";
 import { buildStockEntryPayload, validateStockEntryForm, type CreatableStockEntryType, type StockEntryFormItem, type StockEntryFormState } from "@/lib/stockEntryFormRules";
+import { applyStockEntryCopilotValuePatch, buildStockEntryCopilotReferenceContext } from "@/lib/stockEntryCopilotForm";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCopilotAction } from "@/hooks/useCopilotAction";
@@ -527,52 +528,6 @@ function formFromEntry(entry: StockEntryRecord | null, locations: LocationRecord
   };
 }
 
-function toStringValue(value: unknown) {
-  if (typeof value === "string" || typeof value === "number") return String(value);
-  return undefined;
-}
-
-function toStringArray(value: unknown) {
-  if (!Array.isArray(value)) return undefined;
-  return value
-    .map(item => toStringValue(item))
-    .filter((item): item is string => item !== undefined);
-}
-
-function buildStockEntryCopilotValuePatch(
-  values: Record<string, unknown>,
-): Partial<StockEntryFormState> {
-  const patch: Partial<StockEntryFormState> = {};
-
-  if (values.entry_type === "ISSUE" || values.entry_type === "RECEIPT") {
-    patch.entry_type = values.entry_type;
-  }
-  if (values.issue_target === "STORE" || values.issue_target === "LOCATION" || values.issue_target === "PERSON") {
-    patch.issue_target = values.issue_target;
-  }
-  if (values.return_source === "LOCATION" || values.return_source === "PERSON") {
-    patch.return_source = values.return_source;
-  }
-  for (const key of ["from_location", "to_location", "issued_to", "purpose", "remarks"] as const) {
-    const next = toStringValue(values[key]);
-    if (next !== undefined) patch[key] = next;
-  }
-  if (Array.isArray(values.items)) {
-    patch.items = values.items
-      .filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
-      .map(row => ({
-        item: toStringValue(row.item) ?? "",
-        batch: toStringValue(row.batch) ?? "",
-        quantity: toStringValue(row.quantity) ?? "1",
-        instances: toStringArray(row.instances) ?? [],
-        stock_register: toStringValue(row.stock_register) ?? "",
-        page_number: toStringValue(row.page_number) ?? "",
-      }));
-  }
-
-  return patch;
-}
-
 function entryTarget(entry: StockEntryRecord) {
   if (entry.issued_to_name) return entry.issued_to_name;
   return entry.to_location_name ?? "—";
@@ -821,6 +776,17 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
   const selectedItemIds = new Set(form.items.map(row => row.item).filter(Boolean));
   const canSubmit = !refsLoading && !submitting;
 
+  const copilotInstanceOptions = useMemo(() => {
+    const byId = new Map<number, StockEntryItemInstance>();
+    form.items.forEach(row => {
+      getInstanceOptions(row).forEach(instance => byId.set(instance.id, instance));
+    });
+    return Array.from(byId.values()).map(instance => ({
+      value: String(instance.id),
+      label: instance.serial_number || instance.qr_code || `Instance ${instance.id}`,
+    }));
+  }, [form.items, getInstanceOptions]);
+
   const copilotFields = useMemo<CopilotFormField[]>(() => [
     {
       name: "entry_type",
@@ -924,8 +890,10 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
           name: "instances",
           label: "Instance IDs",
           type: "array",
+          arrayItemType: "string",
+          options: copilotInstanceOptions,
           description:
-            "For individual-tracked items, provide the selected instance IDs from the visible form options/context.",
+            "For individual-tracked items, provide selected instance option values. Use stock_entry_form_reference.line_item_options[index].instance_options for the current row.",
         },
         {
           name: "stock_register",
@@ -943,6 +911,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
     form.entry_type,
     form.issue_target,
     form.return_source,
+    copilotInstanceOptions,
     getItemOptions,
     issueLocationOptions,
     issuePersonOptions,
@@ -952,6 +921,47 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
     selectableStoreOptions,
     sourceRegisterOptions,
   ]);
+
+  const copilotFormId = mode === "edit" && entry ? `stock-entry-edit-${entry.id}` : "stock-entry-create";
+  const stockEntryFormReference = useMemo(() => buildStockEntryCopilotReferenceContext({
+    formId: copilotFormId,
+    active: open,
+    form,
+    sourceStores: selectableStoreOptions,
+    destinationStores: issueStoreOptions,
+    destinationLocations: issueNonStoreOptions,
+    receivingPersons: issuePersonOptions,
+    returningPersons: receiptPersonOptions,
+    returningLocations: receiptNonStoreOptions,
+    sourceRegisters: sourceRegisterOptions,
+    lineItems: form.items.map((row, index) => ({
+      index,
+      itemOptions: getItemOptions(),
+      batchOptions: getBatchOptions(row),
+      instanceOptions: getInstanceOptions(row),
+    })),
+  }), [
+    copilotFormId,
+    form,
+    getBatchOptions,
+    getInstanceOptions,
+    getItemOptions,
+    issueNonStoreOptions,
+    issuePersonOptions,
+    issueStoreOptions,
+    open,
+    receiptNonStoreOptions,
+    receiptPersonOptions,
+    selectableStoreOptions,
+    sourceRegisterOptions,
+  ]);
+
+  useCopilotReadable({
+    description: open
+      ? "Stock entry form reference data. Use this for valid movement modes, store/person/non-store choices, row-specific stock registers, batches, and item instances before calling set_form_values."
+      : "Stock entry form reference data is available when the create/edit modal is open.",
+    value: stockEntryFormReference,
+  });
 
   const validateForCopilot = useCallback(() => {
     const nextErrors = validateStockEntryForm(form);
@@ -963,7 +973,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
   }, [form]);
 
   useCopilotForm({
-    formId: mode === "edit" && entry ? `stock-entry-edit-${entry.id}` : "stock-entry-create",
+    formId: copilotFormId,
     title: mode === "edit" ? "Edit Stock Entry" : entry ? "Create Replacement Stock Entry" : "Create Stock Entry",
     description: "Create or edit a stock movement entry on the Stock Entries page.",
     mode,
@@ -980,8 +990,9 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
       submit: { requiredCapabilities: [{ module: "stock-entries", level: "manage" }] },
     },
     setValues: values => {
-      setForm(prev => ({ ...prev, ...buildStockEntryCopilotValuePatch(values) }));
-      return { updated: Object.keys(values) };
+      const patch = applyStockEntryCopilotValuePatch(form, values);
+      setForm(patch.nextForm);
+      return { applied: patch.applied, ignored: patch.ignored };
     },
     validate: validateForCopilot,
     submit: () => submit(),
@@ -1535,7 +1546,7 @@ export function StockEntriesView() {
 
   useCopilotReadable({
     description:
-      "Stock entries displayed on this page after filters/pagination. Use visible_rows to resolve entry numbers, movement type, status, locations, and item summaries without SQL. Open stock_entry_create before filling a new stock movement.",
+      "Stock entries displayed after filters/pagination. Use visible_rows to resolve entry numbers, movement type, status, locations, and item summaries without SQL. Use get_app_map to discover the create form before filling a new stock movement.",
     value: stockEntriesListReadable,
   });
 

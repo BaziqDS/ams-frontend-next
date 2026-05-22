@@ -91,8 +91,41 @@ describe("copilot activity memory", () => {
       ok: false,
       message: "Inspection code already exists.",
     });
+    expect(snapshot.lastClosedForm).toBeNull();
     expect(snapshot.recentActivity).toHaveLength(3);
     expect(snapshot.totalEvents).toBe(4);
+  });
+
+  it("surfaces the last user-closed form as an interruption signal", () => {
+    const events = [
+      createCopilotActivityEvent({
+        kind: "form_opened",
+        actor: "user",
+        title: "Opened Create Stock Entry",
+        route: "/stock-entries",
+        formId: "stock-entry-create",
+        formTitle: "Create Stock Entry",
+      }),
+      createCopilotActivityEvent({
+        kind: "form_closed",
+        actor: "user",
+        title: "Closed Create Stock Entry",
+        route: "/stock-entries",
+        formId: "stock-entry-create",
+        formTitle: "Create Stock Entry",
+      }),
+    ];
+
+    const snapshot = buildCopilotActivitySnapshot(events, {
+      currentRoute: "/stock-entries",
+    });
+
+    expect(snapshot.activeForm).toBeNull();
+    expect(snapshot.lastClosedForm).toMatchObject({
+      formId: "stock-entry-create",
+      title: "Create Stock Entry",
+      route: "/stock-entries",
+    });
   });
 
   it("truncates long values before exposing them to the agent", () => {

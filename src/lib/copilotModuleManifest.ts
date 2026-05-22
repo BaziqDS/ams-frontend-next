@@ -1,7 +1,9 @@
 import type { CapabilityLevel } from "@/contexts/CapabilitiesContext";
+import { copilotFormIdsMatch } from "@/lib/copilotFormIds";
 
 export type CopilotModuleId =
   | "inspections"
+  | "locations"
   | "categories"
   | "items"
   | "stock-entries"
@@ -43,6 +45,19 @@ export const COPILOT_MODULE_MANIFEST: CopilotModuleContract[] = [
       route: "/inspections",
       openActionName: "open_create_inspection_form",
       capability: { module: "inspections", level: "manage" },
+    },
+  },
+  {
+    id: "locations",
+    label: "Locations",
+    listRoute: "/locations",
+    detailRoutePattern: "/locations/:id",
+    createForm: {
+      formId: "location_create",
+      label: "Create Location",
+      route: "/locations",
+      openActionName: "open_create_location_form",
+      capability: { module: "locations", level: "manage" },
     },
   },
   {
@@ -125,7 +140,9 @@ export function getCopilotOpenFormIds() {
 }
 
 export function getCopilotOpenFormContract(formId: string) {
-  return getCopilotOpenFormContracts().find((form) => form.formId === formId);
+  return getCopilotOpenFormContracts().find((form) =>
+    copilotFormIdsMatch(form.formId, formId),
+  );
 }
 
 export function routeMatchesCopilotPattern(

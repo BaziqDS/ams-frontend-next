@@ -200,6 +200,49 @@ describe("copilot form value schemas", () => {
       },
     });
   });
+
+  it("supports primitive array schemas for multi-select field values", () => {
+    const fields = [
+      {
+        name: "instances",
+        type: "array",
+        arrayItemType: "string",
+        options: [
+          { label: "SN-001", value: "4" },
+          { label: "SN-002", value: "5" },
+        ],
+      },
+    ];
+
+    expect(buildCopilotSetFormValuesParameters(fields).values).toMatchObject({
+      properties: {
+        instances: {
+          type: "array",
+          items: { enum: ["4", "5"] },
+        },
+      },
+    });
+
+    const normalized = normalizeCopilotFormPatchValues(fields, {
+      instances: [4, "5"],
+    });
+
+    expect(normalized).toEqual({ instances: ["4", "5"] });
+    expect(validateCopilotFormPatchValues(fields, normalized)).toEqual({
+      ok: true,
+      values: { instances: ["4", "5"] },
+    });
+    expect(findInvalidCopilotSelectValues(fields, { instances: ["999"] })).toEqual([
+      {
+        field: "instances.0",
+        value: "999",
+        allowedOptions: [
+          { label: "SN-001", value: "4" },
+          { label: "SN-002", value: "5" },
+        ],
+      },
+    ]);
+  });
 });
 
 describe("normalizeCopilotSubmitResult", () => {

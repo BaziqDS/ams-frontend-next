@@ -9,6 +9,7 @@ type CopilotReadableLike = {
 };
 
 export const COPILOT_SYSTEM_READABLE_IDS = new Set([
+  "__ams_app_map",
   "__ams_runtime_context",
   "__ams_activity_context",
   "__ams_permission_context",

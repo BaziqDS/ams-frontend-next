@@ -9,6 +9,14 @@ export type CopilotActionReadiness = {
   ready: boolean;
   requirement?: string;
   summary?: Record<string, unknown>;
+  interruption?: {
+    type: "user_closed_form";
+    formId?: string;
+    formTitle?: string;
+    route?: string;
+    at?: string;
+    message: string;
+  };
 };
 
 const LISTING_ROUTES = new Set([
@@ -208,10 +216,18 @@ function getActiveForm(
     if (normalizedRequested && typeof formId !== "string") continue;
     const fields = value.fields;
     if (Array.isArray(fields) && fields.length > 0) {
-      return { formId, fields };
+      return { formId, fields, allowedActions: value.allowedActions };
     }
   }
   return null;
+}
+
+function isFormActionEnabled(
+  activeForm: { allowedActions?: unknown },
+  actionName: string,
+) {
+  if (!isRecord(activeForm.allowedActions)) return true;
+  return activeForm.allowedActions[actionName] !== false;
 }
 
 function getRequestedFieldNames(actionName: string, args: unknown) {
@@ -242,6 +258,62 @@ function formReadySummary(
     ...(requestedFields.length > 0 ? { requestedFields } : {}),
     ...(knownRequestedFields.length > 0 ? { knownRequestedFields } : {}),
     ...(unknownRequestedFields.length > 0 ? { unknownRequestedFields } : {}),
+  };
+}
+
+function getLastClosedForm(readables: CopilotReadableLike[]) {
+  const activity = readables.find((readable) => {
+    return readable.id === "__ams_activity_context" && isRecord(readable.value);
+  });
+  if (!activity || !isRecord(activity.value)) return null;
+
+  const lastClosedForm = activity.value.lastClosedForm;
+  if (isRecord(lastClosedForm)) {
+    return {
+      formId: typeof lastClosedForm.formId === "string" ? lastClosedForm.formId : undefined,
+      formTitle: typeof lastClosedForm.title === "string" ? lastClosedForm.title : undefined,
+      route: typeof lastClosedForm.route === "string" ? lastClosedForm.route : undefined,
+      at: typeof lastClosedForm.closedAt === "string" ? lastClosedForm.closedAt : undefined,
+    };
+  }
+
+  const recentActivity = activity.value.recentActivity;
+  if (!Array.isArray(recentActivity)) return null;
+  for (let index = recentActivity.length - 1; index >= 0; index -= 1) {
+    const event = recentActivity[index];
+    if (!isRecord(event) || event.kind !== "form_closed") continue;
+    return {
+      formId: typeof event.formId === "string" ? event.formId : undefined,
+      formTitle: undefined,
+      route: typeof event.route === "string" ? event.route : undefined,
+      at: typeof event.at === "string" ? event.at : undefined,
+    };
+  }
+  return null;
+}
+
+function getFormClosedInterruption(
+  readables: CopilotReadableLike[],
+  requestedFormId?: string | null,
+): CopilotActionReadiness["interruption"] {
+  const closed = getLastClosedForm(readables);
+  if (!closed) return undefined;
+  if (
+    requestedFormId &&
+    closed.formId &&
+    normalizeFormId(closed.formId) !== normalizeFormId(requestedFormId)
+  ) {
+    return undefined;
+  }
+
+  const label = closed.formTitle || closed.formId || "the active form";
+  return {
+    type: "user_closed_form",
+    formId: closed.formId,
+    formTitle: closed.formTitle,
+    route: closed.route,
+    at: closed.at,
+    message: `The user closed ${label}. Stop filling this form unless the user asks to reopen it.`,
   };
 }
 
@@ -371,6 +443,20 @@ export function getCopilotActionReadiness(
         requirement: formId
           ? `active form "${formId}" with writable fields`
           : "an active form with writable fields",
+        interruption: getFormClosedInterruption(readables, formId),
+      };
+    }
+    if (!isFormActionEnabled(activeForm, "set_form_values")) {
+      return {
+        ready: false,
+        requirement: formId
+          ? `active form "${formId}" with set_form_values enabled`
+          : "an active form with set_form_values enabled",
+        summary: {
+          activeFormId: activeForm.formId,
+          writableFieldsCount: activeForm.fields.length,
+          setFormValuesAllowed: false,
+        },
       };
     }
     return {
@@ -388,6 +474,18 @@ export function getCopilotActionReadiness(
       return {
         ready: false,
         requirement: "an active create form with writable fields",
+        interruption: getFormClosedInterruption(readables),
+      };
+    }
+    if (!isFormActionEnabled(activeForm, "set_form_values")) {
+      return {
+        ready: false,
+        requirement: "an active create form with set_form_values enabled",
+        summary: {
+          activeFormId: activeForm.formId,
+          writableFieldsCount: activeForm.fields.length,
+          setFormValuesAllowed: false,
+        },
       };
     }
     return {
@@ -408,6 +506,7 @@ export function getCopilotActionReadiness(
         requirement: formId
           ? `active form "${formId}" with writable fields`
           : "an active form with writable fields",
+        interruption: getFormClosedInterruption(readables, formId),
       };
     }
     return {
@@ -417,6 +516,34 @@ export function getCopilotActionReadiness(
   }
 
   return { ready: true };
+}
+
+export function buildCopilotInterruptionActionResult(
+  readiness: CopilotActionReadiness,
+  result?: unknown,
+  options: { occurredAfter?: string } = {},
+) {
+  if (!readiness.interruption) return null;
+  if (options.occurredAfter && readiness.interruption.at) {
+    const interruptionAt = Date.parse(readiness.interruption.at);
+    const occurredAfter = Date.parse(options.occurredAfter);
+    if (
+      Number.isFinite(interruptionAt) &&
+      Number.isFinite(occurredAfter) &&
+      interruptionAt <= occurredAfter
+    ) {
+      return null;
+    }
+  }
+  return {
+    ok: false,
+    errorType: "user_interrupted",
+    message: readiness.interruption.message,
+    interruption: readiness.interruption,
+    actionResult: result ?? null,
+    contextReady: false,
+    contextSummary: readiness.summary ?? {},
+  };
 }
 
 export function actionNeedsReadyPageContext(actionName: string) {

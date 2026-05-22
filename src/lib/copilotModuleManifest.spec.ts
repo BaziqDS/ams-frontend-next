@@ -11,6 +11,7 @@ describe("copilot module manifest", () => {
   it("declares the first production modules as reusable contracts", () => {
     expect(COPILOT_MODULE_MANIFEST.map((module) => module.id)).toEqual([
       "inspections",
+      "locations",
       "categories",
       "items",
       "stock-entries",
@@ -18,6 +19,7 @@ describe("copilot module manifest", () => {
     ]);
     expect(getCopilotListRoutes()).toEqual([
       "/inspections",
+      "/locations",
       "/categories",
       "/items",
       "/stock-entries",
@@ -28,12 +30,18 @@ describe("copilot module manifest", () => {
   it("keeps cross-page create forms in one registry", () => {
     expect(getCopilotOpenFormIds()).toEqual([
       "inspection_create",
+      "location_create",
       "category_create",
       "subcategory_create",
       "item_create",
       "stock_entry_create",
       "stock_register_create",
     ]);
+    expect(getCopilotOpenFormContract("location_create")).toMatchObject({
+      formId: "location_create",
+      route: "/locations",
+      capability: { module: "locations", level: "manage" },
+    });
     expect(getCopilotOpenFormContract("item_create")).toMatchObject({
       formId: "item_create",
       route: "/items",
@@ -48,6 +56,9 @@ describe("copilot module manifest", () => {
       formId: "stock_register_create",
       route: "/stock-registers",
       capability: { module: "stock-registers", level: "manage" },
+    });
+    expect(getCopilotOpenFormContract("stock-register-create")).toMatchObject({
+      formId: "stock_register_create",
     });
   });
 

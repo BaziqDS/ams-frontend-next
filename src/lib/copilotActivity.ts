@@ -70,6 +70,12 @@ export type CopilotActivitySnapshot = {
     result: unknown;
     at: string;
   } | null;
+  lastClosedForm: {
+    formId: string;
+    title?: string;
+    route?: string;
+    closedAt: string;
+  } | null;
   recentActivity: Array<{
     at: string;
     actor: CopilotActivityActor;
@@ -228,6 +234,20 @@ function latestSubmitResult(events: CopilotActivityEvent[]) {
   return null;
 }
 
+function latestClosedForm(events: CopilotActivityEvent[]) {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.kind !== "form_closed" || !event.formId) continue;
+    return {
+      formId: event.formId,
+      title: event.formTitle,
+      route: event.route,
+      closedAt: event.at,
+    };
+  }
+  return null;
+}
+
 export function buildCopilotActivitySnapshot(
   events: CopilotActivityEvent[],
   options: {
@@ -260,6 +280,7 @@ export function buildCopilotActivitySnapshot(
     activeForm: latestActiveForm(events),
     lastUserEdit: latestUserEdit(events),
     lastSubmitResult: latestSubmitResult(events),
+    lastClosedForm: latestClosedForm(events),
     recentActivity: recent,
     totalEvents: events.length,
   };

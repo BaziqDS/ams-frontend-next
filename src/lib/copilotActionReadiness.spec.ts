@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   actionNeedsReadyBeforeExecution,
   actionNeedsReadyPageContext,
+  buildCopilotInterruptionActionResult,
   getCopilotActionReadiness,
   type CopilotReadableLike,
 } from "./copilotActionReadiness";
@@ -297,6 +298,48 @@ describe("copilot action readiness", () => {
     });
   });
 
+  it("waits after open_form until the active form can accept set_form_values", () => {
+    expect(
+      getCopilotActionReadiness("open_form", { form_id: "stock_entry_create" }, [
+        runtime("/stock-entries"),
+        {
+          id: "stock-entry-form",
+          value: {
+            route: "/stock-entries",
+            activeForm: {
+              formId: "stock-entry-create",
+              fields: [{ name: "entry_type" }],
+              allowedActions: { set_form_values: false },
+            },
+          },
+        },
+      ]),
+    ).toMatchObject({
+      ready: false,
+      requirement: 'active form "stock_entry_create" with set_form_values enabled',
+    });
+
+    expect(
+      getCopilotActionReadiness("open_form", { form_id: "stock_entry_create" }, [
+        runtime("/stock-entries"),
+        {
+          id: "stock-entry-form",
+          value: {
+            route: "/stock-entries",
+            activeForm: {
+              formId: "stock-entry-create",
+              fields: [{ name: "entry_type" }],
+              allowedActions: { set_form_values: true },
+            },
+          },
+        },
+      ]),
+    ).toMatchObject({
+      ready: true,
+      summary: { activeFormId: "stock-entry-create", writableFieldsCount: 1 },
+    });
+  });
+
   it("requires an active form schema before form tools can run", () => {
     expect(
       getCopilotActionReadiness("set_form_values", { values: { name: "Laptop" } }, [
@@ -347,6 +390,67 @@ describe("copilot action readiness", () => {
         writableFieldsCount: 1,
         requestedFields: ["name"],
       },
+    });
+  });
+
+  it("reports a user interruption when a requested form was closed", () => {
+    expect(
+      getCopilotActionReadiness(
+        "set_form_values",
+        { formId: "stock-entry-create", values: { entry_type: "ISSUE" } },
+        [
+          runtime("/stock-entries"),
+          {
+            id: "__ams_activity_context",
+            value: {
+              lastClosedForm: {
+                formId: "stock-entry-create",
+                title: "Create Stock Entry",
+                route: "/stock-entries",
+                closedAt: "2026-05-22T00:00:00.000Z",
+              },
+            },
+          },
+        ],
+      ),
+    ).toMatchObject({
+      ready: false,
+      interruption: {
+        type: "user_closed_form",
+        formId: "stock-entry-create",
+        formTitle: "Create Stock Entry",
+      },
+    });
+  });
+
+  it("can ignore closed-form interruptions that happened before the current wait started", () => {
+    const readiness = getCopilotActionReadiness(
+      "open_form",
+      { form_id: "stock-entry-create" },
+      [
+        runtime("/stock-entries"),
+        {
+          id: "__ams_activity_context",
+          value: {
+            lastClosedForm: {
+              formId: "stock-entry-create",
+              title: "Create Stock Entry",
+              route: "/stock-entries",
+              closedAt: "2026-05-22T00:00:00.000Z",
+            },
+          },
+        },
+      ],
+    );
+
+    expect(buildCopilotInterruptionActionResult(readiness, null, {
+      occurredAfter: "2026-05-22T00:00:01.000Z",
+    })).toBeNull();
+    expect(buildCopilotInterruptionActionResult(readiness, null, {
+      occurredAfter: "2026-05-21T23:59:59.000Z",
+    })).toMatchObject({
+      ok: false,
+      errorType: "user_interrupted",
     });
   });
 
