@@ -29,6 +29,7 @@ type StageFormProps = {
   data: InspectionRecord;
   onChange: (data: InspectionRecord) => void;
   readOnly?: boolean;
+  errors?: Record<string, string>;
 };
 
 type InspectionLocationDetail = {
@@ -86,19 +87,26 @@ function Field({
   children,
   grow,
   hint,
+  error,
 }: {
   label: string;
   children: React.ReactNode;
   grow?: boolean;
   hint?: string;
+  error?: string;
 }) {
   return (
     <label className={"stage-form-field" + (grow ? " stage-form-field-grow" : "")}>
       <span className="stage-form-label">{label}</span>
       {children}
+      {error ? <span className="field-error">{error}</span> : null}
       {hint ? <span className="stage-form-helper">{hint}</span> : null}
     </label>
   );
+}
+
+function rowError(errors: Record<string, string> | undefined, rowIndex: number, field: string) {
+  return errors?.[`items.${rowIndex}.${field}`];
 }
 
 function SectionIntro({
@@ -143,6 +151,31 @@ function getRegisterOptionLabel(register: InspectionStockRegisterOption) {
     : register.register_number;
 }
 
+export function buildInspectionCatalogItemSearchText(option: InspectionItemOption) {
+  return [
+    option.name,
+    option.code,
+    option.category_display,
+    option.category_type,
+    option.tracking_type,
+    option.description,
+    option.specifications,
+    option.acct_unit,
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+export function filterInspectionCatalogItemOptions(
+  options: InspectionItemOption[],
+  query: string,
+  limit = 8,
+) {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return options.slice(0, limit);
+  return options
+    .filter(option => buildInspectionCatalogItemSearchText(option).includes(normalizedQuery))
+    .slice(0, limit);
+}
+
 function CatalogItemSearchField({
   item,
   options,
@@ -178,12 +211,7 @@ function CatalogItemSearchField({
   }, [item.item, item.item_name]);
 
   const filteredOptions = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) return options.slice(0, 8);
-
-    return options
-      .filter(option => `${option.name} ${option.code}`.toLowerCase().includes(normalizedQuery))
-      .slice(0, 8);
+    return filterInspectionCatalogItemOptions(options, query);
   }, [options, query]);
 
   const focusSearch = () => {
@@ -500,7 +528,7 @@ export function Stage1Form({ data, onChange, readOnly }: StageFormProps) {
   );
 }
 
-export function Stage2Form({ data, onChange, readOnly }: StageFormProps) {
+export function Stage2Form({ data, onChange, readOnly, errors }: StageFormProps) {
   const [registers, setRegisters] = useState<InspectionStockRegisterOption[]>([]);
   const [mainStoreName, setMainStoreName] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -578,7 +606,7 @@ export function Stage2Form({ data, onChange, readOnly }: StageFormProps) {
             </div>
 
             <div className="stage-form-fields stage-form-fields-3 stage-form-register-fields">
-              <Field label="Register reference" hint={mainStoreName ? `Showing registers for ${mainStoreName}.` : "Showing registers for this inspection location when available."}>
+              <Field label="Register reference" error={rowError(errors, sourceIndex, "stock_register")} hint={mainStoreName ? `Showing registers for ${mainStoreName}.` : "Showing registers for this inspection location when available."}>
                 <div className="filter-select-wrap stage-select-wrap">
                   <ThemedSelect
                     value={item.stock_register == null ? "" : String(item.stock_register)}
@@ -601,7 +629,7 @@ export function Stage2Form({ data, onChange, readOnly }: StageFormProps) {
                   />
                 </div>
               </Field>
-              <Field label="Page number">
+              <Field label="Page number" error={rowError(errors, sourceIndex, "stock_register_page_no")}>
                 <input
                   value={item.stock_register_page_no || ""}
                   onChange={event => updateItemAt(data, onChange, sourceIndex, { stock_register_page_no: event.target.value })}
@@ -609,7 +637,7 @@ export function Stage2Form({ data, onChange, readOnly }: StageFormProps) {
                   placeholder="42"
                 />
               </Field>
-              <Field label="Recording date" hint="Defaults to today and can still be edited.">
+              <Field label="Recording date" error={rowError(errors, sourceIndex, "stock_entry_date")} hint="Defaults to today and can still be edited.">
                 <input
                   type="date"
                   value={item.stock_entry_date || ""}
@@ -627,7 +655,7 @@ export function Stage2Form({ data, onChange, readOnly }: StageFormProps) {
   );
 }
 
-export function Stage3Form({ data, onChange, readOnly }: StageFormProps) {
+export function Stage3Form({ data, onChange, readOnly, errors }: StageFormProps) {
   const [items, setItems] = useState<InspectionItemOption[]>([]);
   const [registers, setRegisters] = useState<InspectionStockRegisterOption[]>([]);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
@@ -883,6 +911,7 @@ export function Stage3Form({ data, onChange, readOnly }: StageFormProps) {
               <div className="stage3-master-fields">
                 <Field
                   label="Catalog item"
+                  error={rowError(errors, sourceIndex, "item")}
                   hint={item.item_name
                     ? `${item.item_code || "No code"} - ${item.item_name}`
                     : leafCategories.length === 0
@@ -902,7 +931,7 @@ export function Stage3Form({ data, onChange, readOnly }: StageFormProps) {
                 </Field>
 
                 <div className="stage3-link-grid">
-                  <Field label="Central register">
+                  <Field label="Central register" error={rowError(errors, sourceIndex, "central_register")}>
                     <ThemedSelect
                       value={item.central_register == null ? "" : String(item.central_register)}
                       onChange={value => {
@@ -923,7 +952,7 @@ export function Stage3Form({ data, onChange, readOnly }: StageFormProps) {
                       }))}
                     />
                   </Field>
-                  <Field label="Central page">
+                  <Field label="Central page" error={rowError(errors, sourceIndex, "central_register_page_no")}>
                     <input
                       value={item.central_register_page_no || ""}
                       onChange={event => updateItemAt(data, onChange, sourceIndex, { central_register_page_no: event.target.value })}
@@ -945,7 +974,7 @@ export function Stage3Form({ data, onChange, readOnly }: StageFormProps) {
 
             {needsLotNumber(item) ? (
               <div className={`stage-form-fields ${item.item_category_type === "PERISHABLE" ? "stage-form-fields-3" : "stage-form-fields-2"}`}>
-                <Field label={isFixedAssetQuantityItem(item) ? "Asset lot number" : "Batch number"}>
+                <Field label={isFixedAssetQuantityItem(item) ? "Asset lot number" : "Batch number"} error={rowError(errors, sourceIndex, "batch_number")}>
                   <input
                     value={item.batch_number || ""}
                     onChange={event => updateItemAt(data, onChange, sourceIndex, { batch_number: event.target.value })}
@@ -955,7 +984,7 @@ export function Stage3Form({ data, onChange, readOnly }: StageFormProps) {
                 </Field>
                 {item.item_category_type === "PERISHABLE" ? (
                   <>
-                    <Field label="Manufactured date">
+                    <Field label="Manufactured date" error={rowError(errors, sourceIndex, "manufactured_date")}>
                       <input
                         type="date"
                         value={item.manufactured_date || ""}
@@ -963,7 +992,7 @@ export function Stage3Form({ data, onChange, readOnly }: StageFormProps) {
                         disabled={readOnly}
                       />
                     </Field>
-                    <Field label="Expiry date">
+                    <Field label="Expiry date" error={rowError(errors, sourceIndex, "expiry_date")}>
                       <input
                         type="date"
                         value={item.expiry_date || ""}
@@ -982,7 +1011,7 @@ export function Stage3Form({ data, onChange, readOnly }: StageFormProps) {
   );
 }
 
-export function Stage4Form({ data, onChange, readOnly }: StageFormProps) {
+export function Stage4Form({ data, onChange, readOnly, errors }: StageFormProps) {
   const fixedAssetRows = (data.items || [])
     .map((item, sourceIndex) => ({ item, sourceIndex }))
     .filter(({ item }) => Number(item.accepted_quantity || 0) > 0 && isFixedAssetInspectionItem(item));
@@ -1059,7 +1088,7 @@ export function Stage4Form({ data, onChange, readOnly }: StageFormProps) {
     <div className="stage-form-list">
       <div className="stage-form-row">
         <div className="stage-form-fields stage-form-fields-2">
-          <Field label="Finance check date" hint="Defaults to today and can still be changed before final approval.">
+          <Field label="Finance check date" error={errors?.finance_check_date} hint="Defaults to today and can still be changed before final approval.">
             <input
               type="date"
               value={data.finance_check_date || ""}
@@ -1112,7 +1141,7 @@ export function Stage4Form({ data, onChange, readOnly }: StageFormProps) {
                   </div>
 
                   <div className="stage-form-fields stage-form-fields-3 inspection-finance-fields">
-                    <Field label="Asset class" hint={assetClassError ? "Asset classes could not be loaded. Default class will be used downstream." : "Choose the matching depreciation profile for this item."}>
+                    <Field label="Asset class" error={rowError(errors, sourceIndex, "depreciation_asset_class")} hint={assetClassError ? "Asset classes could not be loaded. Default class will be used downstream." : "Choose the matching depreciation profile for this item."}>
                       <div className="inspection-finance-select-wrap">
                         <ThemedSelect
                           value={item.depreciation_asset_class == null ? "" : String(item.depreciation_asset_class)}
@@ -1130,7 +1159,7 @@ export function Stage4Form({ data, onChange, readOnly }: StageFormProps) {
                         />
                       </div>
                     </Field>
-                    <Field label="Capitalization date" hint={`Defaults to ${defaultDate}. You can still change it.`}>
+                    <Field label="Capitalization date" error={rowError(errors, sourceIndex, "capitalization_date")} hint={`Defaults to ${defaultDate}. You can still change it.`}>
                       <input
                         className="inspection-finance-input"
                         type="date"
@@ -1139,7 +1168,7 @@ export function Stage4Form({ data, onChange, readOnly }: StageFormProps) {
                         disabled={readOnly}
                       />
                     </Field>
-                    <Field label="Capitalized cost" hint={`Suggested: ${defaultCost.toFixed(2)}`}>
+                    <Field label="Capitalized cost" error={rowError(errors, sourceIndex, "capitalization_cost")} hint={`Suggested: ${defaultCost.toFixed(2)}`}>
                       <input
                         className="inspection-finance-input"
                         type="number"

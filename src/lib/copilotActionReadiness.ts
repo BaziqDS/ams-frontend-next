@@ -31,6 +31,7 @@ const LISTING_ROUTES = new Set([
 ]);
 const FORM_ACTIONS = new Set([
   "set_form_values",
+  "search_form_options",
   "focus_form_field",
   "validate_active_form",
   "request_form_submit",
@@ -550,7 +551,7 @@ export function actionNeedsReadyPageContext(actionName: string) {
   return (
     actionName === "navigate_to_route" ||
     actionName === "open_form" ||
-    FORM_ACTIONS.has(actionName) ||
+    (FORM_ACTIONS.has(actionName) && actionName !== "request_form_submit") ||
     (actionName.startsWith("open_create_") && actionName.endsWith("_form"))
   );
 }

@@ -12,6 +12,7 @@ import {
   getScopedInspectionLocations,
   normalizeStageItems,
   parseInspectionQuantity,
+  validateInspectionStageRequiredFields,
 } from "./inspectionStageForms";
 
 describe("inspection stage form helpers", () => {
@@ -138,6 +139,82 @@ describe("inspection stage form helpers", () => {
         expiry_date: "2027-04-26",
       },
     ]);
+  });
+
+  it("returns addressable field errors for missing stock-stage row fields", () => {
+    expect(
+      validateInspectionStageRequiredFields({
+        stage: "STOCK_DETAILS",
+        items: [
+          {
+            accepted_quantity: 2,
+            stock_register: null,
+            stock_register_page_no: "",
+            stock_entry_date: "",
+          },
+          {
+            accepted_quantity: 0,
+            stock_register: null,
+            stock_register_page_no: "",
+            stock_entry_date: "",
+          },
+        ],
+      } as any),
+    ).toEqual({
+      "items.0.stock_register": "Select a stock register.",
+      "items.0.stock_register_page_no": "Enter a stock register page number.",
+      "items.0.stock_entry_date": "Enter a stock recording date.",
+    });
+  });
+
+  it("returns addressable field errors for missing central-register row fields", () => {
+    expect(
+      validateInspectionStageRequiredFields({
+        stage: "CENTRAL_REGISTER",
+        items: [
+          {
+            accepted_quantity: 2,
+            item: null,
+            central_register: null,
+            central_register_page_no: "",
+          },
+        ],
+      } as any),
+    ).toEqual({
+      "items.0.central_register": "Select a central register.",
+      "items.0.central_register_page_no": "Enter a central register page number.",
+      "items.0.item": "Link this row to a catalog item.",
+    });
+  });
+
+  it("returns addressable field errors for missing finance-stage fields", () => {
+    expect(
+      validateInspectionStageRequiredFields({
+        stage: "FINANCE_REVIEW",
+        finance_check_date: "",
+        items: [
+          {
+            accepted_quantity: 1,
+            item_category_type: "FIXED_ASSET",
+            depreciation_asset_class: null,
+            capitalization_date: "",
+            capitalization_cost: "",
+          },
+          {
+            accepted_quantity: 1,
+            item_category_type: "CONSUMABLE",
+            depreciation_asset_class: null,
+            capitalization_date: "",
+            capitalization_cost: "",
+          },
+        ],
+      } as any),
+    ).toEqual({
+      finance_check_date: "Enter a finance check date.",
+      "items.0.depreciation_asset_class": "Select a depreciation asset class.",
+      "items.0.capitalization_date": "Enter a capitalization date.",
+      "items.0.capitalization_cost": "Enter a capitalized cost.",
+    });
   });
 
   it("clamps invalid quantities to zero", () => {

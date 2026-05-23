@@ -7,6 +7,10 @@ type SelectOption = {
   code?: string | null;
   category_type?: string | null;
   tracking_type?: string | null;
+  category_display?: string | null;
+  description?: string | null;
+  specifications?: string | null;
+  acct_unit?: string | null;
 };
 
 type InspectionCopilotItem = object;
@@ -155,7 +159,20 @@ function selectOptions(options: SelectOption[]) {
   return options.map(option => ({
     label: optionLabel(option),
     value: option.id,
+    ...(option.description ? { description: option.description } : {}),
+    ...(option.specifications ? { specifications: option.specifications } : {}),
+    ...(option.category_display ? { category_display: option.category_display } : {}),
+    ...(option.category_type ? { category_type: option.category_type } : {}),
+    ...(option.tracking_type ? { tracking_type: option.tracking_type } : {}),
+    ...(option.acct_unit ? { acct_unit: option.acct_unit } : {}),
   }));
+}
+
+function optionResolverMeta(optionSource: string) {
+  return {
+    optionSource,
+    resolver: "search_form_options" as const,
+  };
 }
 
 function normalizeLookupKey(value: unknown) {
@@ -306,6 +323,7 @@ export function buildInspectionItemCopilotFields({
           type: "select",
           required: true,
           options: selectOptions(departmentRegisterOptions),
+          ...optionResolverMeta("inspection.departmentStockRegisters"),
           description: "Patch this exact item row without replacing the full items array.",
         },
         {
@@ -333,6 +351,7 @@ export function buildInspectionItemCopilotFields({
           type: "select",
           required: true,
           options: selectOptions(centralRegisterOptions),
+          ...optionResolverMeta("inspection.centralRegisters"),
           description: "Patch this exact item row without replacing the full items array.",
         },
         {
@@ -348,7 +367,9 @@ export function buildInspectionItemCopilotFields({
           type: "select",
           required: true,
           options: selectOptions(itemOptions),
-          description: "Link this inspection row to an existing AMS item catalog record.",
+          ...optionResolverMeta("inspection.catalogItems"),
+          description:
+            "Link this inspection row to an existing AMS item catalog record only when the catalog item is a real match. Compare the inspection row item_description/item_specifications with option name/code/description and specifications. If a close existing item exists, use it to avoid redundancy. If no genuine match exists, do not create a new item silently; ask the user whether to link the closest existing item or create a new catalog item.",
         },
         {
           name: `items.${index}.batch_number`,
@@ -399,6 +420,7 @@ export function buildInspectionFinanceCopilotFields({
         type: "select",
         required: true,
         options: selectOptions(assetClassOptions),
+        ...optionResolverMeta("inspection.assetClasses"),
         description: "Patch this exact finance-review item row without replacing the full items array.",
       },
       {

@@ -10,11 +10,12 @@ import { useClientPagination } from "@/lib/listPagination";
 import { getAllocatableTargetLocations, getAllocatableTargetPersons, getAllocatedReturnLocations, getAllocatedReturnPersons, getUserAssignedStores, type StockAllocationRecord } from "@/lib/stockEntryLocationRules";
 import { getIssueAvailableQuantity, getIssueBatchOptions, getIssueInstanceOptions, getIssueItemOptions, getReturnBatchOptions, getReturnInstanceOptions, getReturnItemOptions, getReturnQuantityLimit, type StockEntryItemInstance, type StockEntryStockRecord, type StockEntryReturnTarget } from "@/lib/stockEntryItemRules";
 import { buildStockEntryPayload, validateStockEntryForm, type CreatableStockEntryType, type StockEntryFormItem, type StockEntryFormState } from "@/lib/stockEntryFormRules";
-import { applyStockEntryCopilotValuePatch, buildStockEntryCopilotReferenceContext } from "@/lib/stockEntryCopilotForm";
+import { applyStockEntryCopilotValuePatch, buildStockEntryCopilotReferenceContext, searchStockEntryCopilotOptions } from "@/lib/stockEntryCopilotForm";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCopilotAction } from "@/hooks/useCopilotAction";
 import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
+import { useCopilotListControls } from "@/hooks/useCopilotListControls";
 import { useCopilotReadable } from "@/hooks/useCopilotReadable";
 import { relTime, type LocationRecord } from "@/lib/userUiShared";
 import { normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
@@ -618,9 +619,11 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
   const issuePersonOptions = getAllocatableTargetPersons(form.from_location, refs.locations, refs.persons);
   const receiptNonStoreOptions = getAllocatedReturnLocations(form.to_location, refs.locations, refs.allocations);
   const receiptPersonOptions = getAllocatedReturnPersons(form.to_location, refs.persons, refs.allocations);
-  const returnTarget: StockEntryReturnTarget = form.return_source === "PERSON"
-    ? { type: "PERSON", id: form.issued_to }
-    : { type: "LOCATION", id: form.from_location };
+  const getReturnTargetForForm = (targetForm: StockEntryFormState): StockEntryReturnTarget =>
+    targetForm.return_source === "PERSON"
+      ? { type: "PERSON", id: targetForm.issued_to }
+      : { type: "LOCATION", id: targetForm.from_location };
+  const returnTarget = getReturnTargetForForm(form);
   const itemContextReady = form.entry_type === "ISSUE"
     ? Boolean(form.from_location)
     : Boolean(form.to_location && (form.return_source === "PERSON" ? form.issued_to : form.from_location));
@@ -629,18 +632,22 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
     : form.to_location
     ? "Select return source first"
     : "Select receiving store first";
-  const getItemOptions = () => form.entry_type === "ISSUE"
-    ? getIssueItemOptions(form.from_location, refs.items, refs.stockRecords)
-    : getReturnItemOptions(form.to_location, returnTarget, refs.items, refs.allocations);
-  const getBatchOptions = (row: StockEntryFormItem) => form.entry_type === "ISSUE"
-    ? getIssueBatchOptions(form.from_location, row.item, refs.batches, refs.stockRecords)
-    : getReturnBatchOptions(form.to_location, returnTarget, row.item, refs.batches, refs.allocations);
-  const getQuantityLimit = (row: StockEntryFormItem) => form.entry_type === "ISSUE"
-    ? getIssueAvailableQuantity(form.from_location, row.item, row.batch, refs.stockRecords)
-    : getReturnQuantityLimit(form.to_location, returnTarget, row.item, row.batch, refs.allocations);
-  const getInstanceOptions = (row: StockEntryFormItem) => form.entry_type === "ISSUE"
-    ? getIssueInstanceOptions(form.from_location, row.item, refs.instances)
-    : getReturnInstanceOptions(form.to_location, returnTarget, row.item, refs.allocations, refs.instances);
+  const getItemOptionsForForm = (targetForm: StockEntryFormState) => targetForm.entry_type === "ISSUE"
+    ? getIssueItemOptions(targetForm.from_location, refs.items, refs.stockRecords)
+    : getReturnItemOptions(targetForm.to_location, getReturnTargetForForm(targetForm), refs.items, refs.allocations);
+  const getBatchOptionsForForm = (targetForm: StockEntryFormState, row: StockEntryFormItem) => targetForm.entry_type === "ISSUE"
+    ? getIssueBatchOptions(targetForm.from_location, row.item, refs.batches, refs.stockRecords)
+    : getReturnBatchOptions(targetForm.to_location, getReturnTargetForForm(targetForm), row.item, refs.batches, refs.allocations);
+  const getQuantityLimitForForm = (targetForm: StockEntryFormState, row: StockEntryFormItem) => targetForm.entry_type === "ISSUE"
+    ? getIssueAvailableQuantity(targetForm.from_location, row.item, row.batch, refs.stockRecords)
+    : getReturnQuantityLimit(targetForm.to_location, getReturnTargetForForm(targetForm), row.item, row.batch, refs.allocations);
+  const getInstanceOptionsForForm = (targetForm: StockEntryFormState, row: StockEntryFormItem) => targetForm.entry_type === "ISSUE"
+    ? getIssueInstanceOptions(targetForm.from_location, row.item, refs.instances)
+    : getReturnInstanceOptions(targetForm.to_location, getReturnTargetForForm(targetForm), row.item, refs.allocations, refs.instances);
+  const getItemOptions = () => getItemOptionsForForm(form);
+  const getBatchOptions = (row: StockEntryFormItem) => getBatchOptionsForForm(form, row);
+  const getQuantityLimit = (row: StockEntryFormItem) => getQuantityLimitForForm(form, row);
+  const getInstanceOptions = (row: StockEntryFormItem) => getInstanceOptionsForForm(form, row);
   const selectedSourceStoreId = form.entry_type === "ISSUE" ? form.from_location : "";
   const sourceRegisterOptions = refs.registers.filter(
     register =>
@@ -762,6 +769,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
         ok: true,
         message: mode === "edit" ? "Stock entry updated successfully." : "Stock entry created successfully.",
         recordId: saved.id,
+        redirectTo: `/stock-entries/${saved.id}`,
       };
     } catch (err) {
       const failure = normalizeCopilotSubmitError(err);
@@ -793,6 +801,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
       label: "Entry type",
       type: "select",
       required: true,
+      affects: ["issue_target", "return_source", "from_location", "to_location", "issued_to", "items"],
       options: [
         { value: "ISSUE", label: "Transfer / Allocation" },
         { value: "RECEIPT", label: "Receipt / Return" },
@@ -803,6 +812,8 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
       label: "Issue target",
       type: "select",
       required: form.entry_type === "ISSUE",
+      dependsOn: ["entry_type"],
+      affects: ["to_location", "issued_to", "items"],
       options: [
         { value: "STORE", label: "Destination Store" },
         { value: "LOCATION", label: "Destination Non-store" },
@@ -814,6 +825,8 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
       label: "Return source",
       type: "select",
       required: form.entry_type === "RECEIPT",
+      dependsOn: ["entry_type"],
+      affects: ["from_location", "issued_to", "items"],
       options: [
         { value: "PERSON", label: "Returning Person" },
         { value: "LOCATION", label: "Returning Non-store" },
@@ -826,6 +839,10 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
       required:
         form.entry_type === "ISSUE" ||
         (form.entry_type === "RECEIPT" && form.return_source === "LOCATION"),
+      dependsOn: form.entry_type === "RECEIPT" ? ["entry_type", "return_source", "to_location"] : ["entry_type"],
+      affects: ["to_location", "issued_to", "items"],
+      optionSource: form.entry_type === "ISSUE" ? "stockEntry.sourceStores" : "stockEntry.returningNonStores",
+      resolver: "search_form_options",
       options: (form.entry_type === "ISSUE" ? selectableStoreOptions : receiptNonStoreOptions)
         .map(location => ({
           value: String(location.id),
@@ -839,6 +856,16 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
       required:
         (form.entry_type === "ISSUE" && form.issue_target !== "PERSON") ||
         form.entry_type === "RECEIPT",
+      dependsOn: form.entry_type === "ISSUE" ? ["entry_type", "issue_target", "from_location"] : ["entry_type"],
+      affects: form.entry_type === "RECEIPT" ? ["from_location", "issued_to", "items"] : ["items"],
+      optionSource: form.entry_type === "ISSUE" ? "stockEntry.destinations" : "stockEntry.receivingStores",
+      optionsState:
+        form.entry_type === "ISSUE" && !form.from_location
+          ? "requires_dependency"
+          : form.entry_type === "ISSUE" && form.issue_target === "STORE" && transferrableLoading
+            ? "loading"
+            : undefined,
+      resolver: "search_form_options",
       options: (form.entry_type === "ISSUE" ? issueLocationOptions : selectableStoreOptions)
         .map(location => ({
           value: String(location.id),
@@ -852,6 +879,16 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
       required:
         (form.entry_type === "ISSUE" && form.issue_target === "PERSON") ||
         (form.entry_type === "RECEIPT" && form.return_source === "PERSON"),
+      dependsOn: form.entry_type === "ISSUE" ? ["entry_type", "issue_target", "from_location"] : ["entry_type", "return_source", "to_location"],
+      affects: form.entry_type === "RECEIPT" ? ["items"] : [],
+      optionSource: form.entry_type === "ISSUE" ? "stockEntry.receivingPersons" : "stockEntry.returningPersons",
+      optionsState:
+        form.entry_type === "ISSUE" && form.issue_target === "PERSON" && !form.from_location
+          ? "requires_dependency"
+          : form.entry_type === "RECEIPT" && form.return_source === "PERSON" && !form.to_location
+            ? "requires_dependency"
+            : undefined,
+      resolver: "search_form_options",
       options: (form.entry_type === "ISSUE" ? issuePersonOptions : receiptPersonOptions)
         .map(person => ({
           value: String(person.id),
@@ -865,12 +902,24 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
       label: "Line items",
       type: "array",
       required: true,
+      dependsOn: form.entry_type === "ISSUE"
+        ? ["from_location"]
+        : ["to_location", form.return_source === "PERSON" ? "issued_to" : "from_location"],
+      optionSource: "stockEntry.lineItems",
+      resolver: "search_form_options",
       arrayItemFields: [
         {
           name: "item",
           label: "Item",
           type: "select",
           required: true,
+          dependsOn: form.entry_type === "ISSUE"
+            ? ["from_location"]
+            : ["to_location", form.return_source === "PERSON" ? "issued_to" : "from_location"],
+          affects: ["items[].batch", "items[].instances", "items[].quantity"],
+          optionSource: "stockEntry.availableItems",
+          optionsState: itemContextReady ? undefined : "requires_dependency",
+          resolver: "search_form_options",
           options: getItemOptions().map(item => ({
             value: String(item.id),
             label: `${item.name}${item.code ? ` (${item.code})` : ""}`,
@@ -880,6 +929,9 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
           name: "batch",
           label: "Batch",
           type: "select",
+          dependsOn: ["items[].item"],
+          optionSource: "stockEntry.availableBatches",
+          resolver: "search_form_options",
           options: refs.batches.map(batch => ({
             value: String(batch.id),
             label: batch.batch_number,
@@ -891,6 +943,11 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
           label: "Instance IDs",
           type: "array",
           arrayItemType: "string",
+          dependsOn: form.entry_type === "ISSUE"
+            ? ["from_location", "items[].item"]
+            : ["to_location", form.return_source === "PERSON" ? "issued_to" : "from_location", "items[].item"],
+          optionSource: "stockEntry.availableInstances",
+          resolver: "search_form_options",
           options: copilotInstanceOptions,
           description:
             "For individual-tracked items, provide selected instance option values. Use stock_entry_form_reference.line_item_options[index].instance_options for the current row.",
@@ -899,6 +956,10 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
           name: "stock_register",
           label: "Source register",
           type: "select",
+          dependsOn: ["from_location"],
+          optionSource: "stockEntry.sourceRegisters",
+          optionsState: selectedSourceStoreId ? undefined : "requires_dependency",
+          resolver: "search_form_options",
           options: sourceRegisterOptions.map(register => ({
             value: String(register.id),
             label: register.register_number,
@@ -915,46 +976,66 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
     getItemOptions,
     issueLocationOptions,
     issuePersonOptions,
+    itemContextReady,
     receiptNonStoreOptions,
     receiptPersonOptions,
     refs.batches,
     selectableStoreOptions,
+    selectedSourceStoreId,
     sourceRegisterOptions,
+    transferrableLoading,
   ]);
 
   const copilotFormId = mode === "edit" && entry ? `stock-entry-edit-${entry.id}` : "stock-entry-create";
-  const stockEntryFormReference = useMemo(() => buildStockEntryCopilotReferenceContext({
-    formId: copilotFormId,
-    active: open,
-    form,
-    sourceStores: selectableStoreOptions,
-    destinationStores: issueStoreOptions,
-    destinationLocations: issueNonStoreOptions,
-    receivingPersons: issuePersonOptions,
-    returningPersons: receiptPersonOptions,
-    returningLocations: receiptNonStoreOptions,
-    sourceRegisters: sourceRegisterOptions,
-    lineItems: form.items.map((row, index) => ({
-      index,
-      itemOptions: getItemOptions(),
-      batchOptions: getBatchOptions(row),
-      instanceOptions: getInstanceOptions(row),
-    })),
-  }), [
+  const buildStockEntryReferenceForForm = useCallback((targetForm: StockEntryFormState) => {
+    const targetIssueNonStoreOptions = getAllocatableTargetLocations(targetForm.from_location, refs.locations);
+    const targetIssuePersonOptions = getAllocatableTargetPersons(targetForm.from_location, refs.locations, refs.persons);
+    const targetReceiptNonStoreOptions = getAllocatedReturnLocations(targetForm.to_location, refs.locations, refs.allocations);
+    const targetReceiptPersonOptions = getAllocatedReturnPersons(targetForm.to_location, refs.persons, refs.allocations);
+    const targetSourceRegisterOptions = refs.registers.filter(
+      register =>
+        register.is_active &&
+        targetForm.entry_type === "ISSUE" &&
+        targetForm.from_location &&
+        String(register.store) === targetForm.from_location,
+    );
+
+    return buildStockEntryCopilotReferenceContext({
+      formId: copilotFormId,
+      active: open,
+      form: targetForm,
+      sourceStores: selectableStoreOptions,
+      destinationStores: issueStoreOptions,
+      destinationLocations: targetIssueNonStoreOptions,
+      receivingPersons: targetIssuePersonOptions,
+      returningPersons: targetReceiptPersonOptions,
+      returningLocations: targetReceiptNonStoreOptions,
+      sourceRegisters: targetSourceRegisterOptions,
+      lineItems: targetForm.items.map((row, index) => ({
+        index,
+        itemOptions: getItemOptionsForForm(targetForm),
+        batchOptions: getBatchOptionsForForm(targetForm, row),
+        instanceOptions: getInstanceOptionsForForm(targetForm, row),
+      })),
+    });
+  }, [
     copilotFormId,
-    form,
-    getBatchOptions,
-    getInstanceOptions,
-    getItemOptions,
-    issueNonStoreOptions,
-    issuePersonOptions,
     issueStoreOptions,
     open,
-    receiptNonStoreOptions,
-    receiptPersonOptions,
+    refs.allocations,
+    refs.batches,
+    refs.instances,
+    refs.items,
+    refs.locations,
+    refs.persons,
+    refs.registers,
+    refs.stockRecords,
     selectableStoreOptions,
-    sourceRegisterOptions,
   ]);
+  const stockEntryFormReference = useMemo(
+    () => buildStockEntryReferenceForForm(form),
+    [buildStockEntryReferenceForForm, form],
+  );
 
   useCopilotReadable({
     description: open
@@ -972,7 +1053,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
     };
   }, [form]);
 
-  useCopilotForm({
+  const { submitManually } = useCopilotForm({
     formId: copilotFormId,
     title: mode === "edit" ? "Edit Stock Entry" : entry ? "Create Replacement Stock Entry" : "Create Stock Entry",
     description: "Create or edit a stock movement entry on the Stock Entries page.",
@@ -993,6 +1074,15 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
       const patch = applyStockEntryCopilotValuePatch(form, values);
       setForm(patch.nextForm);
       return { applied: patch.applied, ignored: patch.ignored };
+    },
+    searchOptions: request => {
+      const projectedForm = request.currentValues && typeof request.currentValues === "object"
+        ? applyStockEntryCopilotValuePatch(form, request.currentValues).nextForm
+        : form;
+      return searchStockEntryCopilotOptions(
+        buildStockEntryReferenceForForm(projectedForm),
+        request,
+      );
     },
     validate: validateForCopilot,
     submit: () => submit(),
@@ -1266,7 +1356,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
           <div className="modal-foot-meta">Backend scoping still enforces which source and destination rows you can use.</div>
           <div className="modal-foot-actions">
             <button type="button" className="btn btn-ghost" onClick={onClose} disabled={submitting}>Cancel</button>
-            <button type="button" className="btn btn-primary" onClick={submit} disabled={!canSubmit}>{submitting ? "Saving…" : mode === "edit" ? "Save Changes" : "Create Entry"}</button>
+            <button type="button" className="btn btn-primary" onClick={() => { void submitManually("submit"); }} disabled={!canSubmit}>{submitting ? "Saving…" : mode === "edit" ? "Save Changes" : "Create Entry"}</button>
           </div>
         </div>
       </div>
@@ -1454,6 +1544,66 @@ export function StockEntriesView() {
     setPage,
   } = useClientPagination(filteredEntries, STOCK_ENTRIES_PAGE_SIZE, [search, typeFilter, statusFilter, storeScope]);
 
+  const stockEntryListControls = useCopilotListControls({
+    entity: "stock_entry",
+    filters: [
+      {
+        name: "search",
+        type: "string",
+        defaultValue: "",
+        label: "Search",
+        description: "Search by entry number, item, location, person, purpose, or remarks.",
+        setValue: value => setSearch(String(value ?? "")),
+      },
+      {
+        name: "type",
+        type: "enum",
+        defaultValue: "all",
+        label: "Type",
+        options: [
+          { value: "all", label: "All types" },
+          { value: "ISSUE", label: "Transfer / Allocation" },
+          { value: "RECEIPT", label: "Receipt" },
+          { value: "RETURN", label: "Return" },
+        ],
+        setValue: value => setTypeFilter(String(value ?? "all")),
+      },
+      {
+        name: "status",
+        type: "enum",
+        defaultValue: "all",
+        label: "Status",
+        options: [
+          { value: "all", label: "All statuses" },
+          { value: "DRAFT", label: "Draft" },
+          { value: "PENDING_ACK", label: "Pending Ack" },
+          { value: "COMPLETED", label: "Completed" },
+          { value: "CANCELLED", label: "Cancelled" },
+        ],
+        setValue: value => setStatusFilter(String(value ?? "all")),
+      },
+      {
+        name: "store",
+        type: "enum",
+        defaultValue: "all",
+        label: "Assigned store",
+        options: [
+          { value: "all", label: "All stores" },
+          ...scopeStores.map(store => ({ value: String(store.id), label: store.name })),
+        ],
+        setValue: value => setStoreScope(String(value ?? "all")),
+      },
+    ],
+    page,
+    totalPages,
+    setPage,
+    visibleRows: pagedEntries.map((entry, index) => ({
+      row_number: index + 1,
+      id: entry.id,
+      detail_route: `/stock-entries/${entry.id}`,
+    })),
+  });
+
   const openCreateModal = useCallback(async () => {
     setModalMode("create");
     setEditingEntry(null);
@@ -1515,6 +1665,7 @@ export function StockEntriesView() {
       },
     })),
     actions: {
+      ...stockEntryListControls,
       create_stock_entry: canManage,
     },
     loading: isLoading || capsLoading || refsLoading,
@@ -1540,6 +1691,7 @@ export function StockEntriesView() {
     search,
     statusFilter,
     storeScope,
+    stockEntryListControls,
     totalPages,
     typeFilter,
   ]);

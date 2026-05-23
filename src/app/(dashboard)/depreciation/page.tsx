@@ -332,7 +332,7 @@ export default function DepreciationPage() {
   const canFull = useCan("depreciation", "full");
   const canViewCategories = useCan("categories");
   const [density, setDensity] = useState<Density>("balanced");
-  const [setupViewMode, setSetupViewMode] = useState<SetupViewMode>("grid");
+  const [setupViewMode, setSetupViewMode] = useState<SetupViewMode>("list");
   const [activeTab, setActiveTab] = useState<DepreciationTab>("setup");
   const [assets, setAssets] = useState<FixedAssetEntry[]>([]);
   const [runs, setRuns] = useState<DepreciationRun[]>([]);

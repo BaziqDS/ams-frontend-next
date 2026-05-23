@@ -59,6 +59,16 @@ export const COPILOT_MODULE_MANIFEST: CopilotModuleContract[] = [
       openActionName: "open_create_location_form",
       capability: { module: "locations", level: "manage" },
     },
+    scopedForms: [
+      {
+        formId: "sublocation_create",
+        label: "Add Sub-Location",
+        routePattern: "/locations/:id",
+        samePageOnly: true,
+        openActionName: "open_create_location_form",
+        capability: { module: "locations", level: "manage" },
+      },
+    ],
   },
   {
     id: "categories",

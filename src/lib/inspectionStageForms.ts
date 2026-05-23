@@ -18,6 +18,16 @@ export type InspectionCentralStoreLocationLike = InspectionMainStoreLocationLike
   root_main_store_id?: number | string | null;
 };
 
+type InspectionStageValidationRecord = {
+  stage?: string | null;
+  finance_check_date?: string | null;
+  items?: InspectionItemRecord[];
+};
+
+function isBlank(value: unknown) {
+  return value === null || value === undefined || String(value).trim() === "";
+}
+
 export function parseInspectionQuantity(value: string) {
   const parsed = Number.parseInt(value || "0", 10);
   return Number.isFinite(parsed) ? Math.max(parsed, 0) : 0;
@@ -94,6 +104,63 @@ export function buildStageItemsPayload(items: InspectionItemRecord[], mode: Stag
 
     return payload;
   });
+}
+
+export function validateInspectionStageRequiredFields(
+  inspection: InspectionStageValidationRecord,
+) {
+  const errors: Record<string, string> = {};
+  const items = normalizeStageItems(inspection.items ?? []);
+
+  if (inspection.stage === "STOCK_DETAILS") {
+    items.forEach((item, index) => {
+      if (Number(item.accepted_quantity || 0) <= 0) return;
+      if (isBlank(item.stock_register)) {
+        errors[`items.${index}.stock_register`] = "Select a stock register.";
+      }
+      if (isBlank(item.stock_register_page_no)) {
+        errors[`items.${index}.stock_register_page_no`] = "Enter a stock register page number.";
+      }
+      if (isBlank(item.stock_entry_date)) {
+        errors[`items.${index}.stock_entry_date`] = "Enter a stock recording date.";
+      }
+    });
+  }
+
+  if (inspection.stage === "CENTRAL_REGISTER") {
+    items.forEach((item, index) => {
+      if (Number(item.accepted_quantity || 0) <= 0) return;
+      if (isBlank(item.central_register)) {
+        errors[`items.${index}.central_register`] = "Select a central register.";
+      }
+      if (isBlank(item.central_register_page_no)) {
+        errors[`items.${index}.central_register_page_no`] = "Enter a central register page number.";
+      }
+      if (isBlank(item.item)) {
+        errors[`items.${index}.item`] = "Link this row to a catalog item.";
+      }
+    });
+  }
+
+  if (inspection.stage === "FINANCE_REVIEW") {
+    if (isBlank(inspection.finance_check_date)) {
+      errors.finance_check_date = "Enter a finance check date.";
+    }
+    items.forEach((item, index) => {
+      if (Number(item.accepted_quantity || 0) <= 0 || item.item_category_type !== "FIXED_ASSET") return;
+      if (isBlank(item.depreciation_asset_class)) {
+        errors[`items.${index}.depreciation_asset_class`] = "Select a depreciation asset class.";
+      }
+      if (isBlank(item.capitalization_date)) {
+        errors[`items.${index}.capitalization_date`] = "Enter a capitalization date.";
+      }
+      if (isBlank(item.capitalization_cost)) {
+        errors[`items.${index}.capitalization_cost`] = "Enter a capitalized cost.";
+      }
+    });
+  }
+
+  return errors;
 }
 
 export function getInspectionItemFinancials(

@@ -60,11 +60,30 @@ describe("copilot page context helpers", () => {
     expect(buildInspectionWorkflowContext("CENTRAL_REGISTER")).toMatchObject({
       current_stage: "CENTRAL_REGISTER",
       current_stage_label: "Central Register",
+      workflow_variant: "departmental",
+      stock_details_required: true,
       previous_stage: "STOCK_DETAILS",
       next_stage: "FINANCE_REVIEW",
       next_stage_label: "Finance Review",
       submit_intent: "submit",
       transition_action: "submit_to_finance_review",
+    });
+  });
+
+  it("builds root-level inspection workflow context without the stock-details stage", () => {
+    expect(buildInspectionWorkflowContext({
+      stage: "DRAFT",
+      department_hierarchy_level: 0,
+    })).toMatchObject({
+      current_stage: "DRAFT",
+      workflow_variant: "root_level",
+      stage_sequence: ["DRAFT", "CENTRAL_REGISTER", "FINANCE_REVIEW", "COMPLETED"],
+      stock_details_required: false,
+      skipped_stages: ["STOCK_DETAILS"],
+      previous_stage: null,
+      next_stage: "CENTRAL_REGISTER",
+      next_stage_label: "Central Register",
+      transition_action: "initiate",
     });
   });
 

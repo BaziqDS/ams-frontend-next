@@ -1,6 +1,7 @@
 "use client";
 
 import { Component, type ErrorInfo, type ReactNode, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Renderer } from "@openuidev/react-lang";
 import { MarkDownRenderer, ThemeProvider, createTheme, openuiChatLibrary } from "@openuidev/react-ui";
 
@@ -116,10 +117,24 @@ export function AssistantOpenUiRenderer({
   isStreaming: boolean;
 }) {
   const [renderErrors, setRenderErrors] = useState<string[]>([]);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
     setRenderErrors([]);
   }, [code]);
+
+  useEffect(() => {
+    if (!isExpanded) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsExpanded(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isExpanded]);
 
   const fallback = (
     <div className="assistant-genui-error">
@@ -130,23 +145,85 @@ export function AssistantOpenUiRenderer({
 
   return (
     <div className="assistant-genui-shell assistant-openui-theme">
-      <ThemeProvider mode="light" lightTheme={assistantOpenUiTheme} cssSelector=".assistant-openui-theme">
-        <OpenUiRenderBoundary resetKey={code} fallback={fallback}>
-          <Renderer
-            library={openuiChatLibrary}
-            response={code}
-            isStreaming={isStreaming}
-            onError={(errors) => {
-              setRenderErrors(errors.map(error => error.message));
-            }}
-          />
-        </OpenUiRenderBoundary>
-      </ThemeProvider>
+      <div className="assistant-genui-toolbar">
+        <span className="assistant-genui-toolbar-label">Preview</span>
+        <button
+          type="button"
+          className="assistant-genui-expand"
+          onClick={() => setIsExpanded(true)}
+          aria-label="Open generated UI in larger view"
+        >
+          <span>Larger view</span>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M15 3h6v6" />
+            <path d="M21 3l-7 7" />
+            <path d="M9 21H3v-6" />
+            <path d="M3 21l7-7" />
+          </svg>
+        </button>
+      </div>
+      <div className="assistant-genui-render-area">
+        <ThemeProvider mode="light" lightTheme={assistantOpenUiTheme} cssSelector=".assistant-openui-theme">
+          <OpenUiRenderBoundary resetKey={code} fallback={fallback}>
+            <Renderer
+              library={openuiChatLibrary}
+              response={code}
+              isStreaming={isStreaming}
+              onError={(errors) => {
+                setRenderErrors(errors.map(error => error.message));
+              }}
+            />
+          </OpenUiRenderBoundary>
+        </ThemeProvider>
+      </div>
       {renderErrors.length > 0 && !isStreaming ? (
         <div className="assistant-genui-error">
           <div className="eyebrow">Render issue</div>
           <div>{renderErrors[0]}</div>
         </div>
+      ) : null}
+      {isExpanded ? createPortal(
+        <div className="assistant-genui-modal-backdrop" onClick={() => setIsExpanded(false)}>
+          <section
+            className="assistant-genui-modal assistant-openui-theme"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Generated UI larger view"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="assistant-genui-modal-header">
+              <div>
+                <div className="eyebrow">OpenUI Preview</div>
+                <div className="assistant-genui-modal-title">Larger generated UI view</div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-icon"
+                onClick={() => setIsExpanded(false)}
+                aria-label="Close larger generated UI view"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="assistant-genui-modal-body">
+              <ThemeProvider mode="light" lightTheme={assistantOpenUiTheme} cssSelector=".assistant-openui-theme">
+                <OpenUiRenderBoundary resetKey={code} fallback={fallback}>
+                  <Renderer
+                    library={openuiChatLibrary}
+                    response={code}
+                    isStreaming={isStreaming}
+                    onError={(errors) => {
+                      setRenderErrors(errors.map(error => error.message));
+                    }}
+                  />
+                </OpenUiRenderBoundary>
+              </ThemeProvider>
+            </div>
+          </section>
+        </div>,
+        document.body,
       ) : null}
     </div>
   );

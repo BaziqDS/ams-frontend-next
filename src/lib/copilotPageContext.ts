@@ -1,4 +1,4 @@
-import type { InspectionStage } from "@/lib/inspectionUi";
+import type { InspectionRecord, InspectionStage } from "@/lib/inspectionUi";
 
 type CopilotFilters = Record<string, unknown>;
 type CopilotActions = Record<string, unknown>;
@@ -95,6 +95,17 @@ const INSPECTION_TRANSITIONS: Partial<Record<InspectionStage, string>> = {
   FINANCE_REVIEW: "complete",
 };
 
+const ROOT_INSPECTION_STAGE_ORDER: InspectionStage[] = [
+  "DRAFT",
+  "CENTRAL_REGISTER",
+  "FINANCE_REVIEW",
+  "COMPLETED",
+];
+
+type InspectionWorkflowContextInput =
+  | InspectionStage
+  | Pick<InspectionRecord, "stage" | "department_hierarchy_level">;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -172,17 +183,28 @@ export function buildCopilotDetailContext({
   };
 }
 
-export function buildInspectionWorkflowContext(stage: InspectionStage) {
-  const currentIndex = INSPECTION_STAGE_ORDER.indexOf(stage);
-  const previousStage = currentIndex > 0 ? INSPECTION_STAGE_ORDER[currentIndex - 1] : null;
+export function buildInspectionWorkflowContext(input: InspectionWorkflowContextInput) {
+  const stage = typeof input === "string" ? input : input.stage;
+  const departmentHierarchyLevel =
+    typeof input === "string" ? null : input.department_hierarchy_level;
+  const isRootLevelInspection = departmentHierarchyLevel === 0;
+  const stageOrder = isRootLevelInspection
+    ? ROOT_INSPECTION_STAGE_ORDER
+    : INSPECTION_STAGE_ORDER;
+  const currentIndex = stageOrder.indexOf(stage);
+  const previousStage = currentIndex > 0 ? stageOrder[currentIndex - 1] : null;
   const nextStage =
-    currentIndex >= 0 && currentIndex < INSPECTION_STAGE_ORDER.length - 1
-      ? INSPECTION_STAGE_ORDER[currentIndex + 1]
+    currentIndex >= 0 && currentIndex < stageOrder.length - 1
+      ? stageOrder[currentIndex + 1]
       : null;
 
   return {
     current_stage: stage,
     current_stage_label: INSPECTION_STAGE_LABELS[stage],
+    workflow_variant: isRootLevelInspection ? "root_level" : "departmental",
+    stage_sequence: stageOrder,
+    stock_details_required: !isRootLevelInspection,
+    skipped_stages: isRootLevelInspection ? ["STOCK_DETAILS"] : [],
     previous_stage: previousStage,
     previous_stage_label: previousStage ? INSPECTION_STAGE_LABELS[previousStage] : null,
     next_stage: nextStage,

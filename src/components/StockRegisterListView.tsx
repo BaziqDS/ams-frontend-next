@@ -9,6 +9,7 @@ import { StockRegisterModal } from "@/components/StockRegisterModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
 import { useCopilotAction } from "@/hooks/useCopilotAction";
+import { useCopilotListControls } from "@/hooks/useCopilotListControls";
 import { useCopilotReadable } from "@/hooks/useCopilotReadable";
 import { apiFetch, type Page } from "@/lib/api";
 import { buildCopilotListContext } from "@/lib/copilotPageContext";
@@ -534,6 +535,51 @@ export function StockRegisterListView() {
     () => getCreatableStockRegisterStoreOptions(locations, user?.assigned_locations),
     [locations, user?.assigned_locations],
   );
+  const stockRegisterListControls = useCopilotListControls({
+    entity: "stock_register",
+    filters: [
+      {
+        name: "search",
+        type: "string",
+        defaultValue: "",
+        label: "Search",
+        description: "Search by stock register number, type, or store.",
+        setValue: value => setSearch(String(value ?? "")),
+      },
+      {
+        name: "type",
+        type: "enum",
+        defaultValue: "all",
+        label: "Type",
+        options: [
+          { value: "all", label: "All types" },
+          { value: "CSR", label: "Consumable" },
+          { value: "DSR", label: "Dead Stock" },
+        ],
+        setValue: value => setTypeFilter(String(value ?? "all")),
+      },
+      {
+        name: "status",
+        type: "enum",
+        defaultValue: "all",
+        label: "Status",
+        options: [
+          { value: "all", label: "All statuses" },
+          { value: "active", label: "Active" },
+          { value: "inactive", label: "Disabled" },
+        ],
+        setValue: value => setStatusFilter(String(value ?? "all")),
+      },
+    ],
+    page,
+    totalPages,
+    setPage,
+    visibleRows: pagedRegisters.map((register, index) => ({
+      row_number: index + 1,
+      id: register.id,
+      detail_route: `/stock-registers/${register.id}`,
+    })),
+  });
   const pageBusy = busyAction !== null;
   const deleteBusyRegisterId = busyAction?.kind === "delete" ? busyAction.registerId : null;
 
@@ -565,6 +611,7 @@ export function StockRegisterListView() {
       },
     })),
     actions: {
+      ...stockRegisterListControls,
       create_stock_register: canManageRegisters,
     },
     loading: isLoading || capsLoading || storesLoading,
@@ -588,6 +635,7 @@ export function StockRegisterListView() {
     search,
     statusFilter,
     storeOptions,
+    stockRegisterListControls,
     storesLoading,
     totalPages,
     typeFilter,

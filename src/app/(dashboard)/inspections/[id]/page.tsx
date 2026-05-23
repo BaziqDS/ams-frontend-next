@@ -50,6 +50,7 @@ import {
   getInspectionItemFinancials,
   getInspectionMainStoreRegisters,
   normalizeStageItems,
+  validateInspectionStageRequiredFields,
 } from "@/lib/inspectionStageForms";
 import {
   applyInspectionItemCopilotPatches,
@@ -474,6 +475,7 @@ function ActiveStageCard({
   onSave,
   onSubmit,
   onReturn,
+  fieldErrors,
 }: {
   inspection: InspectionRecord;
   editableInspection: InspectionRecord;
@@ -489,6 +491,7 @@ function ActiveStageCard({
   onSave: () => void;
   onSubmit: () => void;
   onReturn: () => void;
+  fieldErrors?: Record<string, string>;
 }) {
   const readOnly = !canEdit || busyAction !== null;
   const actionLabel = inspection.stage === "DRAFT"
@@ -517,15 +520,15 @@ function ActiveStageCard({
       </header>
       <div className="detail-card-body">
         {inspection.stage === "DRAFT" ? (
-          <Stage1Form data={editableInspection} onChange={onChange} readOnly={readOnly} />
+          <Stage1Form data={editableInspection} onChange={onChange} readOnly={readOnly} errors={fieldErrors} />
         ) : inspection.stage === "STOCK_DETAILS" ? (
-          <Stage2Form data={editableInspection} onChange={onChange} readOnly={readOnly} />
+          <Stage2Form data={editableInspection} onChange={onChange} readOnly={readOnly} errors={fieldErrors} />
         ) : inspection.stage === "CENTRAL_REGISTER" ? (
-          <Stage3Form data={editableInspection} onChange={onChange} readOnly={readOnly} />
+          <Stage3Form data={editableInspection} onChange={onChange} readOnly={readOnly} errors={fieldErrors} />
         ) : inspection.stage === "FINANCE_REVIEW" ? (
-          <Stage4Form data={editableInspection} onChange={onChange} readOnly={readOnly} />
+          <Stage4Form data={editableInspection} onChange={onChange} readOnly={readOnly} errors={fieldErrors} />
         ) : (
-          <Stage4Form data={editableInspection} onChange={onChange} readOnly />
+          <Stage4Form data={editableInspection} onChange={onChange} readOnly errors={fieldErrors} />
         )}
       </div>
       {inspection.stage !== "COMPLETED" && inspection.stage !== "REJECTED" ? (
@@ -708,6 +711,12 @@ function getTransitionPath(inspection: InspectionRecord) {
   return null;
 }
 
+function getInspectionDetailCopilotFormId(inspection: InspectionRecord | null) {
+  return inspection
+    ? `inspection-detail-${inspection.id}-${inspection.stage.toLowerCase()}`
+    : "inspection-detail";
+}
+
 export default function InspectionDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -721,6 +730,7 @@ export default function InspectionDetailPage() {
   const [editableInspection, setEditableInspection] = useState<InspectionRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [stageFieldErrors, setStageFieldErrors] = useState<Record<string, string>>({});
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [returnOpen, setReturnOpen] = useState(false);
@@ -736,6 +746,7 @@ export default function InspectionDetailPage() {
       const data = await apiFetch<InspectionRecord>(`/api/inventory/inspections/${params.id}/`);
       setInspection(data);
       setEditableInspection(data);
+      setStageFieldErrors({});
       return data;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load inspection certificate");
@@ -844,6 +855,7 @@ export default function InspectionDetailPage() {
     }
     setBusyAction("save");
     setError(null);
+    setStageFieldErrors({});
     try {
       await apiFetch(`/api/inventory/inspections/${editableInspection.id}/`, {
         method: "PATCH",
@@ -854,10 +866,12 @@ export default function InspectionDetailPage() {
         ok: true,
         message: "Inspection progress saved.",
         recordId: editableInspection.id,
+        redirectTo: `/inspections/${editableInspection.id}`,
       };
     } catch (err) {
       const failure = normalizeCopilotSubmitError(err);
       setError(failure.message || "Failed to save inspection");
+      setStageFieldErrors(failure.fieldErrors ?? {});
       return failure;
     } finally {
       setBusyAction(null);
@@ -880,8 +894,22 @@ export default function InspectionDetailPage() {
         message: "This inspection stage cannot be submitted from the current state.",
       };
     }
+    const fieldErrors = validateInspectionStageRequiredFields(editableInspection);
+    if (Object.keys(fieldErrors).length > 0) {
+      const message = "Resolve highlighted inspection stage fields before submitting.";
+      setStageFieldErrors(fieldErrors);
+      setError(message);
+      const failure = {
+        ok: false,
+        errorType: "validation_error",
+        message,
+        fieldErrors,
+      };
+      return failure;
+    }
     setBusyAction("transition");
     setError(null);
+    setStageFieldErrors({});
     try {
       await apiFetch(`/api/inventory/inspections/${editableInspection.id}/`, {
         method: "PATCH",
@@ -893,11 +921,13 @@ export default function InspectionDetailPage() {
         ok: true,
         message: "Inspection stage submitted successfully.",
         recordId: editableInspection.id,
+        redirectTo: `/inspections/${editableInspection.id}`,
         transition,
       };
     } catch (err) {
       const failure = normalizeCopilotSubmitError(err);
       setError(failure.message || "Failed to transition stage. Check required details and register links.");
+      setStageFieldErrors(failure.fieldErrors ?? {});
       return failure;
     } finally {
       setBusyAction(null);
@@ -936,7 +966,7 @@ export default function InspectionDetailPage() {
   // agent can resolve "core i5" → catalog item id, etc., without firing SQL.
   useCopilotReadable({
     description:
-      "Inspection detail dropdown catalogs (loaded for the current stage). Use 'items' to resolve inspection row 'item' foreign-key IDs by matching item_description/item_name to catalog name/code; use 'stock_registers' for stock_register/central_register IDs; use 'asset_classes' for finance-review depreciation_asset_class IDs. When filling stage-2/stage-3 item rows, ALWAYS set the row's 'item' field to the catalog id from items[].id, do NOT leave it null when a name match exists. The items array is empty when the current stage does not need it.",
+      "Inspection detail dropdown catalogs (loaded for the current stage). Use 'items' to resolve inspection row 'item' foreign-key IDs by matching item_description/item_name AND item description/specifications against catalog name/code/description/specifications — similar names can be different products, so compare descriptions and specifications before deciding two items differ; use 'stock_registers' for stock_register/central_register IDs; use 'asset_classes' for finance-review depreciation_asset_class IDs. When filling stage-2/stage-3 item rows, ALWAYS set the row's 'item' field to the catalog id from items[].id, do NOT leave it null when a name+description match exists. Never silently create a new item when a catalog match exists; if no genuine match exists, ask the user before opening item_create. The items array is empty when the current stage does not need it.",
     value: {
       route: `/inspections/${params.id}`,
       stage: editableInspection?.stage ?? null,
@@ -947,6 +977,10 @@ export default function InspectionDetailPage() {
         code: o.code,
         category_type: o.category_type,
         tracking_type: o.tracking_type,
+        category_display: o.category_display ?? null,
+        description: o.description ?? null,
+        specifications: o.specifications ?? null,
+        acct_unit: o.acct_unit ?? null,
       })),
       stock_registers: copilotRegisters.map(r => ({
         id: r.id,
@@ -1248,6 +1282,19 @@ export default function InspectionDetailPage() {
       }
 
       setEditableInspection(nextInspection);
+      setStageFieldErrors(prev => {
+        const next = { ...prev };
+        applied.forEach(field => delete next[field]);
+        if (Array.isArray(values.items)) {
+          values.items.forEach((row, fallbackIndex) => {
+            if (!row || typeof row !== "object" || Array.isArray(row)) return;
+            const rowRecord = row as Record<string, unknown>;
+            const targetIndex = typeof rowRecord.index === "number" ? rowRecord.index : fallbackIndex;
+            Object.keys(rowRecord).forEach(key => delete next[`items.${targetIndex}.${key}`]);
+          });
+        }
+        return next;
+      });
       return { applied, ignored };
     },
     [
@@ -1258,8 +1305,8 @@ export default function InspectionDetailPage() {
     ],
   );
 
-  useCopilotForm({
-    formId: editableInspection ? `inspection_detail_${editableInspection.id}_${editableInspection.stage.toLowerCase()}` : "inspection_detail",
+  const { submitManually } = useCopilotForm({
+    formId: getInspectionDetailCopilotFormId(editableInspection),
     title: editableInspection
       ? `Inspection Detail - ${getInspectionStageDisplayLabel(editableInspection)}`
       : "Inspection Detail",
@@ -1268,15 +1315,28 @@ export default function InspectionDetailPage() {
     mode: editableInspection?.stage,
     active: Boolean(editableInspection && inspection && !["COMPLETED", "REJECTED"].includes(inspection.stage)),
     canSetValues: Boolean(canEdit && busyAction === null && copilotFields.length > 0),
-    canValidate: false,
+    canValidate: Boolean(copilotFields.length > 0),
     canSubmit: Boolean(canEdit && busyAction === null),
     fields: copilotFields,
     values: copilotFormValues,
+    errors: stageFieldErrors,
     requirements: {
       setValues: { requiredCapabilities: [{ module: "inspections", level: "manage" }] },
+      validate: { requiredCapabilities: [{ module: "inspections", level: "manage" }] },
       submit: { requiredCapabilities: [{ module: "inspections", level: "manage" }] },
     },
     setValues: applyDetailCopilotValues,
+    validate: () => {
+      if (!editableInspection) {
+        return { ok: false, errors: { inspection: "No active inspection is loaded." } };
+      }
+      const fieldErrors = validateInspectionStageRequiredFields(editableInspection);
+      setStageFieldErrors(fieldErrors);
+      return {
+        ok: Object.keys(fieldErrors).length === 0,
+        errors: fieldErrors,
+      };
+    },
     submit: intent => intent === "submit" ? submitStage() : saveProgress(),
   });
 
@@ -1451,14 +1511,16 @@ export default function InspectionDetailPage() {
                   returnLabel={returnLabel}
                   busyAction={busyAction}
                   onChange={next => {
+                    setStageFieldErrors({});
                     setEditableInspection({
                       ...next,
                       items: next.items.map((item: InspectionItemRecord) => ({ ...item })),
                     });
                   }}
-                  onSave={saveProgress}
-                  onSubmit={submitStage}
+                  onSave={() => { void submitManually("save"); }}
+                  onSubmit={() => { void submitManually("submit"); }}
                   onReturn={() => setReturnOpen(true)}
+                  fieldErrors={stageFieldErrors}
                 />
               </main>
 

@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useCopilotActivity } from "@/contexts/CopilotContext";
 import { useCopilotAction } from "@/hooks/useCopilotAction";
 import { useCopilotReadable } from "@/hooks/useCopilotReadable";
 import type { CapabilityLevel } from "@/contexts/CapabilitiesContext";
 import {
+  buildCopilotFormContextFields,
   buildCopilotSetFormValuesParameters,
   createCopilotFormRuntimeState,
   findInvalidCopilotSelectValues,
@@ -14,10 +15,18 @@ import {
   normalizeCopilotSetValuesResponse,
   normalizeCopilotSubmitError,
   normalizeCopilotSubmitResult,
+  searchCopilotFormOptions,
   updateCopilotFormRuntimeState,
   validateCopilotFormPatchValues,
+  type CopilotSubmitResult,
+  type CopilotFormOptionSearchResult,
+  type CopilotFormOptionsState,
 } from "@/lib/copilotFormRuntime";
 import { copilotFormIdsMatch } from "@/lib/copilotFormIds";
+import {
+  buildManualSubmitRequestedActivity,
+  buildManualSubmitResultActivity,
+} from "@/lib/copilotManualSubmitActivity";
 
 export type CopilotFormFieldOption = {
   label: string;
@@ -34,6 +43,17 @@ export type CopilotFormField = {
   description?: string;
   options?: CopilotFormFieldOption[];
   arrayItemFields?: CopilotFormField[];
+  dependsOn?: string[];
+  affects?: string[];
+  optionSource?: string;
+  optionsMode?: "complete" | "local_search" | "remote_search";
+  optionsState?: CopilotFormOptionsState;
+  optionsPreview?: CopilotFormFieldOption[];
+  totalCount?: number;
+  hasMore?: boolean;
+  resolver?: "search_form_options" | string;
+  searchRequired?: boolean;
+  missingDependencies?: string[];
 };
 
 export type CopilotFormActionRequirements = {
@@ -41,7 +61,16 @@ export type CopilotFormActionRequirements = {
   requiredCapabilities?: Array<{ module: string; level?: CapabilityLevel }>;
 };
 
-type CopilotFormSubmitIntent = "save" | "submit" | "save_draft";
+export type CopilotFormSubmitIntent = "save" | "submit" | "save_draft";
+
+export type CopilotFormOptionSearchRequest = {
+  formId?: string;
+  field: string;
+  query?: string;
+  currentValues?: Record<string, unknown>;
+  limit?: number;
+  reason?: string;
+};
 
 export type CopilotFormConfig = {
   formId: string;
@@ -61,26 +90,70 @@ export type CopilotFormConfig = {
     submit?: CopilotFormActionRequirements;
   };
   setValues: (values: Record<string, unknown>) => unknown | Promise<unknown>;
+  searchOptions?: (
+    request: CopilotFormOptionSearchRequest,
+  ) => CopilotFormOptionSearchResult | Promise<CopilotFormOptionSearchResult>;
   focusField?: (field: string) => unknown | Promise<unknown>;
   validate?: () => unknown | Promise<unknown>;
   submit?: (intent?: CopilotFormSubmitIntent) => unknown | Promise<unknown>;
+};
+
+export type CopilotFormController = {
+  submitManually: (intent?: CopilotFormSubmitIntent) => Promise<CopilotSubmitResult>;
 };
 
 function matchesForm(formId: string, targetFormId: unknown) {
   return copilotFormIdsMatch(formId, targetFormId);
 }
 
-export function useCopilotForm(config: CopilotFormConfig) {
+export function useCopilotForm(config: CopilotFormConfig): CopilotFormController {
   const pathname = usePathname();
   const trackActivity = useCopilotActivity();
   const pendingAssistantFieldsRef = useRef<string[]>([]);
   const runtimeFormIdRef = useRef(config.formId);
   const runtimeActiveRef = useRef(config.active);
   const activityActiveRef = useRef(false);
+  const activityMetaRef = useRef({
+    formId: config.formId,
+    title: config.title,
+    mode: config.mode,
+    route: pathname,
+  });
+  const trackActivityRef = useRef(trackActivity);
   const activityLastChangeKeyRef = useRef<string | null>(null);
   const [runtimeState, setRuntimeState] = useState(() =>
     createCopilotFormRuntimeState(config.values),
   );
+
+  useEffect(() => {
+    activityMetaRef.current = {
+      formId: config.formId,
+      title: config.title,
+      mode: config.mode,
+      route: pathname,
+    };
+    trackActivityRef.current = trackActivity;
+  }, [config.formId, config.mode, config.title, pathname, trackActivity]);
+
+  useEffect(() => {
+    return () => {
+      if (!activityActiveRef.current) return;
+      const meta = activityMetaRef.current;
+      trackActivityRef.current({
+        kind: "form_closed",
+        actor: "user",
+        title: `Closed ${meta.title}`,
+        route: meta.route,
+        formId: meta.formId,
+        formTitle: meta.title,
+        details: {
+          mode: meta.mode,
+          reason: "unmount",
+        },
+      });
+      activityActiveRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (config.active && !activityActiveRef.current) {
@@ -189,6 +262,12 @@ export function useCopilotForm(config: CopilotFormConfig) {
     () => buildCopilotSetFormValuesParameters(config.fields),
     [config.fields],
   );
+  const contextFields = useMemo(
+    () => buildCopilotFormContextFields(config.fields, {
+      values: config.values,
+    }),
+    [config.fields, config.values],
+  );
 
   const activeFormContext = useMemo(
     () =>
@@ -198,7 +277,7 @@ export function useCopilotForm(config: CopilotFormConfig) {
             title: config.title,
             description: config.description,
             mode: config.mode,
-            fields: config.fields,
+            fields: contextFields,
             setValuesSchema: setValuesParameters.values,
             values: config.values,
             errors: config.errors ?? {},
@@ -210,6 +289,7 @@ export function useCopilotForm(config: CopilotFormConfig) {
             allowedActions: {
               set_form_values: config.canSetValues !== false,
               focus_form_field: Boolean(config.focusField),
+              search_form_options: true,
               validate_active_form: Boolean(config.validate) && config.canValidate !== false,
               request_form_submit: Boolean(config.submit) && config.canSubmit !== false,
             },
@@ -222,7 +302,6 @@ export function useCopilotForm(config: CopilotFormConfig) {
       config.canValidate,
       config.description,
       config.errors,
-      config.fields,
       config.focusField,
       config.formId,
       config.mode,
@@ -230,6 +309,7 @@ export function useCopilotForm(config: CopilotFormConfig) {
       config.title,
       config.validate,
       config.values,
+      contextFields,
       runtimeState,
       setValuesParameters.values,
     ],
@@ -239,9 +319,76 @@ export function useCopilotForm(config: CopilotFormConfig) {
     [activeFormContext, pathname],
   );
 
+  const submitManually = useCallback(
+    async (intent: CopilotFormSubmitIntent = "submit") => {
+      trackActivity(
+        buildManualSubmitRequestedActivity({
+          formId: config.formId,
+          formTitle: config.title,
+          intent,
+          route: pathname,
+        }),
+      );
+
+      if (!config.active || !config.submit || config.canSubmit === false) {
+        const failure: CopilotSubmitResult = {
+          ok: false,
+          errorType: "submit_unavailable",
+          message: "Submit is not available for the active form right now.",
+        };
+        trackActivity(
+          buildManualSubmitResultActivity({
+            formId: config.formId,
+            formTitle: config.title,
+            intent,
+            route: pathname,
+            result: failure,
+          }),
+        );
+        return failure;
+      }
+
+      try {
+        const result = await config.submit(intent);
+        const normalized = normalizeCopilotSubmitResult(result);
+        trackActivity(
+          buildManualSubmitResultActivity({
+            formId: config.formId,
+            formTitle: config.title,
+            intent,
+            route: pathname,
+            result: normalized,
+          }),
+        );
+        return normalized;
+      } catch (error) {
+        const normalized = normalizeCopilotSubmitError(error);
+        trackActivity(
+          buildManualSubmitResultActivity({
+            formId: config.formId,
+            formTitle: config.title,
+            intent,
+            route: pathname,
+            result: normalized,
+          }),
+        );
+        return normalized;
+      }
+    },
+    [
+      config.active,
+      config.canSubmit,
+      config.formId,
+      config.submit,
+      config.title,
+      pathname,
+      trackActivity,
+    ],
+  );
+
   useCopilotReadable({
     description: activeFormContext
-      ? `Active AMS form: ${config.title}. Use set_form_values with exact field names from this context.`
+      ? `Active AMS form: ${config.title}. Use set_form_values with exact field names from this context. For fields with optionsState truncated, requires_dependency, loading, remote_search, or resolver=search_form_options, call search_form_options before patching.`
       : `AMS form not active: ${config.title}.`,
     value: readableValue,
   });
@@ -340,6 +487,95 @@ export function useCopilotForm(config: CopilotFormConfig) {
           result: response,
         });
         return response;
+      });
+    },
+  });
+
+  useCopilotAction({
+    name: "search_form_options",
+    description:
+      "Resolve user text against an active AMS form option field. Args: { formId?: string, field: string, query?: string, currentValues?: Record<string, unknown>, limit?: number }. Use when activeForm fields show optionsState truncated, requires_dependency, loading, remote_search, or resolver=search_form_options.",
+    parameters: {
+      formId: { type: "string", description: "Optional target form id." },
+      field: {
+        type: "string",
+        description:
+          "Exact option field name from activeForm.fields. For array rows, use dotted paths such as items.0.item or items.0.instances.",
+        required: true,
+      },
+      query: {
+        type: "string",
+        description: "User-provided label/code/name text to resolve. Empty query returns leading candidates.",
+      },
+      currentValues: {
+        type: "object",
+        description: "Optional current or planned form values used for dependency-aware option resolution.",
+      },
+      limit: {
+        type: "number",
+        description: "Maximum candidates to return.",
+      },
+      reason: { type: "string", description: "Optional reason for audit/debugging." },
+    },
+    allowed: config.canSetValues !== false,
+    requiredPermissions: config.requirements?.setValues?.requiredPermissions,
+    requiredCapabilities: config.requirements?.setValues?.requiredCapabilities,
+    enabled: config.active,
+    handler: ({
+      formId,
+      field,
+      query,
+      currentValues,
+      limit,
+      reason,
+    }: CopilotFormOptionSearchRequest) => {
+      if (!matchesForm(config.formId, formId)) {
+        return { ok: false, reason: `Target form mismatch: ${String(formId)}` };
+      }
+      if (!field || typeof field !== "string") {
+        return {
+          ok: false,
+          errorType: "missing_field",
+          message: "search_form_options requires an exact active form field name.",
+        };
+      }
+
+      const request = {
+        formId,
+        field,
+        query,
+        currentValues:
+          currentValues && typeof currentValues === "object"
+            ? currentValues
+            : config.values,
+        limit,
+        reason,
+      };
+      const response = config.searchOptions
+        ? config.searchOptions(request)
+        : searchCopilotFormOptions({
+            fields: config.fields,
+            field,
+            query,
+            currentValues: request.currentValues,
+            limit,
+          });
+
+      return Promise.resolve(response).then(result => {
+        trackActivity({
+          kind: "frontend_action_result",
+          actor: "assistant",
+          title: `Resolved options for ${field} in ${config.title}`,
+          formId: config.formId,
+          formTitle: config.title,
+          field,
+          result,
+          details: {
+            query,
+            reason,
+          },
+        });
+        return result;
       });
     },
   });
@@ -454,4 +690,6 @@ export function useCopilotForm(config: CopilotFormConfig) {
       }
     },
   });
+
+  return { submitManually };
 }

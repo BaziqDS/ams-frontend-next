@@ -217,7 +217,13 @@ describe("inspection copilot form helpers", () => {
       canEditCentral: true,
       departmentRegisterOptions: [],
       centralRegisterOptions: [{ id: 5, register_number: "CSR-1" }],
-      itemOptions: [{ id: 9, name: "Processor", code: "ITM-0001" }],
+      itemOptions: [{
+        id: 9,
+        name: "Processor",
+        code: "ITM-0001",
+        description: "Intel desktop processor",
+        specifications: "Core i5, 12th generation",
+      }],
     });
 
     expect(fields.map(field => field.name)).toEqual([
@@ -229,16 +235,31 @@ describe("inspection copilot form helpers", () => {
       "items.0.expiry_date",
     ]);
     expect(fields[0].options).toEqual([{ label: "CSR-1", value: 5 }]);
-    expect(fields[2].options).toEqual([{ label: "Processor (ITM-0001)", value: 9 }]);
+    expect(fields[2].options).toEqual([{
+      label: "Processor (ITM-0001)",
+      value: 9,
+      description: "Intel desktop processor",
+      specifications: "Core i5, 12th generation",
+    }]);
     expect(fields.find(field => field.name === "items.0.central_register")).toMatchObject({
       required: true,
+      optionSource: "inspection.centralRegisters",
+      resolver: "search_form_options",
     });
     expect(fields.find(field => field.name === "items.0.central_register_page_no")).toMatchObject({
       required: true,
     });
     expect(fields.find(field => field.name === "items.0.item")).toMatchObject({
       required: true,
+      optionSource: "inspection.catalogItems",
+      resolver: "search_form_options",
     });
+    expect(fields.find(field => field.name === "items.0.item")?.description).toMatch(
+      /description and specifications/i,
+    );
+    expect(fields.find(field => field.name === "items.0.item")?.description).toMatch(
+      /do not create/i,
+    );
   });
 
   it("marks department stock register controls required when stock stage is active", () => {
@@ -253,6 +274,8 @@ describe("inspection copilot form helpers", () => {
 
     expect(fields.find(field => field.name === "items.0.stock_register")).toMatchObject({
       required: true,
+      optionSource: "inspection.departmentStockRegisters",
+      resolver: "search_form_options",
     });
     expect(fields.find(field => field.name === "items.0.stock_register_page_no")).toMatchObject({
       required: true,
@@ -287,6 +310,8 @@ describe("inspection copilot form helpers", () => {
     expect(fields.find(field => field.name === "items.0.depreciation_asset_class")).toMatchObject({
       type: "select",
       required: true,
+      optionSource: "inspection.assetClasses",
+      resolver: "search_form_options",
       options: [{ label: "Computer Equipment (COMP)", value: 12 }],
     });
     expect(fields.find(field => field.name === "items.0.capitalization_date")).toMatchObject({

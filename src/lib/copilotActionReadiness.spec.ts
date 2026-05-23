@@ -517,9 +517,12 @@ describe("copilot action readiness", () => {
     });
   });
 
-  it("only gates page-changing and form-opening actions", () => {
+  it("does not wait for a submitted form to stay open after execution", () => {
+    expect(actionNeedsReadyPageContext("request_form_submit")).toBe(false);
+  });
+
+  it("only waits after actions whose follow-up page context must be refreshed", () => {
     expect(actionNeedsReadyPageContext("set_form_values")).toBe(true);
-    expect(actionNeedsReadyPageContext("request_form_submit")).toBe(true);
     expect(actionNeedsReadyPageContext("validate_active_form")).toBe(true);
     expect(actionNeedsReadyPageContext("focus_form_field")).toBe(true);
     expect(actionNeedsReadyPageContext("navigate_to_route")).toBe(true);

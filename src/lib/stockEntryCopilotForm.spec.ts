@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyStockEntryCopilotValuePatch,
   buildStockEntryCopilotReferenceContext,
+  searchStockEntryCopilotOptions,
 } from "./stockEntryCopilotForm";
 import type { StockEntryFormState } from "./stockEntryFormRules";
 
@@ -90,6 +91,55 @@ describe("stock entry copilot form helpers", () => {
         { value: "44", label: "SN-044", qr_code: "QR-044" },
         { value: "45", label: "SN-045", qr_code: "QR-045" },
       ],
+    });
+  });
+
+  it("resolves stock-entry item and instance options from row-specific reference data", () => {
+    const context = buildStockEntryCopilotReferenceContext({
+      formId: "stock-entry-create",
+      active: true,
+      form: baseForm,
+      sourceStores: [{ id: 10, name: "Main Store" }],
+      destinationStores: [{ id: 20, name: "Lab Store" }],
+      destinationLocations: [],
+      receivingPersons: [],
+      returningPersons: [],
+      returningLocations: [],
+      sourceRegisters: [],
+      lineItems: [
+        {
+          index: 0,
+          itemOptions: [
+            { id: 3, name: "Core i7", code: "CPU-I7" },
+            { id: 4, name: "Monitor", code: "MON" },
+          ],
+          batchOptions: [],
+          instanceOptions: [
+            { id: 44, serial_number: "SN-044", qr_code: "QR-044" },
+            { id: 45, serial_number: "SN-045", qr_code: "QR-045" },
+          ],
+        },
+      ],
+    });
+
+    expect(searchStockEntryCopilotOptions(context, {
+      field: "items.0.item",
+      query: "core i7",
+    })).toMatchObject({
+      ok: true,
+      status: "matched",
+      selected: { value: "3", label: "Core i7 (CPU-I7)" },
+      optionsState: "complete",
+    });
+
+    expect(searchStockEntryCopilotOptions(context, {
+      field: "items.0.instances",
+      query: "SN-045",
+    })).toMatchObject({
+      ok: true,
+      status: "matched",
+      selected: { value: "45", label: "SN-045" },
+      optionsState: "complete",
     });
   });
 });

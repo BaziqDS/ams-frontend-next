@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useLayoutEffect, useRef } from "react";
 import { useCopilotInternal } from "@/contexts/CopilotContext";
 
 export function useCopilotReadable({
@@ -14,11 +14,18 @@ export function useCopilotReadable({
   const id = useId();
   const unregisterRef = useRef<(() => void) | null>(null);
 
-  useEffect(() => {
-    unregisterRef.current = registerReadable({ id, description, value });
-    return () => {
+  useLayoutEffect(() => {
+    const unregister = registerReadable({ id, description, value });
+    if (!unregisterRef.current) {
+      unregisterRef.current = unregister;
+    }
+  }, [id, description, value, registerReadable]);
+
+  useEffect(
+    () => () => {
       unregisterRef.current?.();
       unregisterRef.current = null;
-    };
-  }, [id, description, value, registerReadable]);
+    },
+    [],
+  );
 }

@@ -11,6 +11,7 @@ import { apiFetch, type Page } from "@/lib/api";
 import { LOCATION_TYPE_LABELS, locationTypeLabel, relTime, type LocationRecord } from "@/lib/userUiShared";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
 import { useCopilotAction } from "@/hooks/useCopilotAction";
+import { useCopilotListControls } from "@/hooks/useCopilotListControls";
 import { useCopilotReadable } from "@/hooks/useCopilotReadable";
 import { buildCopilotListContext } from "@/lib/copilotPageContext";
 import { consumePendingOpen, SAME_PAGE_OPEN_EVENT } from "@/lib/copilotPendingAction";
@@ -375,6 +376,51 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
     setPage,
   } = useClientPagination(filteredLocations, LOCATIONS_PAGE_SIZE, [search, typeFilter, statusFilter, variant, parentId]);
 
+  const locationListControls = useCopilotListControls({
+    entity: isChildrenView ? "sub_location" : "location",
+    filters: [
+      {
+        name: "search",
+        type: "string",
+        defaultValue: "",
+        label: "Search",
+        description: "Search by location name, code, parent, type, or store marker.",
+        setValue: value => setSearch(String(value ?? "")),
+      },
+      {
+        name: "type",
+        type: "enum",
+        defaultValue: "all",
+        label: "Type",
+        options: [
+          { value: "all", label: "All types" },
+          ...typeOptions.map(type => ({ value: type, label: locationTypeLabel(type) })),
+        ],
+        setValue: value => setTypeFilter(String(value ?? "all")),
+      },
+      {
+        name: "status",
+        type: "enum",
+        defaultValue: "all",
+        label: "Status",
+        options: [
+          { value: "all", label: "All statuses" },
+          { value: "active", label: "Active" },
+          { value: "inactive", label: "Disabled" },
+        ],
+        setValue: value => setStatusFilter(String(value ?? "all")),
+      },
+    ],
+    page,
+    totalPages,
+    setPage,
+    visibleRows: pagedLocations.map((location, index) => ({
+      row_number: index + 1,
+      id: location.id,
+      detail_route: `/locations/${location.id}`,
+    })),
+  });
+
   // Expose the locations (or child locations under a parent) currently
   // displayed so the agent can resolve names → ids without SQL. The
   // inspections "department" foreign key is a Location id; this readable
@@ -403,6 +449,7 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
       detail_route: `/locations/${loc.id}`,
     })),
     actions: {
+      ...locationListControls,
       create_location: canAddLocation,
     },
     loading: isLoading || capsLoading,
@@ -427,6 +474,7 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
     capsLoading,
     isLoading,
     page,
+    locationListControls,
     totalPages,
   ]);
 
@@ -459,13 +507,18 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
   useEffect(() => {
     const onOpen = (event: Event) => {
       const detail = (event as CustomEvent<{ formId?: string }>).detail;
-      if (detail?.formId !== "location_create") return;
-      if (!canAddLocation) return;
+      if (isChildrenView) {
+        if (detail?.formId !== "sublocation_create") return;
+        if (!canAddLocation || !parentLocation) return;
+      } else {
+        if (detail?.formId !== "location_create") return;
+        if (!canAddLocation) return;
+      }
       openCreateModal();
     };
     window.addEventListener(SAME_PAGE_OPEN_EVENT, onOpen);
     return () => window.removeEventListener(SAME_PAGE_OPEN_EVENT, onOpen);
-  }, [canAddLocation, openCreateModal]);
+  }, [canAddLocation, isChildrenView, openCreateModal, parentLocation]);
 
   return (
     <div data-density={density}>

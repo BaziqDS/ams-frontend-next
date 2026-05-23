@@ -24,6 +24,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useClientPagination } from "@/lib/listPagination";
 import { useCapabilities } from "@/contexts/CapabilitiesContext";
 import { useCopilotAction } from "@/hooks/useCopilotAction";
+import { useCopilotListControls } from "@/hooks/useCopilotListControls";
 import { useCopilotReadable } from "@/hooks/useCopilotReadable";
 import {
   consumePendingOpen,
@@ -593,6 +594,66 @@ export default function InspectionsPage() {
     stageFilter,
   ]);
 
+  const inspectionListControls = useCopilotListControls({
+    entity: "inspection",
+    filters: [
+      {
+        name: "search",
+        type: "string",
+        defaultValue: "",
+        label: "Search",
+        description: "Search by contract number, indent number, contractor, or department.",
+        setValue: value => setSearch(String(value ?? "")),
+      },
+      {
+        name: "stage",
+        type: "enum",
+        defaultValue: "all",
+        label: "Stage",
+        options: [
+          { value: "all", label: "All stages" },
+          ...([
+            "DRAFT",
+            "STOCK_DETAILS",
+            "CENTRAL_REGISTER",
+            "FINANCE_REVIEW",
+            "COMPLETED",
+            "REJECTED",
+          ] as InspectionStage[]).map((stage) => ({
+            value: stage,
+            label:
+              stage === "REJECTED"
+                ? "Rejected / Cancelled"
+                : INSPECTION_STAGE_LABELS[stage],
+          })),
+        ],
+        setValue: value => setStageFilter(String(value ?? "all")),
+      },
+      {
+        name: "location_ids",
+        type: "multi_enum",
+        defaultValue: [],
+        label: "Locations",
+        options: locationOptions.map((location) => ({
+          value: String(location.id),
+          label: location.name,
+        })),
+        setValue: value => {
+          const next = Array.isArray(value) ? value.map(id => String(id)) : [];
+          setSelectedLocationIds(next.filter(id => id !== "all"));
+        },
+      },
+    ],
+    page,
+    totalPages,
+    setPage,
+    visibleRows: pagedInspections.map((inspection, index) => ({
+      row_number: index + 1,
+      id: inspection.id,
+      detail_route: `/inspections/${inspection.id}`,
+    })),
+  });
+
   // Expose the inspections currently visible to the user so the agent can
   // resolve references like "the first one", "the pending ones", or
   // "CTR-2026-001" without firing a SQL query.
@@ -613,11 +674,12 @@ export default function InspectionsPage() {
       indent_no: i.indent_no,
       contractor_name: i.contractor_name,
       department_name: i.department_name,
+      department_hierarchy_level: i.department_hierarchy_level,
       stage: i.stage,
       status: i.status ?? null,
       date_of_inspection: i.date_of_inspection ?? null,
       detail_route: `/inspections/${i.id}`,
-      workflow: buildInspectionWorkflowContext(i.stage),
+      workflow: buildInspectionWorkflowContext(i),
       available_actions: {
         open_detail: true,
         view_pdf: true,
@@ -626,6 +688,7 @@ export default function InspectionsPage() {
       },
     })),
     actions: {
+      ...inspectionListControls,
       create_inspection: canInitiateInspection,
       filter_by_stage: true,
       filter_by_location: canFilterByLocation,
@@ -638,6 +701,7 @@ export default function InspectionsPage() {
     search,
     stageFilter,
     selectedLocationIds,
+    inspectionListControls,
     canCancelInspection,
     canFilterByLocation,
     canFull,

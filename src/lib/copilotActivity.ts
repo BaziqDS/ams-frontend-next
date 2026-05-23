@@ -175,7 +175,7 @@ function latestRouteEvent(events: CopilotActivityEvent[]) {
   return undefined;
 }
 
-function latestActiveForm(events: CopilotActivityEvent[]) {
+function latestActiveForm(events: CopilotActivityEvent[], currentRoute?: string | null) {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
     if (!event.formId) continue;
@@ -187,6 +187,9 @@ function latestActiveForm(events: CopilotActivityEvent[]) {
       event.kind === "form_submit_requested" ||
       event.kind === "form_submit_result"
     ) {
+      if (currentRoute && event.route && event.route !== currentRoute) {
+        return null;
+      }
       return {
         formId: event.formId,
         title: event.formTitle,
@@ -256,6 +259,7 @@ export function buildCopilotActivitySnapshot(
   } = {},
 ): CopilotActivitySnapshot {
   const routeEvent = latestRouteEvent(events);
+  const currentRoute = options.currentRoute ?? routeEvent?.route ?? null;
   const recent = events.slice(-(options.recentLimit ?? 20)).map(event => ({
     at: event.at,
     actor: event.actor,
@@ -274,10 +278,10 @@ export function buildCopilotActivitySnapshot(
 
   return {
     currentPage: {
-      pathname: options.currentRoute ?? routeEvent?.route ?? null,
+      pathname: currentRoute,
       observedAt: routeEvent?.at ?? null,
     },
-    activeForm: latestActiveForm(events),
+    activeForm: latestActiveForm(events, currentRoute),
     lastUserEdit: latestUserEdit(events),
     lastSubmitResult: latestSubmitResult(events),
     lastClosedForm: latestClosedForm(events),

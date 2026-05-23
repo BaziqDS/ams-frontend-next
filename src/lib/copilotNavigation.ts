@@ -7,3 +7,7 @@ export function normalizeCopilotRoute(path: unknown): string | null {
   if (trimmed.startsWith("//")) return null;
   return trimmed;
 }
+
+export function isSameCopilotRoute(currentPathname: string, targetRoute: string) {
+  return normalizeCopilotRoute(currentPathname) === normalizeCopilotRoute(targetRoute);
+}

@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  COPILOT_FORM_OPTION_PREVIEW_LIMIT,
   buildCopilotSetFormValuesParameters,
+  buildCopilotFormContextFields,
   createCopilotFormRuntimeState,
+  ensureValueInOptions,
   findInvalidCopilotSelectValues,
   normalizeCopilotFormPatchValues,
   normalizeCopilotSetValuesResponse,
   normalizeCopilotSubmitError,
   normalizeCopilotSubmitResult,
+  searchCopilotFormOptions,
   updateCopilotFormRuntimeState,
   validateCopilotFormPatchValues,
 } from "./copilotFormRuntime";
@@ -106,6 +110,310 @@ describe("normalizeCopilotSetValuesResponse", () => {
 });
 
 describe("copilot form value schemas", () => {
+  it("exposes long option fields as truncated previews without bloating writable schemas", () => {
+    const options = Array.from({ length: 30 }, (_unused, index) => ({
+      value: String(index + 1),
+      label: `Instance ${index + 1}`,
+    }));
+    const fields = [
+      {
+        name: "instances",
+        label: "Instances",
+        type: "array" as const,
+        arrayItemType: "string" as const,
+        options,
+        dependsOn: ["item"],
+        optionSource: "inventory.instances",
+        resolver: "search_form_options" as const,
+      },
+    ];
+
+    const [contextField] = buildCopilotFormContextFields(fields, { previewLimit: 3 });
+    const parameters = buildCopilotSetFormValuesParameters(fields);
+
+    expect(contextField).toMatchObject({
+      name: "instances",
+      optionsState: "truncated",
+      optionsPreview: options.slice(0, 3),
+      totalCount: 30,
+      hasMore: true,
+      dependsOn: ["item"],
+      optionSource: "inventory.instances",
+      resolver: "search_form_options",
+    });
+    expect(contextField).not.toHaveProperty("options");
+    expect(
+      parameters.values.properties?.instances.items,
+    ).not.toHaveProperty("enum");
+  });
+
+  it("uses the global dropdown preview limit by default for every long select field", () => {
+    const options = Array.from(
+      { length: COPILOT_FORM_OPTION_PREVIEW_LIMIT + 5 },
+      (_unused, index) => ({
+        value: String(index + 1),
+        label: `Option ${index + 1}`,
+      }),
+    );
+
+    const [contextField] = buildCopilotFormContextFields([
+      {
+        name: "category",
+        label: "Category",
+        type: "select",
+        options,
+      },
+    ]);
+
+    expect(contextField.optionsState).toBe("truncated");
+    expect(contextField.optionsPreview).toHaveLength(COPILOT_FORM_OPTION_PREVIEW_LIMIT);
+    expect(contextField.totalCount).toBe(COPILOT_FORM_OPTION_PREVIEW_LIMIT + 5);
+    expect(contextField.resolver).toBe("search_form_options");
+    expect(contextField).not.toHaveProperty("options");
+  });
+
+  it("describes empty dropdowns explicitly in active form context and search results", () => {
+    const fields = [
+      {
+        name: "department",
+        label: "Department",
+        type: "select" as const,
+        options: [],
+      },
+    ];
+
+    const [contextField] = buildCopilotFormContextFields(fields);
+    expect(contextField).toMatchObject({
+      name: "department",
+      optionsState: "empty",
+      totalCount: 0,
+      hasMore: false,
+      emptyReason: "No options exist for Department in the current form state.",
+    });
+
+    expect(searchCopilotFormOptions({
+      fields,
+      field: "department",
+      query: "CSIT",
+    })).toMatchObject({
+      ok: false,
+      status: "not_found",
+      field: "department",
+      optionsState: "empty",
+      totalCount: 0,
+      message: "No options exist for Department in the current form state.",
+    });
+  });
+
+  it("caps invalid select error option previews with the same global dropdown limit", () => {
+    const options = Array.from(
+      { length: COPILOT_FORM_OPTION_PREVIEW_LIMIT + 10 },
+      (_unused, index) => ({
+        value: String(index + 1),
+        label: `Category ${index + 1}`,
+      }),
+    );
+
+    const failures = findInvalidCopilotSelectValues([
+      {
+        name: "category",
+        label: "Category",
+        type: "select",
+        options,
+      },
+    ], {
+      category: "999",
+    });
+
+    expect(failures).toEqual([
+      {
+        field: "category",
+        value: "999",
+        allowedOptions: options.slice(0, COPILOT_FORM_OPTION_PREVIEW_LIMIT),
+      },
+    ]);
+  });
+
+  it("resolves options by label even when the active form context only exposes a preview", () => {
+    const options = Array.from({ length: 30 }, (_unused, index) => ({
+      value: String(index + 1),
+      label: `Instance ${index + 1}`,
+    }));
+
+    const result = searchCopilotFormOptions({
+      fields: [
+        {
+          name: "instances",
+          label: "Instances",
+          type: "array",
+          arrayItemType: "string",
+          options,
+          resolver: "search_form_options",
+        },
+      ],
+      field: "instances",
+      query: "Instance 30",
+      previewLimit: 5,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "matched",
+      field: "instances",
+      selected: { value: "30", label: "Instance 30" },
+      totalCount: 30,
+      hasMore: true,
+      optionsState: "truncated",
+    });
+  });
+
+  it("matches option labels when user text omits punctuation from the dropdown label", () => {
+    expect(searchCopilotFormOptions({
+      fields: [
+        {
+          name: "to_location",
+          label: "Destination",
+          type: "select",
+          options: [
+            { value: "7", label: "CSIT (Main Store)" },
+            { value: "8", label: "Electrical Engineering (Main Store)" },
+          ],
+        },
+      ],
+      field: "to_location",
+      query: "CSIT Main Store",
+    })).toMatchObject({
+      ok: true,
+      status: "matched",
+      selected: { value: "7", label: "CSIT (Main Store)" },
+    });
+  });
+
+  it("selects a single strong fuzzy option match for voice transcription mistakes", () => {
+    expect(searchCopilotFormOptions({
+      fields: [
+        {
+          name: "items.0.item",
+          label: "Item",
+          type: "select",
+          options: [
+            { value: "3", label: "Core i7 (CPU-I7)" },
+            { value: "4", label: "Monitor (MON)" },
+          ],
+        },
+      ],
+      field: "items.0.item",
+      query: "Core I4",
+    })).toMatchObject({
+      ok: true,
+      status: "matched",
+      selected: { value: "3", label: "Core i7 (CPU-I7)" },
+    });
+  });
+
+  it("keeps fuzzy option matches ambiguous when more than one candidate is plausible", () => {
+    expect(searchCopilotFormOptions({
+      fields: [
+        {
+          name: "items.0.item",
+          label: "Item",
+          type: "select",
+          options: [
+            { value: "3", label: "Core i5 (CPU-I5)" },
+            { value: "4", label: "Core i7 (CPU-I7)" },
+          ],
+        },
+      ],
+      field: "items.0.item",
+      query: "Core I4",
+    })).toMatchObject({
+      ok: true,
+      status: "ambiguous",
+      candidates: [
+        { value: "3", label: "Core i5 (CPU-I5)" },
+        { value: "4", label: "Core i7 (CPU-I7)" },
+      ],
+    });
+  });
+
+  it("searches nested array item option fields by dotted row path", () => {
+    const result = searchCopilotFormOptions({
+      fields: [
+        {
+          name: "items",
+          label: "Line items",
+          type: "array",
+          arrayItemFields: [
+            {
+              name: "item",
+              label: "Item",
+              type: "select",
+              options: [
+                { value: "3", label: "Core i7 (CPU-I7)" },
+                { value: "4", label: "Monitor (MON)" },
+              ],
+              dependsOn: ["from_location"],
+              optionSource: "stockEntry.availableItems",
+              resolver: "search_form_options",
+            },
+          ],
+        },
+      ],
+      field: "items.0.item",
+      query: "core i7",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "matched",
+      field: "items.0.item",
+      selected: { value: "3", label: "Core i7 (CPU-I7)" },
+    });
+  });
+
+  it("resolves row wildcard dependencies from flat dotted current values", () => {
+    const result = searchCopilotFormOptions({
+      fields: [
+        {
+          name: "items",
+          label: "Line items",
+          type: "array",
+          arrayItemFields: [
+            {
+              name: "instances",
+              label: "Instances",
+              type: "array",
+              arrayItemType: "string",
+              options: [
+                { value: "44", label: "SN-044" },
+                { value: "45", label: "SN-045" },
+              ],
+              dependsOn: ["from_location", "items[].item"],
+              optionsState: "requires_dependency",
+              optionSource: "stockEntry.availableInstances",
+              resolver: "search_form_options",
+            },
+          ],
+        },
+      ],
+      field: "items.0.instances",
+      query: "SN-045",
+      currentValues: {
+        entry_type: "ISSUE",
+        from_location: "7",
+        issue_target: "STORE",
+        "items.0.item": "3",
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "matched",
+      field: "items.0.instances",
+      selected: { value: "45", label: "SN-045" },
+    });
+  });
+
   it("builds strict parameters from writable form fields", () => {
     const parameters = buildCopilotSetFormValuesParameters([
       { name: "name", type: "string", label: "Name" },
@@ -502,5 +810,39 @@ describe("normalizeCopilotFormPatchValues", () => {
         allowedOptions: [{ label: "Laptop", value: 3 }],
       },
     ]);
+  });
+});
+
+describe("ensureValueInOptions", () => {
+  const baseOptions = [
+    { value: "", label: "No parent" },
+    { value: "1", label: "Alpha" },
+    { value: "2", label: "Beta" },
+  ];
+
+  it("appends a missing value with its label", () => {
+    const result = ensureValueInOptions(baseOptions, "3", "Gamma");
+    expect(result).toEqual([...baseOptions, { value: "3", label: "Gamma" }]);
+  });
+
+  it("returns the original array when the value already exists", () => {
+    const result = ensureValueInOptions(baseOptions, "2", "Beta");
+    expect(result).toBe(baseOptions);
+  });
+
+  it("returns the original array for null or empty values", () => {
+    expect(ensureValueInOptions(baseOptions, null)).toBe(baseOptions);
+    expect(ensureValueInOptions(baseOptions, "")).toBe(baseOptions);
+    expect(ensureValueInOptions(baseOptions, undefined)).toBe(baseOptions);
+  });
+
+  it("uses stringified value as label when no label is given", () => {
+    const result = ensureValueInOptions(baseOptions, 42);
+    expect(result).toEqual([...baseOptions, { value: 42, label: "42" }]);
+  });
+
+  it("matches numeric values against string option values", () => {
+    const result = ensureValueInOptions(baseOptions, 2, "Beta");
+    expect(result).toBe(baseOptions);
   });
 });

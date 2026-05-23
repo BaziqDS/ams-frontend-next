@@ -16,7 +16,7 @@ import {
   type CapabilityLevel,
   useCapabilities,
 } from "@/contexts/CapabilitiesContext";
-import { normalizeCopilotRoute } from "@/lib/copilotNavigation";
+import { isSameCopilotRoute, normalizeCopilotRoute } from "@/lib/copilotNavigation";
 import {
   dispatchSamePageOpen,
   queuePendingOpen,
@@ -55,6 +55,11 @@ import {
   getCopilotOpenFormIds,
   routeMatchesCopilotPattern,
 } from "@/lib/copilotModuleManifest";
+import {
+  getHitlAutoRejectReason,
+  type HitlRejectionReason,
+  type PendingCopilotHitl,
+} from "@/lib/copilotHitlAutoResolve";
 
 const TRUSTED_ORIGIN =
   process.env.NEXT_PUBLIC_COPILOT_URL?.replace(/\/$/, "") ??
@@ -109,7 +114,10 @@ type CopilotContextValue = {
   setIframe: (element: HTMLIFrameElement | null) => void;
   trackActivity: (event: CopilotActivityEventInput) => CopilotActivityEvent;
   sendVoiceCommand: (text: string) => CopilotVoiceCommand;
-  sendHitlDecision: (decision: "approve" | "reject") => boolean;
+  sendHitlDecision: (
+    decision: "approve" | "reject",
+    reason?: HitlRejectionReason,
+  ) => boolean;
 };
 
 type ActionResultPost = (msg: Record<string, unknown>) => void;
@@ -168,8 +176,57 @@ export type CopilotHitlInterrupt = {
 export const COPILOT_ASSISTANT_MESSAGE_EVENT =
   "ams-copilot-assistant-message";
 export const COPILOT_HITL_INTERRUPT_EVENT = "ams-copilot-hitl-interrupt";
+export const COPILOT_START_VOICE_EVENT = "ams-copilot-start-voice";
 
 const CopilotContext = createContext<CopilotContextValue | null>(null);
+
+function findActiveFormIdInReadables(
+  readables: Map<string, Readable>,
+): string | null {
+  for (const readable of readables.values()) {
+    const value = readable.value;
+    if (!value || typeof value !== "object") continue;
+    const activeForm = (value as Record<string, unknown>).activeForm;
+    if (activeForm && typeof activeForm === "object") {
+      const formId = (activeForm as Record<string, unknown>).formId;
+      if (typeof formId === "string" && formId.trim()) return formId;
+    }
+  }
+  return null;
+}
+
+function readableHasActiveForm(readable: Readable): boolean {
+  const value = readable.value;
+  if (!value || typeof value !== "object") return false;
+  const activeForm = (value as Record<string, unknown>).activeForm;
+  return Boolean(activeForm && typeof activeForm === "object");
+}
+
+function prioritizeActiveFormReadables(readables: Readable[]): Readable[] {
+  const activeForms = readables.filter(readableHasActiveForm);
+  if (activeForms.length === 0) return readables;
+
+  const rest = readables.filter(readable => !readableHasActiveForm(readable));
+  return [...activeForms, ...rest];
+}
+
+function extractHitlTargetFormId(
+  interrupt: CopilotHitlInterrupt,
+): string | null {
+  for (const request of interrupt.actionRequests) {
+    if (request.name !== "request_form_submit") continue;
+    const args = request.args as Record<string, unknown> | undefined;
+    const formId = args?.formId ?? args?.form_id;
+    if (typeof formId === "string" && formId.trim()) return formId;
+  }
+  return null;
+}
+
+function hasFormSubmitHitlRequest(interrupt: CopilotHitlInterrupt): boolean {
+  return interrupt.actionRequests.some(
+    request => request.name === "request_form_submit",
+  );
+}
 
 export function CopilotProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -185,6 +242,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
   const pendingVoiceCommandsRef = useRef<CopilotVoiceCommand[]>([]);
   const pendingActionResultsRef = useRef<PendingActionResult[]>([]);
   const pendingActionExecutionsRef = useRef<PendingActionExecution[]>([]);
+  const pendingHitlRef = useRef<PendingCopilotHitl | null>(null);
   const trackActivityRef =
     useRef<((input: CopilotActivityEventInput) => CopilotActivityEvent) | null>(
       null,
@@ -214,9 +272,11 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
   );
 
   const buildContextPayload = useCallback(() => {
-    const readables = filterCopilotReadablesForRoute(
-      Array.from(readablesRef.current.values()),
-      pathname,
+    const readables = prioritizeActiveFormReadables(
+      filterCopilotReadablesForRoute(
+        Array.from(readablesRef.current.values()),
+        pathname,
+      ),
     );
     const actions: ActionDef[] = Array.from(actionsRef.current.values()).map(
       ({
@@ -593,11 +653,30 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         "Compact AMS activity memory: recent business events, active form, last user edit, and last submit result. This is intentionally summarized; do not assume it contains every historical action.",
       value: buildCopilotActivitySnapshot(activityEventsRef.current, {
         currentRoute: pathname,
-        recentLimit: 20,
+        recentLimit: 40,
       }),
     });
     schedulePush();
   }, [pathname, schedulePush]);
+
+  const postHitlDecision = useCallback((
+    decision: "approve" | "reject",
+    reason?: HitlRejectionReason,
+  ) => {
+    const iframe = iframeRef.current;
+    if (!iframe?.contentWindow) return false;
+
+    iframe.contentWindow.postMessage(
+      {
+        source: "ams-copilot",
+        type: "HITL_DECISION",
+        decision,
+        ...(decision === "reject" && reason ? { reason } : {}),
+      },
+      TRUSTED_ORIGIN,
+    );
+    return true;
+  }, []);
 
   const trackActivity = useCallback(
     (input: CopilotActivityEventInput) => {
@@ -605,24 +684,55 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         route: input.route ?? pathname,
         ...input,
       });
-      activityEventsRef.current = appendCopilotActivity(
-        activityEventsRef.current,
+      let nextEvents = appendCopilotActivity(activityEventsRef.current, event, 500);
+      const autoRejectReason = getHitlAutoRejectReason({
+        pending: pendingHitlRef.current,
         event,
-        500,
-      );
+        currentRoute: pathname,
+      });
+      if (autoRejectReason && postHitlDecision("reject", autoRejectReason)) {
+        const pending = pendingHitlRef.current;
+        pendingHitlRef.current = null;
+        nextEvents = appendCopilotActivity(
+          nextEvents,
+          createCopilotActivityEvent({
+            kind: "approval_decision",
+            actor: "system",
+            title: "Auto-rejected stale assistant approval",
+            route: event.route ?? pathname,
+            details: {
+              decision: "reject",
+              reason: autoRejectReason,
+              triggerKind: event.kind,
+              triggerFormId: event.formId,
+              pendingFormId: pending?.formId ?? null,
+            },
+          }),
+          500,
+        );
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent<CopilotHitlInterrupt | null>(
+              COPILOT_HITL_INTERRUPT_EVENT,
+              { detail: null },
+            ),
+          );
+        }
+      }
+      activityEventsRef.current = nextEvents;
       readablesRef.current.set(ACTIVITY_READABLE_ID, {
         id: ACTIVITY_READABLE_ID,
         description:
           "Compact AMS activity memory: recent business events, active form, last user edit, and last submit result. This is intentionally summarized; do not assume it contains every historical action.",
         value: buildCopilotActivitySnapshot(activityEventsRef.current, {
           currentRoute: pathname,
-          recentLimit: 20,
+          recentLimit: 40,
         }),
       });
       schedulePush();
       return event;
     },
-    [pathname, schedulePush],
+    [pathname, postHitlDecision, schedulePush],
   );
   trackActivityRef.current = trackActivity;
 
@@ -682,28 +792,25 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     return command;
   }, [postVoiceCommand, trackActivity]);
 
-  const sendHitlDecision = useCallback((decision: "approve" | "reject") => {
-    const iframe = iframeRef.current;
-    if (!iframe?.contentWindow) return false;
-
-    iframe.contentWindow.postMessage(
-      {
-        source: "ams-copilot",
-        type: "HITL_DECISION",
-        decision,
-      },
-      TRUSTED_ORIGIN,
-    );
+  const sendHitlDecision = useCallback((
+    decision: "approve" | "reject",
+    reason?: HitlRejectionReason,
+  ) => {
+    if (!postHitlDecision(decision, reason)) return false;
+    pendingHitlRef.current = null;
 
     trackActivity({
       kind: "approval_decision",
       actor: "user",
       title: `User ${decision === "approve" ? "approved" : "rejected"} assistant action`,
-      details: { decision },
+      details: {
+        decision,
+        ...(reason ? { reason } : {}),
+      },
     });
 
     return true;
-  }, [trackActivity]);
+  }, [postHitlDecision, trackActivity]);
 
   const postActionResultWhenContextReady = useCallback(
     ({
@@ -907,11 +1014,20 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
             received: args,
           };
         }
+        if (isSameCopilotRoute(pathname, route)) {
+          return {
+            ok: false,
+            errorType: "duplicate_navigation",
+            message:
+              `Already on ${route}. Use the current page context, active form, or same-page actions instead of navigating again.`,
+            route,
+          };
+        }
         router.push(route);
         return { ok: true, route };
       },
     });
-  }, [registerAction, router]);
+  }, [pathname, registerAction, router]);
 
   // Registry-backed form opener. Module contracts live in
   // copilotModuleManifest so new modules can reuse the same route/open flow.
@@ -1129,6 +1245,15 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      if (event.data.type === "START_VOICE_CAPTURE") {
+        window.dispatchEvent(new Event(COPILOT_START_VOICE_EVENT));
+        return;
+      }
+
+      if (event.data.type === "OPEN_OPENUI_PREVIEW") {
+        return;
+      }
+
       if (event.data.type === "HITL_INTERRUPT") {
         const interrupt = event.data.interrupt;
         if (
@@ -1136,10 +1261,20 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
           typeof interrupt === "object" &&
           Array.isArray(interrupt.actionRequests)
         ) {
+          const typedInterrupt = interrupt as CopilotHitlInterrupt;
+          pendingHitlRef.current = hasFormSubmitHitlRequest(typedInterrupt)
+            ? {
+                formId:
+                  extractHitlTargetFormId(typedInterrupt) ??
+                  findActiveFormIdInReadables(readablesRef.current),
+                route: pathname,
+                at: Date.now(),
+              }
+            : null;
           window.dispatchEvent(
             new CustomEvent<CopilotHitlInterrupt>(
               COPILOT_HITL_INTERRUPT_EVENT,
-              { detail: interrupt as CopilotHitlInterrupt },
+              { detail: typedInterrupt },
             ),
           );
           trackActivity({
@@ -1147,7 +1282,8 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
             actor: "assistant",
             title: "Assistant requested approval",
             details: {
-              actionCount: interrupt.actionRequests.length,
+              actionCount: typedInterrupt.actionRequests.length,
+              targetFormId: pendingHitlRef.current?.formId ?? null,
             },
           });
         }
@@ -1155,6 +1291,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
       }
 
       if (event.data.type === "HITL_INTERRUPT_CLEARED") {
+        pendingHitlRef.current = null;
         window.dispatchEvent(
           new CustomEvent<CopilotHitlInterrupt | null>(
             COPILOT_HITL_INTERRUPT_EVENT,
@@ -1226,6 +1363,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("message", handleMessage);
   }, [
     executeActionRequest,
+    pathname,
     queueActionExecutionUntilReady,
     trackActivity,
   ]);

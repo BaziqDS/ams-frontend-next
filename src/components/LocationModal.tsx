@@ -5,7 +5,7 @@ import { apiFetch, type Page } from "@/lib/api";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { LOCATION_TYPE_LABELS, locationTypeLabel, type LocationRecord } from "@/lib/userUiShared";
 import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
-import { normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
+import { ensureValueInOptions, normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
 import { focusCopilotFormField } from "@/lib/copilotFocus";
 import { buildLocationCopilotValuePatch, type LocationCopilotFormState } from "@/lib/locationCopilotForm";
 
@@ -257,10 +257,17 @@ export function LocationModal({ open, mode, location, createContext = "default",
       label: "Parent location",
       type: "select",
       readOnly: !showParentSelector,
-      options: [
-        { value: "", label: "No parent" },
-        ...parentSelectOptions.map(option => ({ value: option.value, label: option.label })),
-      ],
+      optionSource: "locations.parents",
+      resolver: "search_form_options",
+      optionsState: parentLoading ? "loading" : parentError ? "error" : undefined,
+      options: ensureValueInOptions(
+        [
+          { value: "", label: "No parent" },
+          ...parentSelectOptions.map(option => ({ value: option.value, label: option.label })),
+        ],
+        lockedParent ? String(lockedParent.id) : null,
+        lockedParent?.name,
+      ),
       description: "Parent Location id. Empty means a root location when the default hierarchy flow allows it.",
     },
     {
@@ -317,6 +324,8 @@ export function LocationModal({ open, mode, location, createContext = "default",
     form.create_main_store,
     isEditMode,
     locationTypeOptions,
+    parentError,
+    parentLoading,
     parentSelectOptions,
     showParentSelector,
   ]);
@@ -404,6 +413,7 @@ export function LocationModal({ open, mode, location, createContext = "default",
         ok: true,
         message: isEditMode ? "Location updated successfully." : "Location created successfully.",
         recordId: saved.id,
+        redirectTo: `/locations/${saved.id}`,
       };
     } catch (err) {
       const failure = normalizeCopilotSubmitError(err);
@@ -414,9 +424,9 @@ export function LocationModal({ open, mode, location, createContext = "default",
     }
   };
 
-  useCopilotForm({
-    formId: isEditMode && location ? `location-edit-${location.id}` : "location-create",
-    title: isEditMode ? "Edit Location" : "Create Location",
+  const { submitManually } = useCopilotForm({
+    formId: isEditMode && location ? `location-edit-${location.id}` : createContext === "child" ? "sublocation-create" : "location-create",
+    title: isEditMode ? "Edit Location" : createContext === "child" ? "Add Sub-Location" : "Create Location",
     description: "Create or edit a location on the Locations page.",
     mode,
     active: open,
@@ -592,7 +602,7 @@ export function LocationModal({ open, mode, location, createContext = "default",
           </div>
           <div className="modal-foot-actions">
             <button type="button" className="btn btn-md" onClick={onClose}>Cancel</button>
-            <button type="button" className="btn btn-md btn-primary" onClick={submit} disabled={!canSave}>{submitting ? "Saving…" : isEditMode ? "Save changes" : "Create location"}</button>
+            <button type="button" className="btn btn-md btn-primary" onClick={() => { void submitManually("submit"); }} disabled={!canSave}>{submitting ? "Saving…" : isEditMode ? "Save changes" : "Create location"}</button>
           </div>
         </footer>
       </div>

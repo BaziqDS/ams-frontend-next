@@ -1,4 +1,9 @@
 import type { StockEntryFormItem, StockEntryFormState } from "@/lib/stockEntryFormRules";
+import {
+  searchCopilotFormOptions,
+  type CopilotFormOptionSearchResult,
+  type CopilotPatchField,
+} from "@/lib/copilotFormRuntime";
 
 type IdValue = string | number;
 
@@ -328,4 +333,139 @@ export function buildStockEntryCopilotReferenceContext({
       source_register_options: sourceRegisters.map(toRegisterSelectOption),
     })),
   };
+}
+
+type StockEntryCopilotReferenceContext = ReturnType<typeof buildStockEntryCopilotReferenceContext>;
+
+function lineIndexFromFieldPath(field: string) {
+  const match = field.match(/^items\.(\d+)\./);
+  return match ? Number(match[1]) : 0;
+}
+
+function optionsStateFor(options: unknown[], dependenciesReady: boolean) {
+  return dependenciesReady ? undefined : options.length === 0 ? "requires_dependency" as const : undefined;
+}
+
+function buildSearchFieldsForStockEntry(
+  context: StockEntryCopilotReferenceContext,
+  field: string,
+): CopilotPatchField[] {
+  const currentValues = context.current_values;
+  const lineIndex = lineIndexFromFieldPath(field);
+  const line = context.line_item_options.find(candidate => candidate.index === lineIndex)
+    ?? context.line_item_options[0];
+  const itemSelected = Boolean(currentValues.items[lineIndex]?.item);
+  const sourceReady = currentValues.entry_type === "ISSUE"
+    ? Boolean(currentValues.from_location)
+    : Boolean(currentValues.to_location && (currentValues.return_source === "PERSON"
+      ? currentValues.issued_to
+      : currentValues.from_location));
+
+  return [
+    {
+      name: "from_location",
+      label: currentValues.entry_type === "ISSUE" ? "Source store" : "Returning non-store",
+      type: "select",
+      options: currentValues.entry_type === "ISSUE"
+        ? context.source_store_options
+        : context.returning_non_store_options,
+      optionSource: "stockEntry.sourceLocations",
+      resolver: "search_form_options",
+    },
+    {
+      name: "to_location",
+      label: currentValues.entry_type === "ISSUE" ? "Destination" : "Receiving store",
+      type: "select",
+      options: currentValues.entry_type === "ISSUE"
+        ? currentValues.issue_target === "LOCATION"
+          ? context.destination_non_store_options
+          : context.destination_store_options
+        : context.source_store_options,
+      dependsOn: currentValues.entry_type === "ISSUE" ? ["from_location", "issue_target"] : [],
+      optionSource: "stockEntry.destinationLocations",
+      resolver: "search_form_options",
+    },
+    {
+      name: "issued_to",
+      label: currentValues.entry_type === "ISSUE" ? "Receiving person" : "Returning person",
+      type: "select",
+      options: currentValues.entry_type === "ISSUE"
+        ? context.receiving_person_options
+        : context.returning_person_options,
+      dependsOn: currentValues.entry_type === "ISSUE"
+        ? ["from_location", "issue_target"]
+        : ["to_location", "return_source"],
+      optionSource: "stockEntry.people",
+      resolver: "search_form_options",
+    },
+    {
+      name: "items",
+      label: "Line items",
+      type: "array",
+      arrayItemFields: [
+        {
+          name: "item",
+          label: "Item",
+          type: "select",
+          options: line?.item_options ?? [],
+          dependsOn: currentValues.entry_type === "ISSUE"
+            ? ["from_location"]
+            : ["to_location", currentValues.return_source === "PERSON" ? "issued_to" : "from_location"],
+          optionsState: optionsStateFor(line?.item_options ?? [], sourceReady),
+          optionSource: "stockEntry.availableItems",
+          resolver: "search_form_options",
+        },
+        {
+          name: "batch",
+          label: "Batch",
+          type: "select",
+          options: line?.batch_options ?? [],
+          dependsOn: ["items[].item"],
+          optionsState: optionsStateFor(line?.batch_options ?? [], itemSelected),
+          optionSource: "stockEntry.availableBatches",
+          resolver: "search_form_options",
+        },
+        {
+          name: "instances",
+          label: "Instances",
+          type: "array",
+          arrayItemType: "string",
+          options: line?.instance_options ?? [],
+          dependsOn: currentValues.entry_type === "ISSUE"
+            ? ["from_location", "items[].item"]
+            : ["to_location", currentValues.return_source === "PERSON" ? "issued_to" : "from_location", "items[].item"],
+          optionsState: optionsStateFor(line?.instance_options ?? [], sourceReady && itemSelected),
+          optionSource: "stockEntry.availableInstances",
+          resolver: "search_form_options",
+        },
+        {
+          name: "stock_register",
+          label: "Source register",
+          type: "select",
+          options: line?.source_register_options ?? context.source_register_options,
+          dependsOn: ["from_location"],
+          optionSource: "stockEntry.sourceRegisters",
+          resolver: "search_form_options",
+        },
+      ],
+    },
+  ];
+}
+
+export function searchStockEntryCopilotOptions(
+  context: StockEntryCopilotReferenceContext,
+  request: {
+    field: string;
+    query?: string;
+    currentValues?: Record<string, unknown>;
+    limit?: number;
+  },
+): CopilotFormOptionSearchResult {
+  return searchCopilotFormOptions({
+    fields: buildSearchFieldsForStockEntry(context, request.field),
+    field: request.field,
+    query: request.query,
+    currentValues: request.currentValues ?? context.current_values as unknown as Record<string, unknown>,
+    limit: request.limit,
+  });
 }

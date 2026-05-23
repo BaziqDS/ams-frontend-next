@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { apiFetch } from "@/lib/api";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
-import { normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
+import { ensureValueInOptions, normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
 
 const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
   <svg aria-hidden="true" focusable="false" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -247,13 +247,15 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
 
       await onSave?.();
       onClose();
+      const recordId =
+        savedCategory && typeof savedCategory === "object" && "id" in savedCategory
+          ? (savedCategory as { id: string | number }).id
+          : category?.id;
       return {
         ok: true,
         message: isEditMode ? "Category updated successfully." : "Category created successfully.",
-        recordId:
-          savedCategory && typeof savedCategory === "object" && "id" in savedCategory
-            ? (savedCategory as { id: string | number }).id
-            : category?.id,
+        recordId,
+        redirectTo: recordId ? `/categories/${recordId}` : "/categories",
       };
     } catch (err) {
       const failure = normalizeCopilotSubmitError(err);
@@ -267,7 +269,17 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
   const copilotFields = useMemo<CopilotFormField[]>(() => [
     { name: "name", label: "Category name", type: "string", required: true },
     { name: "code", label: "Category code", type: "string", description: "Optional. Leave blank to let the backend generate one." },
-    { name: "parent_category", label: "Parent category", type: "string", readOnly: Boolean(lockedParent) || isEditMode },
+    {
+      name: "parent_category",
+      label: "Parent category",
+      type: "select",
+      readOnly: Boolean(lockedParent) || isEditMode,
+      options: ensureValueInOptions(
+        [{ value: "", label: "No parent (top-level)" }],
+        lockedParent ? String(lockedParent.id) : null,
+        lockedParent?.name,
+      ),
+    },
     {
       name: "category_type",
       label: "Category type",
@@ -312,7 +324,7 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
     };
   }, [form, isEditMode]);
 
-  useCopilotForm({
+  const { submitManually } = useCopilotForm({
     formId: isEditMode && category ? `category-edit-${category.id}` : createContext === "child" ? "subcategory-create" : "category-create",
     title: isEditMode ? "Edit Category" : createContext === "child" ? "Create Subcategory" : "Create Category",
     description: "Create or edit an inventory category on the Categories page.",
@@ -453,7 +465,7 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
           </div>
           <div className="modal-foot-actions">
             <button type="button" className="btn btn-md" onClick={onClose}>Cancel</button>
-            <button type="button" className="btn btn-md btn-primary" onClick={submit} disabled={!canSave}>{submitting ? "Saving…" : isEditMode ? "Save changes" : "Create category"}</button>
+            <button type="button" className="btn btn-md btn-primary" onClick={() => { void submitManually("submit"); }} disabled={!canSave}>{submitting ? "Saving…" : isEditMode ? "Save changes" : "Create category"}</button>
           </div>
         </footer>
       </div>

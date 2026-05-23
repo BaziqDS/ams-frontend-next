@@ -10,6 +10,7 @@ import { CategoryModal, type CategoryRecord } from "@/components/CategoryModal";
 import { apiFetch, type Page } from "@/lib/api";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
 import { useCopilotAction } from "@/hooks/useCopilotAction";
+import { useCopilotListControls } from "@/hooks/useCopilotListControls";
 import { useCopilotReadable } from "@/hooks/useCopilotReadable";
 import {
   consumePendingOpen,
@@ -353,6 +354,51 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
     setPage,
   } = useClientPagination(filteredCategories, CATEGORIES_PAGE_SIZE, [search, typeFilter, statusFilter, variant, parentId]);
 
+  const categoryListControls = useCopilotListControls({
+    entity: variant === "children" ? "subcategory" : "category",
+    filters: [
+      {
+        name: "search",
+        type: "string",
+        defaultValue: "",
+        label: "Search",
+        description: "Search by category name, code, parent, type, or tracking profile.",
+        setValue: value => setSearch(String(value ?? "")),
+      },
+      {
+        name: "type",
+        type: "enum",
+        defaultValue: "all",
+        label: "Type",
+        options: [
+          { value: "all", label: "All types" },
+          ...typeOptions.map(type => ({ value: type, label: formatLabel(type) })),
+        ],
+        setValue: value => setTypeFilter(String(value ?? "all")),
+      },
+      {
+        name: "status",
+        type: "enum",
+        defaultValue: "all",
+        label: "Status",
+        options: [
+          { value: "all", label: "All statuses" },
+          { value: "active", label: "Active" },
+          { value: "inactive", label: "Disabled" },
+        ],
+        setValue: value => setStatusFilter(String(value ?? "all")),
+      },
+    ],
+    page,
+    totalPages,
+    setPage,
+    visibleRows: pagedCategories.map((category, index) => ({
+      row_number: index + 1,
+      id: category.id,
+      detail_route: `/categories/${category.id}`,
+    })),
+  });
+
   // Expose the categories (or subcategories under a parent) currently
   // displayed so the agent can resolve names → ids without a SQL lookup.
   const categoriesListReadable = useMemo(() => buildCopilotListContext({
@@ -385,6 +431,7 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
       },
     })),
     actions: {
+      ...categoryListControls,
       create_category: canManageCategories && variant !== "children",
       create_subcategory: canManageCategories && variant === "children" && Boolean(parentCategory),
     },
@@ -410,6 +457,7 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
     capsLoading,
     isLoading,
     page,
+    categoryListControls,
     totalPages,
   ]);
 

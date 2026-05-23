@@ -5,7 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import type { LocationRecord, StockRegisterRecord } from "@/lib/userUiShared";
 import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
-import { normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
+import { ensureValueInOptions, normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
 import { focusCopilotFormField } from "@/lib/copilotFocus";
 
 const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
@@ -191,10 +191,17 @@ export function StockRegisterModal({ open, mode, register, stores, storesLoading
       label: "Store",
       type: "select",
       required: true,
-      options: stores.map((store) => ({
-        value: String(store.id),
-        label: store.name,
-      })),
+      optionSource: "stockRegisters.stores",
+      resolver: "search_form_options",
+      optionsState: storesLoading ? "loading" : storesError ? "error" : undefined,
+      options: ensureValueInOptions(
+        stores.map((store) => ({
+          value: String(store.id),
+          label: store.name,
+        })),
+        form.store || null,
+        register?.store_name ?? undefined,
+      ),
     },
     {
       name: "is_active",
@@ -203,7 +210,7 @@ export function StockRegisterModal({ open, mode, register, stores, storesLoading
       readOnly: true,
       description: "New registers are active by default; lifecycle actions close or reopen them later.",
     },
-  ], [stores]);
+  ], [stores, storesError, storesLoading]);
 
   const validateForCopilot = useCallback(() => {
     setTouched(new Set(["register_number", "register_type", "store"]));
@@ -257,6 +264,7 @@ export function StockRegisterModal({ open, mode, register, stores, storesLoading
         ok: true,
         message: isEditMode ? "Stock register updated successfully." : "Stock register created successfully.",
         recordId: saved.id,
+        redirectTo: "/stock-registers",
       };
     } catch (err) {
       const failure = normalizeCopilotSubmitError(err);
@@ -267,7 +275,7 @@ export function StockRegisterModal({ open, mode, register, stores, storesLoading
     }
   };
 
-  useCopilotForm({
+  const { submitManually } = useCopilotForm({
     formId: isEditMode && register ? `stock-register-edit-${register.id}` : "stock-register-create",
     title: isEditMode ? "Edit Stock Register" : "Create Stock Register",
     description: "Create or edit a stock-register ledger on the Stock Registers page.",
@@ -384,7 +392,7 @@ export function StockRegisterModal({ open, mode, register, stores, storesLoading
           </div>
           <div className="modal-foot-actions">
             <button type="button" className="btn btn-md" onClick={onClose}>Cancel</button>
-            <button type="button" className="btn btn-md btn-primary" onClick={submit} disabled={!canSave}>{submitting ? "Saving…" : isEditMode ? "Save changes" : "Create register"}</button>
+            <button type="button" className="btn btn-md btn-primary" onClick={() => { void submitManually("submit"); }} disabled={!canSave}>{submitting ? "Saving…" : isEditMode ? "Save changes" : "Create register"}</button>
           </div>
         </footer>
       </div>

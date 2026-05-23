@@ -31,6 +31,7 @@ describe("copilot module manifest", () => {
     expect(getCopilotOpenFormIds()).toEqual([
       "inspection_create",
       "location_create",
+      "sublocation_create",
       "category_create",
       "subcategory_create",
       "item_create",

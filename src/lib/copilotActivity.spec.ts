@@ -128,6 +128,32 @@ describe("copilot activity memory", () => {
     });
   });
 
+  it("clears active form memory after the user navigates to another route", () => {
+    const events = [
+      createCopilotActivityEvent({
+        kind: "form_opened",
+        actor: "user",
+        title: "Opened New Inspection Certificate",
+        route: "/inspections",
+        formId: "inspection_create",
+        formTitle: "New Inspection Certificate",
+      }),
+      createCopilotActivityEvent({
+        kind: "route_changed",
+        actor: "user",
+        title: "Current page changed to /inspections/42",
+        route: "/inspections/42",
+      }),
+    ];
+
+    const snapshot = buildCopilotActivitySnapshot(events, {
+      currentRoute: "/inspections/42",
+    });
+
+    expect(snapshot.currentPage.pathname).toBe("/inspections/42");
+    expect(snapshot.activeForm).toBeNull();
+  });
+
   it("truncates long values before exposing them to the agent", () => {
     const value = previewCopilotActivityValue("x".repeat(500), 80);
 

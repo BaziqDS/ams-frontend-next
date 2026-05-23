@@ -4,16 +4,18 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import {
   COPILOT_ASSISTANT_MESSAGE_EVENT,
   COPILOT_HITL_INTERRUPT_EVENT,
+  COPILOT_START_VOICE_EVENT,
   type CopilotAssistantMessageEvent,
   type CopilotHitlInterrupt,
   useCopilotHitlDecision,
   useCopilotVoiceCommand,
 } from "@/contexts/CopilotContext";
+import { buildVoiceTranscriptDraft } from "@/lib/voiceCapture";
 import {
-  buildVoiceTranscriptDraft,
-  formatVoiceCaptureError,
-  getVoiceMediaStream,
-} from "@/lib/voiceCapture";
+  createDebouncedTranslator,
+  translateText,
+  type TranslateResult,
+} from "@/lib/voiceTranslate";
 
 type VoiceStatus =
   | "idle"
@@ -37,6 +39,8 @@ type SpeechRecognitionLike = {
 
 const AUTO_SPEAK_STORAGE_KEY = "ams.voice-copilot.auto-speak";
 const VOICE_RESPONSE_WINDOW_MS = 120_000;
+const VOICE_RECOGNITION_LANGUAGE = "ur-PK";
+const VOICE_TRANSLATION_SOURCE_LANGUAGE = "ur";
 
 function getSpeechRecognitionCtor():
   | (new () => SpeechRecognitionLike)
@@ -47,17 +51,6 @@ function getSpeechRecognitionCtor():
     webkitSpeechRecognition?: new () => SpeechRecognitionLike;
   };
   return win.SpeechRecognition ?? win.webkitSpeechRecognition;
-}
-
-function supportedMimeType() {
-  if (typeof MediaRecorder === "undefined") return "";
-  const candidates = [
-    "audio/webm;codecs=opus",
-    "audio/webm",
-    "audio/ogg;codecs=opus",
-    "audio/mp4",
-  ];
-  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? "";
 }
 
 function ellipsize(value: string, max = 420) {
@@ -143,26 +136,32 @@ export function CopilotVoiceOverlay() {
   });
   const [interrupt, setInterrupt] = useState<CopilotHitlInterrupt | null>(null);
   const [approvalBusy, setApprovalBusy] = useState<"approve" | "reject" | null>(null);
+  const [liveTranslation, setLiveTranslation] = useState("");
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const lastVoiceCommandAtRef = useRef<number | null>(null);
+  const translatorRef = useRef(
+    createDebouncedTranslator((result: TranslateResult) => {
+      if (result.ok && result.translatedText) {
+        setLiveTranslation(result.translatedText);
+      }
+    }, 400),
+  );
 
-  const displayTranscript = draftTranscript || finalTranscript || liveTranscript;
+  const displayTranscript = draftTranscript || finalTranscript || liveTranslation || liveTranscript;
+  const visibleVoiceText =
+    error ||
+    displayTranscript ||
+    assistantPreview ||
+    "Ask AMS anything by voice without opening the chat panel";
   const isBusy = status === "recording" || status === "transcribing" || status === "sending";
   const hasVoiceGlow = isBusy || isVoiceAgentWorking;
   const voiceGlowColor =
     status === "recording"
       ? "color-mix(in oklch, var(--danger) 70%, white)"
       : "color-mix(in oklch, var(--primary) 76%, white)";
-  const canSendDraft = draftTranscript.trim().length > 0 && !isBusy;
-
-  const stopTracks = useCallback(() => {
-    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
-    mediaStreamRef.current = null;
-  }, []);
+  const typedMessage = draftTranscript.trim();
+  const canSendDraft = typedMessage.length > 0 && !isBusy;
 
   const stopRecognition = useCallback(() => {
     const recognition = recognitionRef.current;
@@ -210,26 +209,31 @@ export function CopilotVoiceOverlay() {
     }, 1600);
   }, [sendVoiceCommand]);
 
-  const transcribeAudio = useCallback(async (blob: Blob) => {
+  const finalizeSpeechTranscript = useCallback(async () => {
+    translatorRef.current.cancel();
+    const rawText = liveTranscript.trim();
+
+    if (!rawText) {
+      setStatus("idle");
+      return;
+    }
+
     setStatus("transcribing");
     setError("");
 
-    const form = new FormData();
-    form.set("audio", blob, "voice-command.webm");
-
     try {
-      const response = await fetch("/api/copilot/voice/transcribe", {
-        method: "POST",
-        body: form,
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.error || "Voice transcription failed.");
-      }
-      const transcript = String(payload.text ?? "").trim() || liveTranscript.trim();
+      const translated = await translateText(
+        rawText,
+        "en",
+        VOICE_TRANSLATION_SOURCE_LANGUAGE,
+      );
+      const englishText = translated.ok && translated.translatedText
+        ? translated.translatedText
+        : liveTranslation || rawText;
+
       const draft = buildVoiceTranscriptDraft({
-        translatedText: transcript,
-        fallbackText: liveTranscript,
+        translatedText: englishText,
+        fallbackText: rawText,
       });
       setFinalTranscript(draft.text);
       setDraftTranscript(draft.text);
@@ -238,10 +242,8 @@ export function CopilotVoiceOverlay() {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
       setStatus("error");
-    } finally {
-      stopTracks();
     }
-  }, [liveTranscript, stopTracks]);
+  }, [liveTranscript, liveTranslation]);
 
   const startBrowserRecognition = useCallback(() => {
     const Recognition = getSpeechRecognitionCtor();
@@ -250,7 +252,7 @@ export function CopilotVoiceOverlay() {
     const recognition = new Recognition();
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = "en-US";
+    recognition.lang = VOICE_RECOGNITION_LANGUAGE;
     recognition.onresult = (event: unknown) => {
       const results = (event as { results?: ArrayLike<ArrayLike<{ transcript?: string }>> }).results;
       if (!results) return;
@@ -259,10 +261,14 @@ export function CopilotVoiceOverlay() {
         const item = results[i]?.[0]?.transcript;
         if (item) parts.push(item);
       }
-      setLiveTranscript(parts.join(" ").trim());
+      const joined = parts.join(" ").trim();
+      setLiveTranscript(joined);
+      if (joined) {
+        translatorRef.current.translate(joined, "en", VOICE_TRANSLATION_SOURCE_LANGUAGE);
+      }
     };
     recognition.onerror = () => {
-      /* Final transcript still comes from Groq. Browser interim STT is only UX. */
+      /* SpeechRecognition errors are non-fatal; the user can still edit the draft. */
     };
     recognition.onend = () => {
       recognitionRef.current = null;
@@ -276,80 +282,58 @@ export function CopilotVoiceOverlay() {
     }
   }, []);
 
-  const startRecording = useCallback(async () => {
+  const startRecording = useCallback(() => {
     if (isBusy) return;
-    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      setError("Microphone capture is not available in this browser.");
+    const Recognition = getSpeechRecognitionCtor();
+    if (!Recognition) {
+      setError("Speech recognition is not supported in this browser.");
       setStatus("error");
       return;
     }
 
-    try {
-      setError("");
-      setLiveTranscript("");
-      setFinalTranscript("");
-      setDraftTranscript("");
-      setAssistantPreview("");
-      const stream = await getVoiceMediaStream(navigator.mediaDevices);
-      mediaStreamRef.current = stream;
-      audioChunksRef.current = [];
+    setError("");
+    setLiveTranscript("");
+    setLiveTranslation("");
+    setFinalTranscript("");
+    setDraftTranscript("");
+    setAssistantPreview("");
+    translatorRef.current.cancel();
 
-      const mimeType = supportedMimeType();
-      const recorder = new MediaRecorder(
-        stream,
-        mimeType ? { mimeType } : undefined,
-      );
-      mediaRecorderRef.current = recorder;
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) audioChunksRef.current.push(event.data);
-      };
-      recorder.onstop = () => {
-        const blob = new Blob(audioChunksRef.current, {
-          type: recorder.mimeType || "audio/webm",
-        });
-        audioChunksRef.current = [];
-        mediaRecorderRef.current = null;
-        void transcribeAudio(blob);
-      };
+    startBrowserRecognition();
+    setStatus("recording");
+  }, [isBusy, startBrowserRecognition]);
 
-      recorder.start();
-      startBrowserRecognition();
-      setStatus("recording");
-    } catch (err) {
-      stopTracks();
-      setError(formatVoiceCaptureError(err));
-      setStatus("error");
-    }
-  }, [isBusy, startBrowserRecognition, stopTracks, transcribeAudio]);
+  useEffect(() => {
+    const onStartVoice = () => startRecording();
+    window.addEventListener(COPILOT_START_VOICE_EVENT, onStartVoice);
+    return () => window.removeEventListener(COPILOT_START_VOICE_EVENT, onStartVoice);
+  }, [startRecording]);
 
   const clearDraft = useCallback(() => {
+    translatorRef.current.cancel();
     setDraftTranscript("");
     setFinalTranscript("");
     setLiveTranscript("");
+    setLiveTranslation("");
     setError("");
     setStatus("idle");
   }, []);
 
   const stopRecording = useCallback(() => {
     stopRecognition();
-    const recorder = mediaRecorderRef.current;
-    if (!recorder || recorder.state === "inactive") {
-      stopTracks();
-      setStatus("idle");
-      return;
-    }
-    recorder.stop();
-  }, [stopRecognition, stopTracks]);
+    void finalizeSpeechTranscript();
+  }, [stopRecognition, finalizeSpeechTranscript]);
 
   useEffect(() => {
+    const translator = translatorRef.current;
     return () => {
+      translator.cancel();
       stopRecognition();
-      stopTracks();
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
       }
     };
-  }, [stopRecognition, stopTracks]);
+  }, [stopRecognition]);
 
   useEffect(() => {
     window.localStorage.setItem(AUTO_SPEAK_STORAGE_KEY, autoSpeak ? "true" : "false");
@@ -390,7 +374,7 @@ export function CopilotVoiceOverlay() {
 
   const statusLabel = useMemo(() => {
     if (status === "recording") return "Listening";
-    if (status === "transcribing") return "Transcribing with Groq";
+    if (status === "transcribing") return "Transcribing & translating";
     if (status === "sending") return "Sending to AMS assistant";
     if (status === "sent") return "Sent";
     if (status === "error") return "Voice unavailable";
@@ -428,8 +412,8 @@ export function CopilotVoiceOverlay() {
         .voice-copilot-overlay::before {
           content: "";
           position: absolute;
-          inset: -7px;
-          border-radius: 999px;
+          inset: -5px;
+          border-radius: 24px;
           background:
             radial-gradient(circle at 18% 50%, var(--voice-glow-color), transparent 30%),
             radial-gradient(circle at 82% 50%, var(--voice-glow-color), transparent 30%);
@@ -574,163 +558,141 @@ export function CopilotVoiceOverlay() {
           left: "50%",
           bottom: 18,
           transform: "translateX(-50%)",
-          width: "min(680px, calc(100vw - 32px))",
+          width: "min(464px, calc(100vw - 32px))",
           zIndex: 1087,
-          border: "1px solid color-mix(in oklch, var(--primary) 14%, var(--hairline))",
-          borderRadius: 999,
-          background: "color-mix(in oklch, var(--card) 88%, white)",
-          boxShadow: "0 18px 48px -22px rgba(15, 23, 42, 0.42)",
-          backdropFilter: "blur(16px)",
-          padding: 8,
-          display: "grid",
-          gridTemplateColumns: "auto 1fr auto auto auto",
-          alignItems: "center",
-          gap: 8,
+          border: "1px solid color-mix(in oklch, var(--ink) 10%, var(--hairline))",
+          borderRadius: 14,
+          background: "color-mix(in oklch, var(--card) 94%, white)",
+          boxShadow: "0 14px 38px -24px rgba(15, 23, 42, 0.34)",
+          backdropFilter: "blur(14px)",
+          padding: "7px 9px 6px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 4,
         } as CSSProperties}
       >
-        <button
-          type="button"
-          aria-label={status === "recording" ? "Stop voice command" : "Start voice command"}
-          onClick={status === "recording" ? stopRecording : startRecording}
-          disabled={status === "transcribing" || status === "sending"}
-          style={{
-            width: 42,
-            height: 42,
-            borderRadius: 999,
-            border: "1px solid color-mix(in oklch, var(--primary) 20%, var(--hairline))",
-            background:
-              status === "recording"
-                ? "color-mix(in oklch, var(--danger) 88%, black)"
-                : "var(--primary)",
-            color: "var(--primary-ink)",
-            display: "grid",
-            placeItems: "center",
-            cursor: status === "transcribing" || status === "sending" ? "not-allowed" : "pointer",
-          }}
-        >
-          {status === "recording" ? (
-            <span
-              style={{
-                width: 12,
-                height: 12,
-                borderRadius: 3,
-                background: "currentColor",
-              }}
-            />
-          ) : (
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z" />
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-              <path d="M12 19v3" />
-            </svg>
-          )}
-        </button>
-
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink)" }}>
-            {statusLabel}
-          </div>
-          {draftTranscript ? (
-            <input
-              value={draftTranscript}
-              onChange={(event) => setDraftTranscript(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey && canSendDraft) {
-                  event.preventDefault();
-                  submitTranscript(draftTranscript);
-                }
-              }}
-              aria-label="Edit voice transcript before sending"
-              style={{
-                width: "100%",
-                minWidth: 0,
-                border: "none",
-                outline: "none",
-                background: "transparent",
-                color: "var(--ink-2)",
-                font: "inherit",
-                fontSize: 13,
-                padding: 0,
-              }}
-            />
-          ) : (
-            <div
-              style={{
-                fontSize: 13,
-                color: displayTranscript || assistantPreview || error ? "var(--ink-2)" : "var(--muted-2)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-              title={displayTranscript || assistantPreview || error || undefined}
-            >
-              {error ||
-                displayTranscript ||
-                assistantPreview ||
-                "Ask AMS anything by voice without opening the chat panel"}
-            </div>
-          )}
+          <textarea
+            value={draftTranscript}
+            onChange={(event) => {
+              setDraftTranscript(event.target.value);
+              if (error) setError("");
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && canSendDraft) {
+                event.preventDefault();
+                submitTranscript(draftTranscript);
+              }
+            }}
+            placeholder={error || assistantPreview || displayTranscript || "Ask AMS anything..."}
+            aria-label="Type or edit assistant message"
+            style={{
+              width: "100%",
+              minHeight: 28,
+              maxHeight: 76,
+              resize: "none",
+              overflowY: "auto",
+              border: "none",
+              outline: "none",
+              background: "transparent",
+              color: "var(--ink)",
+              font: "inherit",
+              fontSize: 13,
+              lineHeight: 1.3,
+              padding: "1px 2px 0",
+            }}
+          />
         </div>
 
-        <button
-          type="button"
-          aria-label={autoSpeak ? "Mute voice responses" : "Enable voice responses"}
-          title={autoSpeak ? "Mute responses" : "Speak responses"}
-          onClick={() => setAutoSpeak((value) => !value)}
+        <div
           style={{
-            width: 34,
-            height: 34,
-            borderRadius: 999,
-            border: "1px solid var(--hairline)",
-            background: autoSpeak ? "var(--primary-weak)" : "var(--card)",
-            color: autoSpeak ? "var(--primary)" : "var(--muted)",
-            display: "grid",
-            placeItems: "center",
-            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 6,
           }}
         >
-          <svg
-            width="17"
-            height="17"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M11 5 6 9H3v6h3l5 4V5Z" />
-            {autoSpeak ? <path d="M15.5 8.5a5 5 0 0 1 0 7" /> : <path d="m16 9 5 5m0-5-5 5" />}
-          </svg>
-        </button>
-
-        {status === "recording" ? (
-          <button type="button" className="btn" onClick={stopRecording}>
-            Stop
-          </button>
-        ) : null}
-
-        {draftTranscript ? (
-          <>
-            <button type="button" className="btn btn-primary" disabled={!canSendDraft} onClick={() => submitTranscript(draftTranscript)}>
-              Send
+          <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+            <button
+              type="button"
+              aria-label="Clear voice text"
+              title="Clear voice text"
+              onClick={clearDraft}
+              disabled={!draftTranscript && !finalTranscript && !liveTranscript && !liveTranslation && !error}
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: 8,
+                border: "none",
+                background: "transparent",
+                color: "var(--muted)",
+                display: "grid",
+                placeItems: "center",
+                cursor: draftTranscript || finalTranscript || liveTranscript || liveTranslation || error ? "pointer" : "default",
+                opacity: draftTranscript || finalTranscript || liveTranscript || liveTranslation || error ? 1 : 0.55,
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
             </button>
-            <button type="button" className="btn" onClick={clearDraft}>
-              Clear
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <button
+              type="button"
+              aria-label={status === "recording" ? "Stop voice command" : "Start voice command"}
+              title={status === "recording" ? "Stop recording" : "Start voice"}
+              onClick={status === "recording" ? stopRecording : startRecording}
+              disabled={status === "transcribing" || status === "sending"}
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: 8,
+                border: "none",
+                background: "transparent",
+                color: status === "recording" ? "var(--danger)" : "var(--muted)",
+                display: "grid",
+                placeItems: "center",
+                cursor: status === "transcribing" || status === "sending" ? "not-allowed" : "pointer",
+              }}
+            >
+              {status === "recording" ? (
+                <span style={{ width: 10, height: 10, borderRadius: 3, background: "currentColor" }} />
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <path d="M12 19v3" />
+                </svg>
+              )}
             </button>
-          </>
-        ) : null}
+
+            <button
+              type="button"
+              aria-label="Send voice command"
+              title="Send voice command"
+              disabled={!canSendDraft}
+              onClick={() => submitTranscript(draftTranscript)}
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 8,
+                border: "none",
+                background: canSendDraft ? "color-mix(in oklch, var(--ink) 82%, white)" : "color-mix(in oklch, var(--muted) 36%, white)",
+                color: "white",
+                display: "grid",
+                placeItems: "center",
+                cursor: canSendDraft ? "pointer" : "not-allowed",
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 19V5" />
+                <path d="m5 12 7-7 7 7" />
+              </svg>
+            </button>
+          </div>
+        </div>
       </section>
     </>
   );

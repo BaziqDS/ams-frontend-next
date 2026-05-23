@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, type Page } from "@/lib/api";
 import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
-import { normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
+import { ensureValueInOptions, normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -204,6 +204,9 @@ export function InspectionModal({
   };
 
   const stage = inspection?.stage ?? "DRAFT";
+  const copilotFormId = `inspection-${mode}`;
+  const copilotFormTitle =
+    mode === "create" ? "New Inspection Certificate" : "Inspection Certificate";
   const isEditDraft = mode === "edit" && stage === "DRAFT";
   const isEditStage2 = mode === "edit" && stage === "STOCK_DETAILS";
   const isEditStage3 = mode === "edit" && stage === "CENTRAL_REGISTER";
@@ -520,15 +523,19 @@ export function InspectionModal({
         });
       }
 
-      await onSave();
-      onClose();
-      return {
+      const result = {
         ok: true,
         message: saveAsDraft
           ? "Inspection certificate draft saved."
           : "Inspection certificate submitted successfully.",
         recordId: savedInspection?.id ?? inspection?.id,
+        redirectTo: savedInspection?.id ?? inspection?.id
+          ? `/inspections/${savedInspection?.id ?? inspection?.id}`
+          : "/inspections",
       };
+      await onSave();
+      onClose();
+      return result;
     } catch (err) {
       const failure = normalizeCopilotSubmitError(err);
       setSubmitError(failure.message || "Failed to save");
@@ -564,7 +571,13 @@ export function InspectionModal({
         type: "select",
         required: canEditBasic,
         readOnly: !canEditBasic,
-        options: locations.map(location => ({ label: location.name, value: location.id })),
+        optionSource: "inspections.departments",
+        resolver: "search_form_options",
+        options: ensureValueInOptions(
+          locations.map(location => ({ label: location.name, value: location.id })),
+          department || inspection?.department,
+          inspection?.department_name,
+        ),
       },
       { name: "date_of_delivery", label: "Date of Delivery", type: "date", required: canEditBasic, readOnly: !canEditBasic },
       { name: "remarks", label: "Remarks", type: "string", readOnly: !canEditBasic },
@@ -743,9 +756,9 @@ export function InspectionModal({
   const canCopilotSetValues =
     open && !isReadOnly && (canEditBasic || canEditItems || canEditStage2 || canEditStage3 || canEditStage4);
 
-  useCopilotForm({
-    formId: `inspection_${mode}`,
-    title: mode === "create" ? "New Inspection Certificate" : "Inspection Certificate",
+  const { submitManually } = useCopilotForm({
+    formId: copilotFormId,
+    title: copilotFormTitle,
     description:
       "Inspection certificate modal. The assistant can patch visible editable fields and item rows, but backend save still enforces permissions.",
     mode,
@@ -1151,12 +1164,12 @@ export function InspectionModal({
             <div className="modal-foot-actions">
               <button type="button" className="btn btn-md" onClick={onClose}>Cancel</button>
               {!isReadOnly && mode === "create" && (
-                <button type="button" className="btn btn-md" onClick={() => submit(true)} disabled={submitting || refsLoading}>
+                <button type="button" className="btn btn-md" onClick={() => { void submitManually("save_draft"); }} disabled={submitting || refsLoading}>
                   {submitting ? "Saving…" : "Save as Draft"}
                 </button>
               )}
               {!isReadOnly && (
-                <button type="button" className="btn btn-md btn-primary" onClick={() => submit(false)} disabled={submitting || refsLoading}>
+                <button type="button" className="btn btn-md btn-primary" onClick={() => { void submitManually("submit"); }} disabled={submitting || refsLoading}>
                   {submitting
                     ? "Saving…"
                     : mode === "create"

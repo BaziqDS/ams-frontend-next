@@ -11,9 +11,10 @@ import type { CategoryRecord } from "@/components/CategoryModal";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
 import { useCopilotAction } from "@/hooks/useCopilotAction";
 import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
+import { useCopilotListControls } from "@/hooks/useCopilotListControls";
 import { useCopilotReadable } from "@/hooks/useCopilotReadable";
 import { apiFetch, type Page } from "@/lib/api";
-import { normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
+import { ensureValueInOptions, normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
 import {
   consumePendingOpen,
   SAME_PAGE_OPEN_EVENT,
@@ -281,6 +282,26 @@ export function buildCategoryPath(categoryId: number | string | null | undefined
   }
 
   return parts.length ? parts.join(" / ") : fallback ?? null;
+}
+
+export function buildItemCategoryCopilotOption(
+  category: CategoryRecord,
+  categoryPath?: string | null,
+) {
+  const categoryType = category.resolved_category_type ?? category.category_type ?? null;
+  const trackingType = category.resolved_tracking_type ?? category.tracking_type ?? null;
+  return {
+    label: `${category.name} (${category.code})`,
+    value: String(category.id),
+    ...(categoryPath ? { category_path: categoryPath } : {}),
+    parent_category: category.parent_category,
+    ...(category.parent_category_display
+      ? { parent_category_display: category.parent_category_display }
+      : {}),
+    ...(categoryType ? { category_type: categoryType } : {}),
+    ...(trackingType ? { tracking_type: trackingType } : {}),
+    ...(category.notes ? { notes: category.notes } : {}),
+  };
 }
 
 type Density = "compact" | "balanced" | "comfortable";
@@ -672,6 +693,7 @@ export function ItemModal({
         ok: true,
         message: isEdit ? "Item updated successfully." : "Item created successfully.",
         recordId: savedItem.id,
+        redirectTo: `/items/${savedItem.id}`,
       };
     } catch (err) {
       const failure = normalizeCopilotSubmitError(err);
@@ -690,10 +712,20 @@ export function ItemModal({
       label: "Subcategory",
       type: "select",
       required: true,
-      options: categories.map(category => ({
-        label: `${category.name} (${category.code})`,
-        value: String(category.id),
-      })),
+      optionSource: "items.categories",
+      resolver: "search_form_options",
+      description:
+        "Required. Choose a semantically appropriate active subcategory. Compare the item name, description, and specifications against category_path, category_type, tracking_type, and notes. If no listed subcategory fits, ask the user whether to create a new category/subcategory before filling this field.",
+      options: ensureValueInOptions(
+        categories.map(category =>
+          buildItemCategoryCopilotOption(
+            category,
+            buildCategoryPath(category.id, categories, category.name),
+          ),
+        ),
+        form.category || null,
+        item?.category_display ?? undefined,
+      ),
     },
     { name: "acct_unit", label: "Accounting unit", type: "string", required: true },
     { name: "low_stock_threshold", label: "Low-stock threshold", type: "number", required: true },
@@ -717,7 +749,7 @@ export function ItemModal({
     };
   }, [form]);
 
-  useCopilotForm({
+  const { submitManually } = useCopilotForm({
     formId: isEdit && item ? `item-edit-${item.id}` : "item-create",
     title: isEdit ? "Edit Item" : "Create Item",
     description: "Create or edit an inventory item definition on the Items page.",
@@ -850,7 +882,7 @@ export function ItemModal({
           </div>
           <div className="modal-foot-actions">
             <button type="button" className="btn btn-md" onClick={onClose}>Cancel</button>
-            <button type="button" className="btn btn-md btn-primary" onClick={submit} disabled={!canSave}>{submitting ? "Saving..." : isEdit ? "Save changes" : "Create item"}</button>
+            <button type="button" className="btn btn-md btn-primary" onClick={() => { void submitManually("submit"); }} disabled={!canSave}>{submitting ? "Saving..." : isEdit ? "Save changes" : "Create item"}</button>
           </div>
         </footer>
       </div>
@@ -1137,6 +1169,53 @@ export function ItemListView() {
 
   const effectiveScopeTokens = selectedScopeTokens.length ? selectedScopeTokens : defaultScopeTokens;
 
+  const itemsListControls = useCopilotListControls({
+    entity: "item",
+    filters: [
+      {
+        name: "search",
+        type: "string",
+        defaultValue: "",
+        label: "Search",
+        description: "Search by item name, code, category, tracking type, account unit, description, or specifications.",
+        setValue: value => setSearch(String(value ?? "")),
+      },
+      {
+        name: "filter_key",
+        type: "enum",
+        defaultValue: "all",
+        label: "Inventory focus",
+        options: [
+          { value: "all", label: "All items" },
+          { value: "individual", label: "Individual-tracked items" },
+          { value: "perishable", label: "Batch/perishable items" },
+          { value: "low", label: "Low stock" },
+          { value: "out", label: "Out of stock" },
+        ],
+        setValue: value => setFilterKey(String(value ?? "all") as WorkspaceFilterKey),
+      },
+      {
+        name: "scope_tokens",
+        type: "multi_enum",
+        defaultValue: defaultScopeTokens,
+        label: "Distribution scope",
+        options: scopeOptions.map(option => ({ value: option.id, label: option.label })),
+        setValue: value => {
+          const next = Array.isArray(value) ? value.map(token => String(token)) : [];
+          setSelectedScopeTokens(next.length ? next : defaultScopeTokens);
+        },
+      },
+    ],
+    page,
+    totalPages,
+    setPage,
+    visibleRows: pagedItems.map((item, index) => ({
+      row_number: index + 1,
+      id: item.id,
+      detail_route: getItemOpenHref(item),
+    })),
+  });
+
   // Expose the items currently visible on /items so the agent can resolve
   // references like "core i5" → id without firing SQL. Also serves as the
   // catalog when filling inspection stage rows from this page.
@@ -1171,6 +1250,7 @@ export function ItemListView() {
       },
     })),
     actions: {
+      ...itemsListControls,
       create_item: canManageItems,
       filter_items: true,
     },
@@ -1188,6 +1268,7 @@ export function ItemListView() {
     capsLoading,
     isLoading,
     page,
+    itemsListControls,
     totalPages,
   ]);
 
