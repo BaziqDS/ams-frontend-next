@@ -750,7 +750,6 @@ function StockVoucherHead({ entry, related }: { entry: StockEntryRecord; related
           {" "}{summary.stripNote}
         </div>
         <div className="page-id-row">
-          <span className="doc-no">{entry.entry_number}</span>
           <span className={`pill ${entry.status === "PENDING_ACK" ? "pill-info" : statusTone(entry.status)} pill-lg`}>
             <span className={`status-dot ${entry.status === "COMPLETED" ? "active" : "inactive"}`} />
             {entry.status === "PENDING_ACK" ? "In transit · Awaiting acknowledgment" : formatLabel(entry.status)}
@@ -1010,11 +1009,14 @@ function StatusAsideCard({ entry, related }: { entry: StockEntryRecord; related:
 
   return (
     <div className="card">
-      <div className="card-head"><h3>Status</h3></div>
+      <div className="card-head"><h3>Entry details</h3></div>
       <div className="card-body card-body-tight" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div className="kv"><div className="kv-label">Current state</div><div className="kv-value">{pending ? "In transit · awaiting ack" : formatLabel(entry.status)}</div><div className="kv-sub">{pending ? "Receiver register has not been captured." : "Voucher has receiver-side outcome data."}</div></div>
-        <div className="kv"><div className="kv-label">Editable</div><div className="kv-value">{entry.status === "DRAFT" ? "Yes" : "No · Voucher locked once issued"}</div></div>
         <div className="kv"><div className="kv-label">Quantity balance</div><div className="kv-value mono">{stats.sent} {quantityVerb(entry)} · {stats.accepted ?? "-"} accepted · {stats.returned ?? "-"} returned</div></div>
+        <div className="kv">
+          <div className="kv-label">Purpose / Remarks</div>
+          <div className="kv-value">{entry.purpose ?? entry.remarks ?? "No purpose or remarks recorded."}</div>
+          {entry.purpose && entry.remarks ? <div className="kv-sub">{entry.remarks}</div> : null}
+        </div>
         <hr className="h-rule" />
         <div className="kv"><div className="kv-label">Next action</div><div className="kv-value">{pending ? "Receiving side acknowledgement" : "No action required"}</div></div>
       </div>
@@ -2221,14 +2223,11 @@ export default function StockEntryDetailPage() {
 
             <div className="detail-grid">
               <div className="detail-main">
-                <VoucherDetailsCard entry={entry} related={related} />
-                <SignoffSection entry={entry} related={related} />
+                <WorkflowHistoryCard entry={entry} related={related} />
               </div>
-
               <aside className="detail-aside">
                 <StatusAsideCard entry={entry} related={related} />
                 <RelatedRecordsCard entry={entry} related={related} />
-                <WorkflowHistoryCard entry={entry} related={related} />
               </aside>
             </div>
             {ackModalOpen && entry.can_acknowledge && entry.status === "PENDING_ACK" && (

@@ -83,6 +83,68 @@ function isFailedActionResult(result: unknown) {
   );
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function successfulSubmitRedirect(result: unknown) {
+  if (!isRecord(result) || result.ok !== true) return null;
+  return typeof result.redirectTo === "string" && result.redirectTo.trim()
+    ? result.redirectTo
+    : null;
+}
+
+function runtimePathname(readables: Readable[]) {
+  const runtime = readables.find(
+    readable => readable.id === "__ams_runtime_context",
+  );
+  if (!isRecord(runtime?.value)) return null;
+
+  const route = runtime.value.route;
+  if (typeof route === "string") return route;
+  if (isRecord(route) && typeof route.pathname === "string") {
+    return route.pathname;
+  }
+  return null;
+}
+
+function submitRedirectTarget(
+  name: string,
+  result: unknown,
+  readables: Readable[],
+) {
+  if (name !== "request_form_submit") return null;
+  const redirectTo = successfulSubmitRedirect(result);
+  if (!redirectTo) return null;
+
+  const currentRoute = runtimePathname(readables);
+  return currentRoute === null || isSameCopilotRoute(currentRoute, redirectTo)
+    ? null
+    : redirectTo;
+}
+
+function submitRedirectReadiness(
+  name: string,
+  result: unknown,
+  readables: Readable[],
+) {
+  if (name !== "request_form_submit") return null;
+
+  const redirectTo = successfulSubmitRedirect(result);
+  if (!redirectTo) return null;
+
+  const currentRoute = runtimePathname(readables);
+  return {
+    ready: currentRoute !== null && isSameCopilotRoute(currentRoute, redirectTo),
+    summary: {
+      currentRoute,
+      redirectTo,
+      routeMatchesRedirect:
+        currentRoute !== null && isSameCopilotRoute(currentRoute, redirectTo),
+    },
+  };
+}
+
 type Readable = {
   id: string;
   description: string;
@@ -514,11 +576,16 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
 
     const stillPending: PendingActionResult[] = [];
     for (const pending of pendingActionResultsRef.current) {
-      const readiness = getCopilotActionReadiness(
+      const postSubmitReadiness = submitRedirectReadiness(
         pending.name,
-        pending.args,
+        pending.result,
         readables,
       );
+      const readiness = postSubmitReadiness ?? getCopilotActionReadiness(
+          pending.name,
+          pending.args,
+          readables,
+        );
       const interruptedResult = buildCopilotInterruptionActionResult(
         readiness,
         pending.result,
@@ -828,13 +895,32 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
       post: ActionResultPost;
       actionStartedAt: string;
     }) => {
-      if (!actionNeedsReadyPageContext(name) || isFailedActionResult(result)) {
+      const payload = buildContextPayload();
+      const redirectTarget = submitRedirectTarget(
+        name,
+        result,
+        payload.readables,
+      );
+      if (redirectTarget) router.push(redirectTarget);
+
+      const postSubmitReadiness = submitRedirectReadiness(
+        name,
+        result,
+        payload.readables,
+      );
+      if (
+        (!postSubmitReadiness && !actionNeedsReadyPageContext(name)) ||
+        isFailedActionResult(result)
+      ) {
         post({ type: "ACTION_RESULT", callId, result: result ?? null });
         return;
       }
 
-      const payload = buildContextPayload();
-      const readiness = getCopilotActionReadiness(name, args, payload.readables);
+      const readiness = postSubmitReadiness ?? getCopilotActionReadiness(
+        name,
+        args,
+        payload.readables,
+      );
       const interruptedResult = buildCopilotInterruptionActionResult(
         readiness,
         result,
@@ -886,7 +972,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
       pendingActionResultsRef.current.push(pending);
       pushContextToIframe();
     },
-    [buildContextPayload, postContextNotReadyResult, pushContextToIframe],
+    [buildContextPayload, postContextNotReadyResult, pushContextToIframe, router],
   );
   postActionResultWhenContextReadyRef.current = postActionResultWhenContextReady;
 

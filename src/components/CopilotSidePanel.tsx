@@ -61,19 +61,16 @@ export function CopilotSidePanel() {
     return () => window.removeEventListener("keydown", onKey);
   }, [isOpen]);
 
-  // Close panel when clicking outside it — but not when a modal is open
+  // Close panel whenever the user clicks outside it, including active AMS modals/forms.
   useEffect(() => {
     if (!isOpen) return;
     const onPointerDown = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      // Don't close if the click is inside the panel itself
-      if (panelRef.current?.contains(target)) return;
-      // Don't close if a modal/dialog is open — let the modal handle its own interactions
-      if (target.closest?.(".modal-backdrop, .modal, [role='dialog']")) return;
+      const target = e.target as Node | null;
+      if (target && panelRef.current?.contains(target)) return;
       setIsOpen(false);
     };
-    document.addEventListener("mousedown", onPointerDown);
-    return () => document.removeEventListener("mousedown", onPointerDown);
+    document.addEventListener("mousedown", onPointerDown, true);
+    return () => document.removeEventListener("mousedown", onPointerDown, true);
   }, [isOpen]);
 
   useEffect(() => {
@@ -183,8 +180,7 @@ export function CopilotSidePanel() {
     const text = quickMessage.trim();
     if (!text) return;
     setQuickMessage("");
-    setIsOpen(true);
-    window.setTimeout(() => postQuickMessage(text), 180);
+    postQuickMessage(text);
   }, [postQuickMessage, quickMessage]);
 
   const startVoiceFromSearch = useCallback(() => {

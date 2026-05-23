@@ -891,7 +891,6 @@ export function ItemModal({
 }
 
 function ItemActions({
-  item,
   openHref,
   openLabel,
   openTitle,
@@ -913,23 +912,75 @@ function ItemActions({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const [openUp, setOpenUp] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Decide whether the menu should open upward (avoid bottom overflow)
+  const updateDirection = useCallback(() => {
+    const wrapper = ref.current;
+    const menu = menuRef.current;
+    if (!wrapper || !menu) return;
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const card = wrapper.closest(".table-card");
+    const boundaryBottom = card instanceof HTMLElement ? card.getBoundingClientRect().bottom : window.innerHeight;
+    const spaceBelow = boundaryBottom - wrapperRect.bottom;
+    const menuHeight = menu.offsetHeight || menu.scrollHeight;
+    setOpenUp(spaceBelow < menuHeight + 8);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    updateDirection();
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("resize", updateDirection);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("resize", updateDirection);
+    };
+  }, [open, updateDirection]);
+
   return (
-    <div className="row-actions">
-      <Link className="btn btn-xs btn-ghost row-action" href={openHref} onClick={event => event.stopPropagation()} title={openTitle}>
-        <Ic d="M9 18l6-6-6-6" size={13} />
-        <span className="ra-label">{openLabel}</span>
-      </Link>
-      {canEdit && (
-        <button type="button" className="btn btn-xs btn-ghost row-action" onClick={event => { event.stopPropagation(); onEdit(); }} title="Edit item" disabled={pageBusy}>
-          <Ic d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" size={13} />
-          <span className="ra-label">Edit</span>
-        </button>
-      )}
-      {canDelete && (
-        <button type="button" className="btn btn-xs btn-danger-ghost row-action" onClick={event => { event.stopPropagation(); onDelete(); }} title="Delete item" disabled={pageBusy}>
-          <Ic d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12h6l1-12" size={13} />
-          <span className="ra-label">{deleteBusy ? "Deleting..." : "Delete"}</span>
-        </button>
+    <div className="row-action-more" ref={ref}>
+      <button
+        type="button"
+        className="btn btn-xs btn-ghost"
+        title="Actions"
+        onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
+        disabled={pageBusy}
+        style={{ padding: "0 6px", letterSpacing: "0.06em", fontSize: 15, lineHeight: 1 }}
+      >
+        ⋮
+      </button>
+      {open && (
+        <div
+          ref={menuRef}
+          className={openUp ? "row-menu row-menu-up" : "row-menu"}
+          onClick={e => e.stopPropagation()}
+        >
+          <Link
+            className="row-menu-item"
+            href={openHref}
+            title={openTitle}
+            onClick={() => setOpen(false)}
+          >
+            <Ic d="M9 18l6-6-6-6" size={13} /> {openLabel}
+          </Link>
+          {canEdit && (
+            <button type="button" className="row-menu-item" onClick={() => { setOpen(false); onEdit(); }} disabled={pageBusy}>
+              <Ic d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" size={13} /> Edit
+            </button>
+          )}
+          {canDelete && (
+            <button type="button" className="row-menu-item danger" onClick={() => { setOpen(false); onDelete(); }} disabled={pageBusy}>
+              <Ic d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12h6l1-12" size={13} /> {deleteBusy ? "Deleting…" : "Delete"}
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -1516,19 +1567,22 @@ export function ItemListView() {
               </div>
             </div>
           </div>
-          <div className="h-scroll">
-            <table className="data-table">
+          <div>
+            <table
+              className={`data-table ${workspaceStyles.itemsListTable}`}
+              style={{ tableLayout: "fixed", width: "100%" }}
+            >
               <thead>
                 <tr>
-                  <th>Item</th>
-                  <th>Tracking</th>
-                  <th>Total</th>
-                  <th>Available</th>
-                  <th>In Transit</th>
-                  <th>Locations</th>
-                  <th>Status</th>
-                  <th>Updated</th>
-                  <th style={{ textAlign: "right" }}>Actions</th>
+                  <th style={{ width: "28%", textAlign: "left" }}>Item</th>
+                  <th style={{ width: "10%", textAlign: "left" }}>Tracking</th>
+                  <th style={{ width: "8%",  textAlign: "left" }}>Total</th>
+                  <th style={{ width: "8%",  textAlign: "left" }}>Available</th>
+                  <th style={{ width: "8%",  textAlign: "left" }}>In Transit</th>
+                  <th style={{ width: "9%",  textAlign: "left" }}>Locations</th>
+                  <th style={{ width: "11%", textAlign: "left" }}>Status</th>
+                  <th style={{ width: "12%", textAlign: "left" }}>Updated</th>
+                  <th style={{ width: "6%", textAlign: "center", overflow: "hidden" }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1608,32 +1662,32 @@ function ItemListTableRow({
 
   return (
     <tr className="clickable-table-row" onClick={onOpen}>
-      <td className="col-user">
+      <td className={`col-user ${workspaceStyles.itemsListItemCell}`}>
         <div className="user-cell">
           <span className={workspaceStyles.itemTableIcon} data-tracking={workspaceTrackingTone(item.tracking_type)}>
             {workspaceTrackingIcon(item.tracking_type)}
           </span>
-          <div>
+          <div className={workspaceStyles.itemsListItemText}>
             <div className="user-name">{item.name}</div>
             <div className="user-username mono">{item.code} · {categoryPath ?? item.category_display ?? "Uncategorized"}</div>
           </div>
         </div>
       </td>
-      <td><span className="chip">{formatTrackingTypeLabel(item.tracking_type, { compact: true })}</span></td>
-      <td className="mono">{formatQuantity(item.total_quantity)} {item.acct_unit ?? "unit"}</td>
-      <td className="mono">{formatQuantity(item.available_quantity)}</td>
-      <td className="mono">{formatQuantity(item.in_transit_quantity)}</td>
-      <td><span className="chip chip-loc">{standaloneLocationCount} {standaloneLocationCount === 1 ? "location" : "locations"}</span></td>
-      <td>
-        <div className="group-cell">
-          <StatusPill tone={statusTone} label={totalQuantity <= 0 ? "Out of Stock" : "In Stock"} />
-          <LowStockBadge item={item} />
-        </div>
+      <td className={workspaceStyles.itemsListTrackingCell}><span className="chip">{formatTrackingTypeLabel(item.tracking_type, { compact: true })}</span></td>
+      <td className={`mono ${workspaceStyles.itemsListNumberCell}`}>{formatQuantity(item.total_quantity)} {item.acct_unit ?? "unit"}</td>
+      <td className={`mono ${workspaceStyles.itemsListNumberCell}`}>{formatQuantity(item.available_quantity)}</td>
+      <td className={`mono ${workspaceStyles.itemsListNumberCell}`}>{formatQuantity(item.in_transit_quantity)}</td>
+      <td className={workspaceStyles.itemsListLocationCell}><span className="chip chip-loc">{standaloneLocationCount} {standaloneLocationCount === 1 ? "location" : "locations"}</span></td>
+      <td className={workspaceStyles.itemsListStatusCell}>
+        <StatusPill
+          tone={totalQuantity <= 0 ? "danger" : isLowStock(item) ? "warning" : "success"}
+          label={totalQuantity <= 0 ? "Out of Stock" : isLowStock(item) ? "Low Stock" : "In Stock"}
+        />
       </td>
-      <td className="col-login">
+      <td className={`col-login ${workspaceStyles.itemsListUpdatedCell}`}>
         <ItemTimestampCell value={lastUpdated} fallback="Unknown" />
       </td>
-      <td className="col-actions">
+      <td className={`col-actions ${workspaceStyles.itemsListActionsCell}`}>
         <ItemActions
           item={item}
           openHref={openHref}
@@ -2448,11 +2502,13 @@ function WorkspaceSelectedItemPane({
           ) : null}
 
           {isFixedAssetItem(item) ? (
-            <div className="detail-kv-grid" style={{ marginTop: 12 }}>
-              <DetailKV label="Capitalized assets" value={<span className="mono">{formatQuantity(item.depreciation_summary?.asset_count ?? (item.depreciation_summary?.capitalized ? 1 : 0))}</span>} />
-              <DetailKV label="Original cost" value={formatMoneyValue(item.depreciation_summary?.original_cost)} />
-              <DetailKV label="Accumulated depreciation" value={formatMoneyValue(item.depreciation_summary?.accumulated_depreciation)} />
-              <DetailKV label="Current WDV / NBV" value={formatMoneyValue(item.depreciation_summary?.current_wdv)} sub={item.depreciation_summary?.latest_posted_fiscal_year ? `FY ${item.depreciation_summary.latest_posted_fiscal_year}-${String(item.depreciation_summary.latest_posted_fiscal_year + 1).slice(-2)}` : "No posted run"} />
+            <div className={workspaceStyles.infoKvs3} style={{ marginTop: 12 }}>
+              <DetailKV label="Cap. status"       value={item.depreciation_summary?.capitalized ? "Capitalized" : "Not capitalized"} />
+              <DetailKV label="Register entries"  value={<span className="mono">{formatQuantity(item.depreciation_summary?.asset_count ?? (item.depreciation_summary?.capitalized ? 1 : 0))}</span>} />
+              <DetailKV label="Latest FY"         value={item.depreciation_summary?.latest_posted_fiscal_year ? `${item.depreciation_summary.latest_posted_fiscal_year}-${String(item.depreciation_summary.latest_posted_fiscal_year + 1).slice(-2)}` : "—"} />
+              <DetailKV label="Original cost"     value={formatMoneyValue(item.depreciation_summary?.original_cost)} />
+              <DetailKV label="Accumulated dep."  value={formatMoneyValue(item.depreciation_summary?.accumulated_depreciation)} />
+              <DetailKV label="Current WDV / NBV" value={formatMoneyValue(item.depreciation_summary?.current_wdv)} />
             </div>
           ) : null}
 
@@ -2911,13 +2967,13 @@ function WorkspaceInfoTab({
       {isFixedAssetItem(item) ? (
         <div className={workspaceStyles.infoCard}>
           <div className="eyebrow">Depreciation</div>
-          <div className={workspaceStyles.infoKvs}>
-            <DetailKV label="Capitalization status" value={item.depreciation_summary?.capitalized ? "Capitalized" : "Not capitalized"} />
+          <div className={workspaceStyles.infoKvs3}>
+            <DetailKV label="Cap. status"      value={item.depreciation_summary?.capitalized ? "Capitalized" : "Not capitalized"} />
             <DetailKV label="Register entries" value={<span className="mono">{formatQuantity(item.depreciation_summary?.asset_count ?? (item.depreciation_summary?.capitalized ? 1 : 0))}</span>} />
-            <DetailKV label="Original cost" value={formatMoneyValue(item.depreciation_summary?.original_cost)} />
-            <DetailKV label="Accumulated depreciation" value={formatMoneyValue(item.depreciation_summary?.accumulated_depreciation)} />
+            <DetailKV label="Latest posted FY" value={item.depreciation_summary?.latest_posted_fiscal_year ? `${item.depreciation_summary.latest_posted_fiscal_year}-${String(item.depreciation_summary.latest_posted_fiscal_year + 1).slice(-2)}` : "—"} />
+            <DetailKV label="Original cost"    value={formatMoneyValue(item.depreciation_summary?.original_cost)} />
+            <DetailKV label="Accumulated dep." value={formatMoneyValue(item.depreciation_summary?.accumulated_depreciation)} />
             <DetailKV label="Current WDV / NBV" value={formatMoneyValue(item.depreciation_summary?.current_wdv)} />
-            <DetailKV label="Latest posted FY" value={item.depreciation_summary?.latest_posted_fiscal_year ? `${item.depreciation_summary.latest_posted_fiscal_year}-${String(item.depreciation_summary.latest_posted_fiscal_year + 1).slice(-2)}` : "-"} />
           </div>
         </div>
       ) : null}

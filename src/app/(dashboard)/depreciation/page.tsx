@@ -183,11 +183,11 @@ function DensityToggle({ density, setDensity }: { density: Density; setDensity: 
 function ViewModeToggle({ value, onChange }: { value: SetupViewMode; onChange: (value: SetupViewMode) => void }) {
   return (
     <div className="seg" aria-label="Setup view mode">
-      <button type="button" className={"seg-btn icon-only" + (value === "grid" ? " active" : "")} onClick={() => onChange("grid")} aria-label="Grid view" title="Grid">
-        <Icon d={<><rect x="4" y="4" width="6" height="6" rx="1" /><rect x="14" y="4" width="6" height="6" rx="1" /><rect x="4" y="14" width="6" height="6" rx="1" /><rect x="14" y="14" width="6" height="6" rx="1" /></>} size={14} />
-      </button>
       <button type="button" className={"seg-btn icon-only" + (value === "list" ? " active" : "")} onClick={() => onChange("list")} aria-label="List view" title="List">
         <Icon d={<><path d="M8 6h12M8 12h12M8 18h12" /><path d="M4 6h.01M4 12h.01M4 18h.01" /></>} size={14} />
+      </button>
+      <button type="button" className={"seg-btn icon-only" + (value === "grid" ? " active" : "")} onClick={() => onChange("grid")} aria-label="Grid view" title="Grid">
+        <Icon d={<><rect x="4" y="4" width="6" height="6" rx="1" /><rect x="14" y="4" width="6" height="6" rx="1" /><rect x="4" y="14" width="6" height="6" rx="1" /><rect x="14" y="14" width="6" height="6" rx="1" /></>} size={14} />
       </button>
     </div>
   );
@@ -997,27 +997,25 @@ export default function DepreciationPage() {
                   {pagedSetupRows.map(row => (
                     <div className="user-card" key={row.key}>
                       <div className="user-card-head">
-                        <Avatar name={row.categoryName} size={44} tone={row.assetClass ? 0 : 2} />
+                        <Avatar name={row.categoryName} size={32} tone={row.assetClass ? 0 : 2} />
                         <SetupStatusPill row={row} />
                       </div>
                       <div className="user-card-name">{row.categoryName}</div>
-                      <div className="user-card-meta mono">{row.categoryCode}</div>
-                      <div className="user-card-eid mono">{row.assetClass?.code ?? "Not configured"}</div>
+                      <div className="user-card-eid mono">{row.assetClass?.name ?? "Not configured"} · {row.categoryCode}</div>
                       <div className="user-card-section">
-                        <div className="eyebrow">Depreciation setup</div>
-                        <div className="login-cell">
-                          <div>{row.assetClass?.name ?? "Not configured"}</div>
-                          <div className="login-cell-sub mono">{row.assetClass?.code ?? row.categoryCode}</div>
-                        </div>
-                      </div>
-                      <div className="user-card-section">
-                        <div className="eyebrow">Current rate</div>
-                        <div style={{ fontSize: 13, color: "var(--text-1)" }}>{row.currentRate ? `${row.currentRate.rate}%` : "-"}</div>
-                      </div>
-                      <div className="user-card-section">
-                        <div className="eyebrow">Effective period</div>
-                        <div style={{ fontSize: 13, color: "var(--text-1)" }}>
-                          {row.currentRate ? `${formatItemDate(row.currentRate.effective_from)} to ${row.currentRate.effective_to ? formatItemDate(row.currentRate.effective_to) : "Open"}` : "-"}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px" }}>
+                          <div>
+                            <div className="eyebrow">Rate</div>
+                            <div style={{ fontSize: 13, fontWeight: 550, color: "var(--ink)" }}>
+                              {row.currentRate ? `${row.currentRate.rate}%` : "—"}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="eyebrow">Effective from</div>
+                            <div style={{ fontSize: 12, color: "var(--ink-2)" }}>
+                              {row.currentRate ? formatItemDate(row.currentRate.effective_from) : "—"}
+                            </div>
+                          </div>
                         </div>
                       </div>
                       <div className="user-card-foot">
