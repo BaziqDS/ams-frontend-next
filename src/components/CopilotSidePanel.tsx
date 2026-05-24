@@ -1,14 +1,32 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent, type CSSProperties } from "react";
-import { MessageCircle, Mic, Maximize2, SendHorizontal, SquarePen, X } from "lucide-react";
-import { useCopilotInternal } from "@/contexts/CopilotContext";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type CSSProperties } from "react";
+import { Bot, CalendarDays, Check, ClipboardList, FileText, LoaderCircle, MessageCircle, Mic, Maximize2, SendHorizontal, Sparkles, SquarePen, UserRound, X } from "lucide-react";
+import {
+  COPILOT_HITL_INTERRUPT_EVENT,
+  type CopilotHitlInterrupt,
+  useCopilotInternal,
+} from "@/contexts/CopilotContext";
 import { CopilotOpenUiPreviewModal } from "@/components/CopilotOpenUiPreviewModal";
+import {
+  buildDetachedApprovalReview,
+} from "@/lib/copilotDetachedApproval";
 
 const CHAT_URL = process.env.NEXT_PUBLIC_COPILOT_URL ?? "http://localhost:3001";
 const CHAT_ORIGIN = CHAT_URL.replace(/\/$/, "");
 const DOCK_STORAGE_KEY = "ams-copilot-open";
 const DOCK_POS_KEY   = "ams-copilot-pos";
+const DETACHED_PENDING_KEY = "ams-copilot-detached-pending";
+const DETACHED_PENDING_TTL_MS = 10 * 60 * 1000;
+// After the user clicks stop, ignore any straggler ASSISTANT_LOADING=true /
+// HUMAN_MESSAGE events from the iframe for this many milliseconds. The
+// langgraph stream may emit one last "loading" tick while winding down, and
+// without this guard the parent re-locks the composer immediately after stop.
+const STOP_GUARD_MS = 2000;
+// Safety net: if the parent thinks the agent is still running but no events
+// arrive for this long, auto-unlock the composer. Prevents the textarea from
+// being permanently stuck if a postMessage is missed.
+const PENDING_SAFETY_TIMEOUT_MS = 45 * 1000;
 
 const PLACEHOLDER_PHRASES = [
   "Ask about inspections...",
@@ -20,6 +38,12 @@ const PLACEHOLDER_PHRASES = [
 ];
 
 type Pos = { left: number; top: number };
+type DetachedTodo = { content?: unknown; status?: unknown } | null;
+type DetachedPending = { text: string; at: number } | null;
+type ApprovalReviewTab = "summary" | "fields";
+type ApprovalContextSnapshot = {
+  readables?: Array<{ id?: string; description?: string; value?: unknown }>;
+};
 
 function loadPos(): Pos | null {
   if (typeof window === "undefined") return null;
@@ -27,23 +51,137 @@ function loadPos(): Pos | null {
   catch { return null; }
 }
 
+function loadDetachedPending(): DetachedPending {
+  if (typeof window === "undefined") return null;
+  try {
+    const value = JSON.parse(
+      window.localStorage.getItem(DETACHED_PENDING_KEY) ?? "null",
+    ) as { text?: unknown; at?: unknown } | null;
+    if (
+      !value ||
+      typeof value.text !== "string" ||
+      !value.text.trim() ||
+      typeof value.at !== "number" ||
+      Date.now() - value.at > DETACHED_PENDING_TTL_MS
+    ) {
+      window.localStorage.removeItem(DETACHED_PENDING_KEY);
+      return null;
+    }
+    return { text: value.text, at: value.at };
+  } catch {
+    window.localStorage.removeItem(DETACHED_PENDING_KEY);
+    return null;
+  }
+}
+
+function saveDetachedPending(text: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(
+    DETACHED_PENDING_KEY,
+    JSON.stringify({ text, at: Date.now() }),
+  );
+}
+
+function clearDetachedPending() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(DETACHED_PENDING_KEY);
+}
+
 export function CopilotSidePanel() {
+  const restoredPendingRef = useRef<DetachedPending>(loadDetachedPending());
   const [isOpen, setIsOpen] = useState(() => (
     typeof window !== "undefined" &&
     window.localStorage.getItem(DOCK_STORAGE_KEY) === "true"
   ));
   const [unreadCount, setUnreadCount]   = useState(0);
-  const [quickMessage, setQuickMessage] = useState("");
+  const [quickMessage, setQuickMessage] = useState(
+    () => restoredPendingRef.current?.text ?? "",
+  );
+  const [quickMessagePending, setQuickMessagePending] = useState(
+    () => Boolean(restoredPendingRef.current),
+  );
+  const [currentTodo, setCurrentTodo] = useState<DetachedTodo>(null);
+  const [approvalInterrupt, setApprovalInterrupt] =
+    useState<CopilotHitlInterrupt | null>(null);
+  const [approvalReviewTab, setApprovalReviewTab] =
+    useState<ApprovalReviewTab>("summary");
+  const [approvalReviewContext, setApprovalReviewContext] =
+    useState<ApprovalContextSnapshot | null>(null);
+  const [approvalRequestedAt, setApprovalRequestedAt] =
+    useState<Date | null>(null);
+  const [approvalBusy, setApprovalBusy] =
+    useState<"approve" | "reject" | null>(null);
   const [hideToolCalls, setHideToolCalls] = useState(false);
   const [placeholder, setPlaceholder]   = useState(PLACEHOLDER_PHRASES[0]);
   const [dragPos, setDragPos]           = useState<Pos | null>(loadPos);
   const [isDragging, setIsDragging]     = useState(false);
-  const [openUiPreviewCode, setOpenUiPreviewCode] = useState<string | null>(null);
+  const [openUiPreview, setOpenUiPreview] = useState<{
+    id: string;
+    code: string;
+    isStreaming: boolean;
+  } | null>(null);
 
   const iframeRef       = useRef<HTMLIFrameElement>(null);
   const panelRef        = useRef<HTMLElement>(null);
   const searchTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const { setIframe } = useCopilotInternal();
+  const loadingStartedRef = useRef(false);
+  const iframeReadyRef = useRef(false);
+  const queuedQuickMessageRef = useRef<string | null>(null);
+  const restoredPendingSentRef = useRef(false);
+  // Timestamp (ms) until which incoming "loading=true" / HUMAN_MESSAGE events
+  // are treated as stragglers from a just-stopped run and ignored.
+  const stopGuardUntilRef = useRef(0);
+  // Safety timer that auto-clears a stuck pending state.
+  const pendingSafetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The text the user last sent. The composer keeps showing this text while
+  // the agent runs (visual receipt that "I sent this"), and auto-clears it
+  // only when the run truly completes — and only if the user has NOT edited
+  // the input in the meantime (we never want to clobber a new draft).
+  const lastSubmittedTextRef = useRef<string | null>(null);
+  const userEditedSinceSubmitRef = useRef(false);
+  const { setIframe, sendHitlDecision, getContextSnapshot } = useCopilotInternal();
+
+  const showApprovalInterrupt = useCallback((interrupt: CopilotHitlInterrupt | null) => {
+    setApprovalInterrupt(interrupt);
+    setApprovalBusy(null);
+    setApprovalReviewTab("summary");
+    setApprovalReviewContext(interrupt ? getContextSnapshot() : null);
+    setApprovalRequestedAt(interrupt ? new Date() : null);
+  }, [getContextSnapshot]);
+
+  // Centralized setter for quickMessagePending that also arms / disarms the
+  // safety timeout. Use this everywhere instead of setQuickMessagePending so
+  // the composer can never get permanently locked if a postMessage is missed.
+  const setPendingWithSafety = useCallback((next: boolean) => {
+    setQuickMessagePending(next);
+    if (pendingSafetyTimerRef.current) {
+      clearTimeout(pendingSafetyTimerRef.current);
+      pendingSafetyTimerRef.current = null;
+    }
+    if (next) {
+      pendingSafetyTimerRef.current = setTimeout(() => {
+        // Timed out — assume the iframe missed sending a "done" event.
+        // Unlock the composer so the user can keep working.
+        loadingStartedRef.current = false;
+        clearDetachedPending();
+        setQuickMessagePending(false);
+        pendingSafetyTimerRef.current = null;
+        if (typeof console !== "undefined") {
+          console.warn(
+            "[CopilotSidePanel] auto-clearing stuck pending state after %sms with no iframe activity",
+            PENDING_SAFETY_TIMEOUT_MS,
+          );
+        }
+      }, PENDING_SAFETY_TIMEOUT_MS);
+    }
+  }, []);
+
+  useEffect(() => () => {
+    if (pendingSafetyTimerRef.current) {
+      clearTimeout(pendingSafetyTimerRef.current);
+      pendingSafetyTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => { setIframe(iframeRef.current); return () => setIframe(null); }, [setIframe]);
 
@@ -79,16 +217,136 @@ export function CopilotSidePanel() {
       if (event.data?.source !== "ams-copilot-iframe") return;
       if (event.data?.type === "OPEN_OPENUI_PREVIEW") {
         if (typeof event.data.code === "string" && event.data.code.trim()) {
-          setOpenUiPreviewCode(event.data.code);
+          setOpenUiPreview({
+            id:
+              typeof event.data.previewId === "string"
+                ? event.data.previewId
+                : "openui-preview",
+            code: event.data.code,
+            isStreaming: event.data.isStreaming === true,
+          });
         }
         return;
       }
+      if (event.data?.type === "UPDATE_OPENUI_PREVIEW") {
+        if (typeof event.data.code === "string" && event.data.code.trim()) {
+          setOpenUiPreview((current) => {
+            if (!current) return current;
+            if (
+              typeof event.data.previewId === "string" &&
+              event.data.previewId !== current.id
+            ) {
+              return current;
+            }
+            return {
+              ...current,
+              code: event.data.code,
+              isStreaming: event.data.isStreaming === true,
+            };
+          });
+        }
+        return;
+      }
+      if (event.data?.type === "COPILOT_READY") {
+        iframeReadyRef.current = true;
+        const queued = queuedQuickMessageRef.current;
+        if (queued && iframeRef.current?.contentWindow) {
+          queuedQuickMessageRef.current = null;
+          iframeRef.current.contentWindow.postMessage(
+            { source: "ams-copilot", type: "QUICK_MESSAGE", text: queued },
+            CHAT_ORIGIN,
+          );
+        }
+        return;
+      }
+      if (event.data?.type === "ASSISTANT_LOADING") {
+        if (event.data.isLoading === true) {
+          // Ignore stragglers from a just-stopped run — they would re-lock the
+          // composer immediately after stop and trap the user.
+          if (Date.now() < stopGuardUntilRef.current) return;
+          loadingStartedRef.current = true;
+          setPendingWithSafety(true);
+          return;
+        }
+        loadingStartedRef.current = false;
+        setPendingWithSafety(false);
+        // Run truly ended. Auto-clear the visual-receipt text the user sent
+        // — but only if they have not started typing a new draft. We use a
+        // ref because the message-handler closure captures stale state.
+        if (
+          lastSubmittedTextRef.current !== null &&
+          !userEditedSinceSubmitRef.current
+        ) {
+          setQuickMessage("");
+        }
+        lastSubmittedTextRef.current = null;
+        userEditedSinceSubmitRef.current = false;
+        return;
+      }
+      if (event.data?.type === "HUMAN_MESSAGE") {
+        const text = typeof event.data.text === "string" ? event.data.text.trim() : "";
+        if (!text) return;
+        // After stop, don't re-lock from an echo of the cancelled message.
+        if (Date.now() < stopGuardUntilRef.current) return;
+        loadingStartedRef.current = true;
+        queuedQuickMessageRef.current = null;
+        saveDetachedPending(text);
+        // Do NOT write the just-sent text back into the composer here. The
+        // detached input clears immediately on submit (same UX as the chat
+        // panel composer), and the user may already be typing the next
+        // message — echoing the previous text would clobber their draft.
+        setPendingWithSafety(true);
+        return;
+      }
+      if (event.data?.type === "TODO_STATE") {
+        const current = event.data.current;
+        setCurrentTodo(current && typeof current === "object" ? current : null);
+        return;
+      }
+      if (event.data?.type === "HITL_INTERRUPT") {
+        loadingStartedRef.current = false;
+        queuedQuickMessageRef.current = null;
+        const interrupt = event.data.interrupt;
+        showApprovalInterrupt(
+          interrupt &&
+            typeof interrupt === "object" &&
+            Array.isArray((interrupt as CopilotHitlInterrupt).actionRequests)
+            ? (interrupt as CopilotHitlInterrupt)
+            : null,
+        );
+        clearDetachedPending();
+        setPendingWithSafety(false);
+        return;
+      }
+      if (event.data?.type === "HITL_INTERRUPT_CLEARED") {
+        showApprovalInterrupt(null);
+        return;
+      }
       if (event.data?.type !== "ASSISTANT_MESSAGE") return;
+      loadingStartedRef.current = false;
+      queuedQuickMessageRef.current = null;
+      clearDetachedPending();
+      setPendingWithSafety(false);
+      // Do NOT clear quickMessage here. This event fires on the FIRST
+      // assistant token (mid-stream), and the user may already be typing
+      // the next message — clearing would wipe their draft. The input was
+      // already cleared at submit time.
       setUnreadCount((c) => (isOpen ? 0 : Math.min(99, c + 1)));
     };
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [isOpen]);
+  }, [isOpen, setPendingWithSafety, showApprovalInterrupt]);
+
+  useEffect(() => {
+    const onHitlInterrupt = (event: Event) => {
+      showApprovalInterrupt((event as CustomEvent<CopilotHitlInterrupt | null>).detail ?? null);
+    };
+
+    window.addEventListener(COPILOT_HITL_INTERRUPT_EVENT, onHitlInterrupt);
+    return () => {
+      window.removeEventListener(COPILOT_HITL_INTERRUPT_EVENT, onHitlInterrupt);
+    };
+  }, [showApprovalInterrupt]);
 
   // Typewriter cycling placeholder
   useEffect(() => {
@@ -165,23 +423,78 @@ export function CopilotSidePanel() {
   // ────────────────────────────────────────────────────────────────────────────
 
   const closePanel = useCallback(() => setIsOpen(false), []);
+  const openPanel = useCallback(() => {
+    setUnreadCount(0);
+    setIsOpen(true);
+  }, []);
 
   const postQuickMessage = useCallback((text: string, attempt = 0) => {
     const iframe = iframeRef.current;
     if (!iframe?.contentWindow) {
       if (attempt < 6) window.setTimeout(() => postQuickMessage(text, attempt + 1), 120);
+      else {
+        clearDetachedPending();
+        loadingStartedRef.current = false;
+        setPendingWithSafety(false);
+        setQuickMessage(text);
+      }
+      return;
+    }
+    if (!iframeReadyRef.current) {
+      queuedQuickMessageRef.current = text;
       return;
     }
     iframe.contentWindow.postMessage({ source: "ams-copilot", type: "QUICK_MESSAGE", text }, CHAT_ORIGIN);
-  }, []);
+  }, [setPendingWithSafety]);
+
+  useEffect(() => {
+    const restored = restoredPendingRef.current;
+    if (!restored || restoredPendingSentRef.current) return;
+    restoredPendingSentRef.current = true;
+    postQuickMessage(restored.text);
+    // The restored text stays visible in the composer as a receipt — it
+    // will auto-clear when the resumed run completes, same as any other
+    // submit, unless the user starts typing a new draft.
+    lastSubmittedTextRef.current = restored.text;
+    userEditedSinceSubmitRef.current = false;
+  }, [postQuickMessage]);
 
   const submitQuickMessage = useCallback((event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const text = quickMessage.trim();
-    if (!text) return;
-    setQuickMessage("");
+    if (!text || quickMessagePending) return;
+    // Keep the text in the composer as a visual receipt — the empty input
+    // looks "lost" to the user. The send button flips to a spinning Cancel
+    // button alongside it so the run-in-flight state is clear. The text
+    // auto-clears when the run truly ends (ASSISTANT_LOADING=false) and
+    // only if the user has not started typing a new draft.
+    setQuickMessage(text);
+    lastSubmittedTextRef.current = text;
+    userEditedSinceSubmitRef.current = false;
+    setPendingWithSafety(true);
+    loadingStartedRef.current = true;
+    saveDetachedPending(text);
     postQuickMessage(text);
-  }, [postQuickMessage, quickMessage]);
+  }, [postQuickMessage, quickMessage, quickMessagePending, setPendingWithSafety]);
+
+  const stopDetachedRun = useCallback(() => {
+    // Open a short guard window so any straggler "loading=true" events from
+    // the dying agent run do not immediately re-lock the composer.
+    stopGuardUntilRef.current = Date.now() + STOP_GUARD_MS;
+    loadingStartedRef.current = false;
+    queuedQuickMessageRef.current = null;
+    clearDetachedPending();
+    setPendingWithSafety(false);
+    // Clear stale text so the user starts from an empty composer and is not
+    // confused by the half-sent message lingering in the input.
+    setQuickMessage("");
+    lastSubmittedTextRef.current = null;
+    userEditedSinceSubmitRef.current = false;
+    iframeRef.current?.contentWindow?.postMessage(
+      { source: "ams-copilot", type: "STOP_RUN" },
+      CHAT_ORIGIN,
+    );
+  }, [setPendingWithSafety]);
 
   const startVoiceFromSearch = useCallback(() => {
     setIsOpen(true);
@@ -203,10 +516,27 @@ export function CopilotSidePanel() {
   }, []);
 
   const startNewChat = useCallback(() => {
+    stopGuardUntilRef.current = Date.now() + STOP_GUARD_MS;
+    loadingStartedRef.current = false;
+    queuedQuickMessageRef.current = null;
+    clearDetachedPending();
+    setQuickMessage("");
+    lastSubmittedTextRef.current = null;
+    userEditedSinceSubmitRef.current = false;
+    setPendingWithSafety(false);
+    setCurrentTodo(null);
+    showApprovalInterrupt(null);
     iframeRef.current?.contentWindow?.postMessage(
       { source: "ams-copilot", type: "START_NEW_THREAD" }, CHAT_ORIGIN,
     );
-  }, []);
+  }, [setPendingWithSafety, showApprovalInterrupt]);
+
+  const handleApproval = useCallback((decision: "approve" | "reject") => {
+    if (approvalBusy) return;
+    setApprovalBusy(decision);
+    const sent = sendHitlDecision(decision);
+    if (!sent) setApprovalBusy(null);
+  }, [approvalBusy, sendHitlDecision]);
 
   // ── Computed styles ─────────────────────────────────────────────────────────
   // Panel: when dragged, override the CSS-based centering with exact left/top.
@@ -219,7 +549,20 @@ export function CopilotSidePanel() {
     bottom:    "auto",
     transform: "none",
   } : undefined;
-
+  const currentTodoText =
+    typeof currentTodo?.content === "string" ? currentTodo.content.trim() : "";
+  const hasApproval = Boolean(approvalInterrupt?.actionRequests?.length);
+  const approvalAction = approvalInterrupt?.actionRequests[0] ?? null;
+  const approvalReview = useMemo(
+    () =>
+      approvalAction
+        ? buildDetachedApprovalReview(approvalAction, {
+            context: approvalReviewContext,
+            now: approvalRequestedAt ?? undefined,
+          })
+        : null,
+    [approvalAction, approvalRequestedAt, approvalReviewContext],
+  );
   // Overlay: appear at the same horizontal position as the panel so it feels
   // like the panel "collapsed" in place.
   const overlayStyle: CSSProperties | undefined = dragPos ? {
@@ -233,18 +576,125 @@ export function CopilotSidePanel() {
     <>
       {!isOpen ? (
         <form
-          className="copilot-search-overlay"
+          className={`copilot-search-overlay${hasApproval ? " has-approval" : ""}`}
           style={overlayStyle}
           onSubmit={submitQuickMessage}
         >
+          {hasApproval && approvalInterrupt && approvalReview ? (
+            <section className="copilot-search-approval" role="alert" aria-live="polite">
+              <div className="copilot-search-approval-top">
+                <div className="copilot-search-approval-tabs" role="tablist" aria-label="Approval sections">
+                  {(["summary", "fields"] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      className={`copilot-search-approval-tab${approvalReviewTab === tab ? " is-active" : ""}`}
+                      onClick={() => setApprovalReviewTab(tab)}
+                    >
+                      {tab === "summary" ? "Summary" : "Fields"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="copilot-search-approval-intro">
+                <span className="copilot-search-approval-eyebrow">
+                  {approvalReview.eyebrow}
+                </span>
+                <h2>{approvalReview.title}</h2>
+                <p>{approvalReview.description}</p>
+              </div>
+
+              {approvalReviewTab === "summary" ? (
+                <div className="copilot-search-approval-meta">
+                  {approvalReview.metadata.map((item) => {
+                    const Icon =
+                      item.label === "Form" ? FileText :
+                      item.label === "Requested by" ? UserRound :
+                      item.label === "Filled by" ? Bot :
+                      item.label === "Date" ? CalendarDays :
+                      ClipboardList;
+                    return (
+                      <div className="copilot-search-approval-meta-row" key={item.label}>
+                        <Icon size={15} strokeWidth={2} aria-hidden="true" />
+                        <span className="copilot-search-approval-meta-label">{item.label}</span>
+                        <span className="copilot-search-approval-meta-value">{item.value}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              {approvalReviewTab === "fields" ? (
+                <div className="copilot-search-approval-field-list">
+                  {approvalReview.fields.slice(0, 6).map((field) => (
+                    <div className="copilot-search-approval-field-row" key={`${field.label}:${field.value}`}>
+                      <span className="copilot-search-approval-meta-label">{field.label}</span>
+                      <span className={`copilot-search-approval-meta-value${field.missing ? " is-missing" : ""}`}>
+                        {field.missing ? "Not filled" : field.value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="copilot-search-approval-footer">
+                <div className="copilot-search-approval-actions">
+                  <button
+                    type="button"
+                    className="copilot-search-approval-btn is-danger"
+                    disabled={approvalBusy !== null}
+                    onClick={() => handleApproval("reject")}
+                  >
+                    <X size={13} strokeWidth={2} aria-hidden="true" />
+                    {approvalBusy === "reject" ? "Rejecting..." : approvalReview.rejectLabel}
+                  </button>
+                  <button
+                    type="button"
+                    className="copilot-search-approval-btn is-primary"
+                    disabled={approvalBusy !== null}
+                    onClick={() => handleApproval("approve")}
+                  >
+                    <Check size={13} strokeWidth={2} aria-hidden="true" />
+                    {approvalBusy === "approve" ? "Approving..." : approvalReview.approveLabel}
+                  </button>
+                </div>
+              </div>
+            </section>
+          ) : currentTodoText ? (
+            <section className="copilot-search-active-task" role="status" aria-live="polite">
+              <div className="copilot-search-active-task-main">
+                <LoaderCircle size={16} strokeWidth={2} aria-hidden="true" />
+                <div className="copilot-search-active-task-copy">
+                  <span className="copilot-search-active-task-title">Tasks</span>
+                  <span className="copilot-search-active-task-text">
+                    <strong>Now:</strong> {currentTodoText}
+                  </span>
+                </div>
+              </div>
+            </section>
+          ) : null}
           <textarea
             ref={searchTextareaRef}
             value={quickMessage}
-            onChange={(event) => setQuickMessage(event.target.value)}
+            onChange={(event) => {
+              // Mark "user has edited since the last submit" so the
+              // auto-clear on run completion does NOT wipe the draft they
+              // are now typing. The flag stays true until the next submit.
+              if (lastSubmittedTextRef.current !== null) {
+                userEditedSinceSubmitRef.current = true;
+              }
+              setQuickMessage(event.target.value);
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
-                event.currentTarget.form?.requestSubmit();
+                // Only submit when not pending — but still let the user TYPE
+                // freely while a run is in flight so they can prepare the
+                // next message. The submit button itself flips to "Stop"
+                // while pending, and pressing Enter while pending is a no-op.
+                if (!quickMessagePending) {
+                  event.currentTarget.form?.requestSubmit();
+                }
               }
             }}
             className="copilot-search-input"
@@ -259,20 +709,47 @@ export function CopilotSidePanel() {
                 <Mic size={15} strokeWidth={1.9} />
               </button>
               <button type="button" className="copilot-search-expand-btn"
-                aria-label="Open chat panel" title="Open chat panel" onClick={() => setIsOpen(true)}>
+                aria-label="Open chat panel" title="Open chat panel" onClick={openPanel}>
                 <Maximize2 size={14} strokeWidth={2} />
               </button>
-              <button type="submit" className="copilot-search-send"
-                aria-label="Send message" title="Send message" disabled={!quickMessage.trim()}>
-                <SendHorizontal size={14} strokeWidth={2} />
+              <button
+                type={quickMessagePending ? "button" : "submit"}
+                className={
+                  "copilot-search-send" +
+                  (quickMessagePending ? " is-loading" : "")
+                }
+                aria-label={quickMessagePending ? "Stop task" : "Send message"}
+                title={quickMessagePending ? "Stop task (click to cancel)" : "Send message"}
+                disabled={!quickMessagePending && !quickMessage.trim()}
+                onClick={quickMessagePending ? stopDetachedRun : undefined}
+              >
+                {quickMessagePending ? (
+                  // Mirror the chat panel: spinning loader while a run is
+                  // in flight so the user gets the same "working..." signal.
+                  // Click to cancel — same behaviour as the panel's Cancel.
+                  <LoaderCircle
+                    size={12}
+                    strokeWidth={2}
+                    className="copilot-search-send-spin"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <SendHorizontal size={12} strokeWidth={2} />
+                )}
               </button>
             </div>
           </div>
           {unreadCount > 0 ? (
-            <span className="copilot-dock-unread"
-              aria-label={`${unreadCount} unread assistant message${unreadCount === 1 ? "" : "s"}`}>
-              {unreadCount > 99 ? "99+" : unreadCount}
-            </span>
+            <button
+              type="button"
+              className="copilot-dock-reply-pop"
+              aria-label={`${unreadCount} unread assistant message${unreadCount === 1 ? "" : "s"}. Open chat panel.`}
+              onClick={openPanel}
+            >
+              <Sparkles size={15} strokeWidth={2} aria-hidden="true" />
+              <span>Assistant has a new reply</span>
+              <span className="copilot-dock-reply-dot" aria-hidden="true" />
+            </button>
           ) : null}
         </form>
       ) : null}
@@ -316,10 +793,11 @@ export function CopilotSidePanel() {
           </div>
         </div>
       </aside>
-      {openUiPreviewCode ? (
+      {openUiPreview ? (
         <CopilotOpenUiPreviewModal
-          code={openUiPreviewCode}
-          onClose={() => setOpenUiPreviewCode(null)}
+          code={openUiPreview.code}
+          isStreaming={openUiPreview.isStreaming}
+          onClose={() => setOpenUiPreview(null)}
         />
       ) : null}
     </>
