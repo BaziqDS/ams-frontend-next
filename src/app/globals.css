@@ -686,241 +686,90 @@ kbd {
   font-weight: 400;
 }
 
-.copilot-search-approval {
+.copilot-search-approval-bubble {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
   display: grid;
-  min-width: 0;
-  width: calc(100% + 18px);
-  max-width: none;
-  margin: -7px -9px 4px;
-  border: 1px solid color-mix(in oklch, var(--warn) 34%, var(--hairline));
-  border-radius: 18px 18px 0 0;
-  background: color-mix(in oklch, var(--card) 95%, var(--warn-weak));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  width: min(356px, calc(100vw - 32px));
+  max-width: 100%;
+  grid-template-columns: 30px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in oklch, var(--warn) 38%, var(--hairline));
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.97), color-mix(in oklch, var(--warn-weak) 36%, white));
   color: var(--ink);
-  overflow: hidden;
-}
-
-.copilot-search-approval-top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 10px;
-  padding: 10px 12px 8px;
-}
-
-.copilot-search-approval-tabs {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.copilot-search-approval-tab {
-  height: 26px;
-  min-width: 64px;
-  padding: 0 10px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
-  background: color-mix(in oklch, var(--card) 94%, white);
-  color: var(--muted);
+  box-shadow:
+    0 16px 34px -20px rgba(15, 23, 42, 0.34),
+    0 0 0 1px rgba(255, 255, 255, 0.74) inset;
   font: inherit;
-  font-size: 12px;
-  font-weight: 600;
+  text-align: left;
   cursor: pointer;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  backdrop-filter: blur(12px);
+  transition: transform var(--t-fast), border-color var(--t-fast), box-shadow var(--t-fast);
+  animation: copilot-reply-pop-in 0.24s ease-out both;
 }
 
-.copilot-search-approval-tab.is-active {
-  border-color: color-mix(in oklch, var(--warn) 28%, var(--hairline));
-  background: color-mix(in oklch, var(--warn-weak) 58%, var(--card));
+.copilot-search-approval-bubble::after {
+  content: "";
+  position: absolute;
+  left: 28px;
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  border-right: 1px solid color-mix(in oklch, var(--warn) 34%, var(--hairline));
+  border-bottom: 1px solid color-mix(in oklch, var(--warn) 34%, var(--hairline));
+  background: color-mix(in oklch, var(--warn-weak) 36%, white);
+  transform: rotate(45deg);
+}
+
+.copilot-search-approval-bubble:hover {
+  border-color: color-mix(in oklch, var(--warn) 54%, var(--hairline));
+  box-shadow:
+    0 18px 38px -20px rgba(15, 23, 42, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.82) inset;
+  transform: translateY(-1px);
+}
+
+.copilot-search-approval-bubble-icon {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--warn) 12%, white);
+  color: color-mix(in oklch, var(--warn) 72%, var(--ink));
+}
+
+.copilot-search-approval-bubble-copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.copilot-search-approval-bubble-title {
   color: var(--ink);
-}
-
-.copilot-search-approval-intro {
-  display: grid;
-  gap: 5px;
-  padding: 2px 12px 9px;
-}
-
-.copilot-search-approval-eyebrow {
-  color: color-mix(in oklch, var(--primary) 78%, var(--success));
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-}
-
-.copilot-search-approval-intro h2 {
-  margin: 0;
-  color: var(--ink);
-  font-size: 17px;
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: 0;
-}
-
-.copilot-search-approval-intro p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12.5px;
-  line-height: 1.35;
-}
-
-.copilot-search-approval-meta,
-.copilot-search-approval-field-list {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: minmax(0, 1fr);
-  padding: 0 12px 10px;
-}
-
-.copilot-search-approval-field-list {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.copilot-search-approval-meta-row {
-  display: grid;
-  grid-template-columns: 18px minmax(128px, 0.34fr) minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  min-height: 30px;
-  border-bottom: 1px solid var(--hairline);
-}
-
-.copilot-search-approval-field-row {
-  display: grid;
-  grid-template-columns: minmax(128px, 0.34fr) minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  min-height: 30px;
-  border-bottom: 1px solid var(--hairline);
-}
-
-.copilot-search-approval-meta-row svg {
-  color: var(--ink-2);
-}
-
-.copilot-search-approval-meta-label {
-  color: var(--muted);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
+  line-height: 1.15;
 }
 
-.copilot-search-approval-meta-value {
+.copilot-search-approval-bubble-text {
   min-width: 0;
   overflow: hidden;
-  color: var(--ink);
-  font-size: 12px;
-  font-weight: 600;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.copilot-search-approval-meta-value.is-missing {
-  color: var(--danger);
-}
-
-.copilot-search-approval-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 9px 12px 10px;
-  border-top: 1px solid var(--hairline);
-  background: color-mix(in oklch, var(--card) 88%, white);
-}
-
-.copilot-search-approval-actions {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 6px;
-}
-
-.copilot-search-approval-btn {
-  display: inline-flex;
-  height: 28px;
-  min-width: 76px;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 0 10px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
-  background: var(--card);
-  color: var(--ink-2);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0;
-  cursor: pointer;
-  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast), box-shadow var(--t-fast), transform var(--t-fast);
-}
-
-.copilot-search-approval-btn svg {
-  flex-shrink: 0;
-}
-
-.copilot-search-approval-btn:hover:not(:disabled) {
-  border-color: var(--border-strong);
-  background: var(--surface-2);
-}
-
-.copilot-search-approval-btn.is-danger {
-  border-color: var(--danger);
-  background: var(--danger);
-  color: white;
-}
-
-.copilot-search-approval-btn.is-danger:hover:not(:disabled) {
-  border-color: color-mix(in oklch, var(--danger) 84%, black);
-  background: color-mix(in oklch, var(--danger) 84%, black);
-  color: white;
-}
-
-.copilot-search-approval-btn:active:not(:disabled) {
-  transform: translateY(0.5px);
-}
-
-.copilot-search-approval-btn.is-primary {
-  border-color: var(--ink);
-  background: var(--ink);
-  color: white;
-  box-shadow: none;
-}
-
-.copilot-search-approval-btn.is-primary:hover:not(:disabled) {
-  background: var(--ink-2);
-  border-color: var(--ink-2);
-}
-
-.copilot-search-approval-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-@media (max-width: 680px) {
-  .copilot-search-approval-top,
-  .copilot-search-approval-footer {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .copilot-search-approval-tabs,
-  .copilot-search-approval-actions {
-    width: 100%;
-  }
-
-  .copilot-search-approval-tab,
-  .copilot-search-approval-btn {
-    flex: 1 1 0;
-  }
-
-  .copilot-search-approval-meta {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.copilot-search-approval-bubble-open {
+  color: var(--muted);
 }
 
 .copilot-search-actions {

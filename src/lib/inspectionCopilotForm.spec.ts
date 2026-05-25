@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyInspectionItemCopilotPatches,
   buildInspectionCertificateItemCopilotFields,
@@ -393,5 +393,160 @@ describe("inspection copilot form helpers", () => {
       central_register_no: "CENT-1",
       central_register_page_no: "10",
     });
+  });
+});
+
+
+describe("searchCentralRegisterItemOptions (agent-only hybrid)", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("routes central register items.N.item searches through the copilot endpoint", async () => {
+    const { searchCentralRegisterItemOptions } = await import("./inspectionCopilotForm");
+    const apiModule = await import("./api");
+
+    const apiFetchSpy = vi
+      .spyOn(apiModule, "apiFetch")
+      .mockResolvedValue({
+        enabled: true,
+        hits: [
+          {
+            id: 42,
+            name: "Intel 10th Gen Dual-Core CPU",
+            code: "ITM-9001",
+            category_id: 7,
+            category_display: "Hardware / Processors",
+            category_type: "FIXED_ASSET",
+            tracking_type: "INDIVIDUAL",
+            description: "Desktop processor, 4GHz, 4MB cache, LGA1200",
+            specifications: "65W TDP",
+            acct_unit: "piece",
+            score: 0.0282,
+            signals: ["semantic_rank=1", "bm25_rank=25", "tracking_match", "category_match"],
+          },
+        ],
+      });
+
+    const result = await searchCentralRegisterItemOptions({
+      fields: [
+        {
+          name: "items.0.item",
+          type: "select",
+          options: [],
+        },
+      ],
+      field: "items.0.item",
+      query: "Pentium G6400",
+      currentValues: {
+        items: [
+          {
+            item_name: "Pentium G6400",
+            item_description: "HP 6th gen processor",
+            item_specifications: "65 watt",
+            item_tracking_type: "INDIVIDUAL",
+            item_category_type: "FIXED_ASSET",
+          },
+        ],
+      },
+    });
+
+    expect(apiFetchSpy).toHaveBeenCalledWith(
+      "/api/inventory/items/copilot-search/",
+      expect.objectContaining({ method: "POST" }),
+    );
+
+    const callArgs = apiFetchSpy.mock.calls[0][1] as RequestInit;
+    const sentBody = JSON.parse(String(callArgs.body));
+    expect(sentBody).toMatchObject({
+      item_name: "Pentium G6400",
+      item_description: "HP 6th gen processor",
+      item_specifications: "65 watt",
+      item_tracking_type: "INDIVIDUAL",
+      item_category_type: "FIXED_ASSET",
+    });
+
+    expect(result.status).toBe("matched");
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toMatchObject({
+      label: "Intel 10th Gen Dual-Core CPU",
+      value: 42,
+      signals: ["semantic_rank=1", "bm25_rank=25", "tracking_match", "category_match"],
+    });
+  });
+
+  it("falls back to in-memory matcher when backend reports hybrid disabled", async () => {
+    const { searchCentralRegisterItemOptions } = await import("./inspectionCopilotForm");
+    const apiModule = await import("./api");
+
+    vi.spyOn(apiModule, "apiFetch").mockResolvedValue({
+      enabled: false,
+      reason: "hybrid_search_not_supported",
+      hits: [],
+    });
+
+    const result = await searchCentralRegisterItemOptions({
+      fields: [
+        {
+          name: "items.0.item",
+          type: "select",
+          options: [
+            { label: "core i5", value: 1 },
+          ],
+        },
+      ],
+      field: "items.0.item",
+      query: "core i5",
+      currentValues: {
+        items: [{ item_name: "core i5" }],
+      },
+    });
+
+    // The in-memory matcher should have matched the literal label.
+    expect(result.candidates.map(c => c.value)).toContain(1);
+  });
+
+  it("does not call the copilot endpoint for non-central-register fields", async () => {
+    const { searchCentralRegisterItemOptions } = await import("./inspectionCopilotForm");
+    const apiModule = await import("./api");
+
+    const apiFetchSpy = vi.spyOn(apiModule, "apiFetch");
+
+    await searchCentralRegisterItemOptions({
+      fields: [
+        {
+          name: "items.0.stock_register",
+          type: "select",
+          options: [{ label: "REG-1", value: 1 }],
+        },
+      ],
+      field: "items.0.stock_register",
+      query: "REG-1",
+      currentValues: {},
+    });
+
+    expect(apiFetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("skips the network call when the inspection row carries no signal", async () => {
+    const { searchCentralRegisterItemOptions } = await import("./inspectionCopilotForm");
+    const apiModule = await import("./api");
+
+    const apiFetchSpy = vi.spyOn(apiModule, "apiFetch");
+
+    await searchCentralRegisterItemOptions({
+      fields: [
+        {
+          name: "items.0.item",
+          type: "select",
+          options: [],
+        },
+      ],
+      field: "items.0.item",
+      query: "",
+      currentValues: { items: [{}] },
+    });
+
+    expect(apiFetchSpy).not.toHaveBeenCalled();
   });
 });

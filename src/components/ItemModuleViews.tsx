@@ -646,6 +646,9 @@ export function ItemModal({
     low_stock_threshold: touched.has("low_stock_threshold") && (!form.low_stock_threshold || !/^\d+$/.test(form.low_stock_threshold) || Number(form.low_stock_threshold) < 1)
       ? "Low-stock threshold must be at least 1."
       : undefined,
+    description: touched.has("description") && !form.description.trim()
+      ? "Description is required — describe the item so the catalog can be searched for it later."
+      : undefined,
   };
   const issueCount = Object.values(errors).filter(Boolean).length;
   const canSave = !submitting && categories.length > 0;
@@ -655,7 +658,7 @@ export function ItemModal({
   const set = (patch: Partial<ItemFormState>) => setForm(prev => ({ ...prev, ...patch }));
 
   const submit = async () => {
-    setTouched(new Set(["name", "category", "acct_unit", "low_stock_threshold"]));
+    setTouched(new Set(["name", "category", "acct_unit", "low_stock_threshold", "description"]));
 
     if (
       !form.name.trim() ||
@@ -663,7 +666,8 @@ export function ItemModal({
       !form.acct_unit.trim() ||
       !form.low_stock_threshold ||
       !/^\d+$/.test(form.low_stock_threshold) ||
-      Number(form.low_stock_threshold) < 1
+      Number(form.low_stock_threshold) < 1 ||
+      !form.description.trim()
     ) {
       setSubmitError("Please complete the required fields.");
       return {
@@ -730,18 +734,28 @@ export function ItemModal({
     { name: "acct_unit", label: "Accounting unit", type: "string", required: true },
     { name: "low_stock_threshold", label: "Low-stock threshold", type: "number", required: true },
     { name: "is_active", label: "Active state", type: "boolean" },
-    { name: "description", label: "Description", type: "string" },
+    {
+      name: "description",
+      label: "Description",
+      type: "string",
+      required: true,
+      description:
+        "Required. Describe the item — brand, model, generation, capacity, intended use. The copilot's catalog search compares this against future inspection items, so an empty/generic description makes the item invisible to inspection linking.",
+    },
     { name: "specifications", label: "Specifications", type: "string" },
   ], [categories]);
 
   const validateForCopilot = useCallback(() => {
-    setTouched(new Set(["name", "category", "acct_unit", "low_stock_threshold"]));
+    setTouched(new Set(["name", "category", "acct_unit", "low_stock_threshold", "description"]));
     const nextErrors: Record<string, string> = {};
     if (!form.name.trim()) nextErrors.name = "Item name is required.";
     if (!form.category) nextErrors.category = "Select a subcategory for this item.";
     if (!form.acct_unit.trim()) nextErrors.acct_unit = "Accounting unit is required.";
     if (!form.low_stock_threshold || !/^\d+$/.test(form.low_stock_threshold) || Number(form.low_stock_threshold) < 1) {
       nextErrors.low_stock_threshold = "Low-stock threshold must be at least 1.";
+    }
+    if (!form.description.trim()) {
+      nextErrors.description = "Description is required — describe the item so the catalog can be searched for it later.";
     }
     return {
       ok: Object.keys(nextErrors).length === 0,
@@ -861,10 +875,17 @@ export function ItemModal({
               </div>
             </Section>
 
-            <Section n={2} title="Description" sub="Optional searchable context for specifications and procurement details.">
+            <Section n={2} title="Description" sub="Describe the item so the catalog can be matched against future inspection items.">
               <div className="form-grid cols-1">
-                <Field label="Description" copilotField="description">
-                  <textarea className="textarea-field" rows={3} value={form.description} onChange={e => set({ description: e.target.value })} placeholder="Short description" />
+                <Field label="Description" required error={errors.description} copilotField="description">
+                  <textarea
+                    className="textarea-field"
+                    rows={3}
+                    value={form.description}
+                    onChange={e => set({ description: e.target.value })}
+                    onBlur={() => setTouched(prev => new Set(prev).add("description"))}
+                    placeholder="Brand, model, generation, capacity, intended use…"
+                  />
                 </Field>
                 <Field label="Specifications" copilotField="specifications">
                   <textarea className="textarea-field" rows={4} value={form.specifications} onChange={e => set({ specifications: e.target.value })} placeholder="Technical specifications" />

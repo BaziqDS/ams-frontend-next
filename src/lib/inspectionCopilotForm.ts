@@ -1,4 +1,10 @@
 import type { CopilotFormField } from "@/hooks/useCopilotForm";
+import { apiFetch } from "@/lib/api";
+import {
+  searchCopilotFormOptions,
+  type CopilotFormOptionSearchArgs,
+  type CopilotFormOptionSearchResult,
+} from "@/lib/copilotFormRuntime";
 
 type SelectOption = {
   id: number;
@@ -581,4 +587,177 @@ export function buildInspectionItemArrayCopilotFields({
   }
 
   return fields;
+}
+
+
+// ===========================================================================
+// Agent-only hybrid catalog search for Central Register items.N.item.
+// ===========================================================================
+// This wraps the default in-memory `searchCopilotFormOptions` matcher with a
+// network call to /api/inventory/items/copilot-search/. The backend runs the
+// pgvector + tsvector + RRF pipeline and returns ranked candidates carrying
+// match_signals (e.g. semantic_rank=1, bm25_rank=12, tracking_match).
+//
+// IMPORTANT: this resolver is ONLY wired through useCopilotForm({ searchOptions })
+// on the inspection central register surface. Human-facing dropdowns do NOT
+// route through here — they keep using the standard ItemViewSet list endpoint
+// with ?search=…  No filter/UX behaviour changes for users.
+//
+// If the backend reports `enabled: false` (feature flag off, or DB is SQLite,
+// or the query carries no signal worth running hybrid for), we fall through
+// to the regular in-memory matcher so the agent still gets a result.
+
+type CopilotItemSearchHit = {
+  id: number;
+  name: string;
+  code: string;
+  category_id: number | null;
+  category_display: string | null;
+  category_type: string | null;
+  tracking_type: string | null;
+  description: string | null;
+  specifications: string | null;
+  acct_unit: string | null;
+  score: number;
+  signals: string[];
+};
+
+type CopilotItemSearchResponse = {
+  enabled: boolean;
+  reason?: string;
+  hits: CopilotItemSearchHit[];
+};
+
+const CENTRAL_REGISTER_ITEM_FIELD = /^items\.\d+\.item$/;
+
+function parseRowIndex(fieldPath: string): number | null {
+  const match = fieldPath.match(/^items\.(\d+)\.item$/);
+  return match ? Number(match[1]) : null;
+}
+
+/** Pull inspection row context for the targeted row index out of currentValues. */
+function pickInspectionRowContext(
+  currentValues: unknown,
+  rowIndex: number | null,
+): Record<string, string> {
+  if (rowIndex === null) return {};
+  if (!currentValues || typeof currentValues !== "object") return {};
+
+  const root = currentValues as Record<string, unknown>;
+  // Two common shapes: dotted ("items.0.item_description") or nested arrays
+  // (root.items[rowIndex].item_description). Support both.
+  const dotted: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(root)) {
+    if (k.startsWith(`items.${rowIndex}.`)) {
+      dotted[k.slice(`items.${rowIndex}.`.length)] = v;
+    }
+  }
+
+  let nested: Record<string, unknown> = {};
+  const itemsArray = root.items;
+  if (Array.isArray(itemsArray) && typeof itemsArray[rowIndex] === "object" && itemsArray[rowIndex]) {
+    nested = itemsArray[rowIndex] as Record<string, unknown>;
+  }
+
+  const merged = { ...nested, ...dotted }; // dotted overrides — it's the agent's planned patch
+  const result: Record<string, string> = {};
+  for (const key of [
+    "item_name",
+    "item_code",
+    "item_category",
+    "item_description",
+    "item_specifications",
+    "item_unit",
+    "item_tracking_type",
+    "item_category_type",
+  ] as const) {
+    const value = merged[key];
+    if (typeof value === "string" && value.trim()) {
+      result[key] = value.trim();
+    }
+  }
+  return result;
+}
+
+function formatHitMessage(hits: CopilotItemSearchHit[], query: string): string {
+  if (hits.length === 0) {
+    return `No catalog items matched the inspection row${query ? ` (query="${query}")` : ""}.`;
+  }
+  const top = hits[0];
+  const signals = top.signals.length > 0 ? ` (${top.signals.join(", ")})` : "";
+  return `Top hybrid match: ${top.name} [${top.code}]${signals}. ${hits.length} candidate(s) returned for agent review.`;
+}
+
+/**
+ * Drop-in replacement for `searchCopilotFormOptions` when the field is
+ * items.N.item on a Central Register form. Calls the agent-only backend
+ * endpoint; falls back to the default in-memory matcher on any failure.
+ */
+export async function searchCentralRegisterItemOptions(
+  args: CopilotFormOptionSearchArgs,
+): Promise<CopilotFormOptionSearchResult> {
+  const { field: fieldPath, query = "", currentValues } = args;
+
+  if (!CENTRAL_REGISTER_ITEM_FIELD.test(fieldPath)) {
+    return searchCopilotFormOptions(args);
+  }
+
+  const rowIndex = parseRowIndex(fieldPath);
+  const rowContext = pickInspectionRowContext(currentValues, rowIndex);
+
+  // If the row carries no signal at all, the hybrid search would have nothing
+  // useful to embed — fall back to the in-memory matcher (which can still
+  // resolve a literal name/code typed by the user).
+  if (!rowContext.item_name && !rowContext.item_description && !rowContext.item_code && !query.trim()) {
+    return searchCopilotFormOptions(args);
+  }
+
+  // The user's typed query (if any) augments item_name as an extra hint.
+  const payload = {
+    ...rowContext,
+    ...(query && !rowContext.item_name ? { item_name: query } : {}),
+    limit: args.limit ?? 10,
+  };
+
+  let response: CopilotItemSearchResponse | null = null;
+  try {
+    response = await apiFetch<CopilotItemSearchResponse>(
+      "/api/inventory/items/copilot-search/",
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+  } catch {
+    response = null;
+  }
+
+  if (!response || !response.enabled || response.hits.length === 0) {
+    // Fall through to the default matcher so the agent still gets candidates.
+    const fallback = await Promise.resolve(searchCopilotFormOptions(args));
+    return fallback;
+  }
+
+  const candidates = response.hits.map(hit => ({
+    label: hit.name,
+    value: hit.id,
+    ...(hit.code ? { code: hit.code } : {}),
+    ...(hit.description ? { description: hit.description } : {}),
+    ...(hit.specifications ? { specifications: hit.specifications } : {}),
+    ...(hit.category_display ? { category_display: hit.category_display } : {}),
+    ...(hit.category_type ? { category_type: hit.category_type } : {}),
+    ...(hit.tracking_type ? { tracking_type: hit.tracking_type } : {}),
+    ...(hit.acct_unit ? { acct_unit: hit.acct_unit } : {}),
+    score: hit.score,
+    signals: hit.signals,
+  }));
+
+  return {
+    ok: true,
+    status: candidates.length === 1 ? "matched" : "ambiguous",
+    field: fieldPath,
+    query,
+    candidates,
+    totalCount: candidates.length,
+    hasMore: false,
+    optionsState: "remote_search",
+    message: formatHitMessage(response.hits, query),
+  };
 }

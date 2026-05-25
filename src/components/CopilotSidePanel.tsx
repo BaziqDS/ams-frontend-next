@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type CSSProperties } from "react";
-import { Bot, CalendarDays, Check, ClipboardList, FileText, LoaderCircle, MessageCircle, Mic, Maximize2, SendHorizontal, Sparkles, SquarePen, UserRound, X } from "lucide-react";
+import { ClipboardList, LoaderCircle, MessageCircle, Mic, Maximize2, SendHorizontal, Sparkles, SquarePen, X } from "lucide-react";
 import {
   COPILOT_HITL_INTERRUPT_EVENT,
   type CopilotHitlInterrupt,
@@ -40,7 +40,6 @@ const PLACEHOLDER_PHRASES = [
 type Pos = { left: number; top: number };
 type DetachedTodo = { content?: unknown; status?: unknown } | null;
 type DetachedPending = { text: string; at: number } | null;
-type ApprovalReviewTab = "summary" | "fields";
 type ApprovalContextSnapshot = {
   readables?: Array<{ id?: string; description?: string; value?: unknown }>;
 };
@@ -103,14 +102,10 @@ export function CopilotSidePanel() {
   const [currentTodo, setCurrentTodo] = useState<DetachedTodo>(null);
   const [approvalInterrupt, setApprovalInterrupt] =
     useState<CopilotHitlInterrupt | null>(null);
-  const [approvalReviewTab, setApprovalReviewTab] =
-    useState<ApprovalReviewTab>("summary");
   const [approvalReviewContext, setApprovalReviewContext] =
     useState<ApprovalContextSnapshot | null>(null);
   const [approvalRequestedAt, setApprovalRequestedAt] =
     useState<Date | null>(null);
-  const [approvalBusy, setApprovalBusy] =
-    useState<"approve" | "reject" | null>(null);
   const [hideToolCalls, setHideToolCalls] = useState(false);
   const [placeholder, setPlaceholder]   = useState(PLACEHOLDER_PHRASES[0]);
   const [dragPos, setDragPos]           = useState<Pos | null>(loadPos);
@@ -139,12 +134,10 @@ export function CopilotSidePanel() {
   // the input in the meantime (we never want to clobber a new draft).
   const lastSubmittedTextRef = useRef<string | null>(null);
   const userEditedSinceSubmitRef = useRef(false);
-  const { setIframe, sendHitlDecision, getContextSnapshot } = useCopilotInternal();
+  const { setIframe, getContextSnapshot } = useCopilotInternal();
 
   const showApprovalInterrupt = useCallback((interrupt: CopilotHitlInterrupt | null) => {
     setApprovalInterrupt(interrupt);
-    setApprovalBusy(null);
-    setApprovalReviewTab("summary");
     setApprovalReviewContext(interrupt ? getContextSnapshot() : null);
     setApprovalRequestedAt(interrupt ? new Date() : null);
   }, [getContextSnapshot]);
@@ -531,13 +524,6 @@ export function CopilotSidePanel() {
     );
   }, [setPendingWithSafety, showApprovalInterrupt]);
 
-  const handleApproval = useCallback((decision: "approve" | "reject") => {
-    if (approvalBusy) return;
-    setApprovalBusy(decision);
-    const sent = sendHitlDecision(decision);
-    if (!sent) setApprovalBusy(null);
-  }, [approvalBusy, sendHitlDecision]);
-
   // ── Computed styles ─────────────────────────────────────────────────────────
   // Panel: when dragged, override the CSS-based centering with exact left/top.
   // Hide via opacity only (not slide-off-screen transform) so it fades in/out
@@ -563,6 +549,12 @@ export function CopilotSidePanel() {
         : null,
     [approvalAction, approvalRequestedAt, approvalReviewContext],
   );
+  const approvalFieldCount = approvalReview?.fields.length ?? 0;
+  const approvalBubbleText = approvalReview
+    ? approvalFieldCount > 0
+      ? `${approvalReview.title} - ${approvalFieldCount} field${approvalFieldCount === 1 ? "" : "s"} to review`
+      : approvalReview.title
+    : "";
   // Overlay: appear at the same horizontal position as the panel so it feels
   // like the panel "collapsed" in place.
   const overlayStyle: CSSProperties | undefined = dragPos ? {
@@ -580,86 +572,32 @@ export function CopilotSidePanel() {
           style={overlayStyle}
           onSubmit={submitQuickMessage}
         >
-          {hasApproval && approvalInterrupt && approvalReview ? (
-            <section className="copilot-search-approval" role="alert" aria-live="polite">
-              <div className="copilot-search-approval-top">
-                <div className="copilot-search-approval-tabs" role="tablist" aria-label="Approval sections">
-                  {(["summary", "fields"] as const).map((tab) => (
-                    <button
-                      key={tab}
-                      type="button"
-                      className={`copilot-search-approval-tab${approvalReviewTab === tab ? " is-active" : ""}`}
-                      onClick={() => setApprovalReviewTab(tab)}
-                    >
-                      {tab === "summary" ? "Summary" : "Fields"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="copilot-search-approval-intro">
-                <span className="copilot-search-approval-eyebrow">
-                  {approvalReview.eyebrow}
+          {hasApproval && approvalReview ? (
+            <button
+              type="button"
+              className="copilot-search-approval-bubble"
+              aria-label={`Approval needed for ${approvalReview.title}. Open chat panel to review.`}
+              aria-live="polite"
+              onClick={openPanel}
+            >
+              <span className="copilot-search-approval-bubble-icon" aria-hidden="true">
+                <ClipboardList size={15} strokeWidth={2} />
+              </span>
+              <span className="copilot-search-approval-bubble-copy">
+                <span className="copilot-search-approval-bubble-title">
+                  Approval needed
                 </span>
-                <h2>{approvalReview.title}</h2>
-                <p>{approvalReview.description}</p>
-              </div>
-
-              {approvalReviewTab === "summary" ? (
-                <div className="copilot-search-approval-meta">
-                  {approvalReview.metadata.map((item) => {
-                    const Icon =
-                      item.label === "Form" ? FileText :
-                      item.label === "Requested by" ? UserRound :
-                      item.label === "Filled by" ? Bot :
-                      item.label === "Date" ? CalendarDays :
-                      ClipboardList;
-                    return (
-                      <div className="copilot-search-approval-meta-row" key={item.label}>
-                        <Icon size={15} strokeWidth={2} aria-hidden="true" />
-                        <span className="copilot-search-approval-meta-label">{item.label}</span>
-                        <span className="copilot-search-approval-meta-value">{item.value}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : null}
-
-              {approvalReviewTab === "fields" ? (
-                <div className="copilot-search-approval-field-list">
-                  {approvalReview.fields.slice(0, 6).map((field) => (
-                    <div className="copilot-search-approval-field-row" key={`${field.label}:${field.value}`}>
-                      <span className="copilot-search-approval-meta-label">{field.label}</span>
-                      <span className={`copilot-search-approval-meta-value${field.missing ? " is-missing" : ""}`}>
-                        {field.missing ? "Not filled" : field.value}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              <div className="copilot-search-approval-footer">
-                <div className="copilot-search-approval-actions">
-                  <button
-                    type="button"
-                    className="copilot-search-approval-btn is-danger"
-                    disabled={approvalBusy !== null}
-                    onClick={() => handleApproval("reject")}
-                  >
-                    <X size={13} strokeWidth={2} aria-hidden="true" />
-                    {approvalBusy === "reject" ? "Rejecting..." : approvalReview.rejectLabel}
-                  </button>
-                  <button
-                    type="button"
-                    className="copilot-search-approval-btn is-primary"
-                    disabled={approvalBusy !== null}
-                    onClick={() => handleApproval("approve")}
-                  >
-                    <Check size={13} strokeWidth={2} aria-hidden="true" />
-                    {approvalBusy === "approve" ? "Approving..." : approvalReview.approveLabel}
-                  </button>
-                </div>
-              </div>
-            </section>
+                <span className="copilot-search-approval-bubble-text">
+                  {approvalBubbleText}
+                </span>
+              </span>
+              <Maximize2
+                className="copilot-search-approval-bubble-open"
+                size={14}
+                strokeWidth={2}
+                aria-hidden="true"
+              />
+            </button>
           ) : currentTodoText ? (
             <section className="copilot-search-active-task" role="status" aria-live="polite">
               <div className="copilot-search-active-task-main">
@@ -739,7 +677,7 @@ export function CopilotSidePanel() {
               </button>
             </div>
           </div>
-          {unreadCount > 0 ? (
+          {unreadCount > 0 && !hasApproval ? (
             <button
               type="button"
               className="copilot-dock-reply-pop"

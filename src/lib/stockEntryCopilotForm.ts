@@ -442,10 +442,21 @@ function buildSearchFieldsForStockEntry(
           name: "stock_register",
           label: "Source register",
           type: "select",
+          required: true,
           options: line?.source_register_options ?? context.source_register_options,
           dependsOn: ["from_location"],
           optionSource: "stockEntry.sourceRegisters",
           resolver: "search_form_options",
+          description:
+            "Required. The stock register (per-location ledger) the source quantity is being deducted from. Search by register number/code or pass an empty query to list registers visible at from_location.",
+        },
+        {
+          name: "page_number",
+          label: "Source register page number",
+          type: "string",
+          required: true,
+          description:
+            "Required. The page/folio number in the source stock register where this line item is recorded.",
         },
       ],
     },

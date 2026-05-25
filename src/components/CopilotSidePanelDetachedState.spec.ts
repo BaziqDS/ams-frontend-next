@@ -92,7 +92,7 @@ describe("detached copilot mirrored state", () => {
   it("matches the chat panel composer corner radius in detached mode", () => {
     expect(styles).toMatch(/\.copilot-search-overlay \{[^}]*border-radius: 18px/);
     expect(styles).toMatch(/\.copilot-search-active-task \{[^}]*border-radius: 18px 18px 0 0/);
-    expect(styles).toMatch(/\.copilot-search-approval \{[^}]*border-radius: 18px 18px 0 0/);
+    expect(styles).toMatch(/\.copilot-search-approval-bubble \{[^}]*border-radius: 18px/);
   });
 
   it("lets the detached composer stop a pending agent run", () => {
@@ -149,31 +149,36 @@ describe("detached copilot mirrored state", () => {
   });
 });
 
-describe("detached approval card layout", () => {
-  it("renders a form-aware approval review card with tabs and metadata", () => {
+describe("detached approval bubble layout", () => {
+  it("renders a compact approval bubble that opens the full chat panel", () => {
     expect(source).toMatch(/buildDetachedApprovalReview/);
-    expect(source).toMatch(/approvalReviewTab/);
-    expect(source).toMatch(/copilot-search-approval-tabs/);
-    expect(source).toMatch(/copilot-search-approval-meta/);
-    expect(source).toMatch(/copilot-search-approval-field-list/);
-    expect(source).toMatch(/"fields"/);
-    expect(source).toMatch(/Not filled/);
+    expect(source).toMatch(/copilot-search-approval-bubble/);
+    expect(source).toMatch(/Approval needed/);
+    expect(source).toMatch(/Open chat panel to review/);
+    expect(source).toMatch(/onClick=\{openPanel\}/);
     expect(source).toMatch(/copilot-search-overlay.*has-approval/);
+    expect(source).toMatch(/unreadCount > 0 && !hasApproval/);
+    expect(source).not.toMatch(/approvalReviewTab/);
+    expect(source).not.toMatch(/sendHitlDecision/);
+    expect(source).not.toMatch(/handleApproval/);
+    expect(source).not.toMatch(/copilot-search-approval-tabs/);
+    expect(source).not.toMatch(/copilot-search-approval-meta/);
+    expect(source).not.toMatch(/copilot-search-approval-field-list/);
+    expect(source).not.toMatch(/copilot-search-approval-btn/);
     expect(source).not.toMatch(/"audit"|Audit/);
     expect(source).not.toMatch(/"details"|Details/);
     expect(source).not.toMatch(/Intent/);
     expect(source).not.toMatch(/ListChecks|is-preview/);
     expect(source).not.toMatch(/View fields/);
     expect(source).not.toMatch(/1 of \{approvalInterrupt\.actionRequests\.length\} action/);
+    expect(styles).toMatch(/\.copilot-search-approval-bubble \{[\s\S]*bottom: calc\(100% \+ 10px\)/);
+    expect(styles).toMatch(/\.copilot-search-approval-bubble \{[\s\S]*width: min\(356px, calc\(100vw - 32px\)\)/);
+    expect(styles).toMatch(/\.copilot-search-approval-bubble-text \{[\s\S]*text-overflow: ellipsis/);
+    expect(styles).toMatch(/\.copilot-search-approval-bubble::after/);
     expect(styles).not.toMatch(/copilot-search-approval-step/);
+    expect(styles).not.toMatch(/\.copilot-search-approval\s*\{/);
     expect(styles).not.toMatch(/\.copilot-search-overlay\.has-approval \{[\s\S]*width: min\(760px, calc\(100vw - 32px\)\)/);
-    expect(styles).toMatch(/\.copilot-search-approval \{[\s\S]*width: calc\(100% \+ 18px\)/);
-    expect(styles).toMatch(/\.copilot-search-approval-meta,[\s\S]*\.copilot-search-approval-field-list \{[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
-    expect(styles).toMatch(/\.copilot-search-approval-meta-row \{[\s\S]*grid-template-columns: 18px minmax\(128px, 0\.34fr\) minmax\(0, 1fr\)/);
-    expect(styles).toMatch(/\.copilot-search-approval-field-row \{[\s\S]*grid-template-columns: minmax\(128px, 0\.34fr\) minmax\(0, 1fr\)/);
-    expect(styles).toMatch(/\.copilot-search-approval-tabs/);
-    expect(styles).toMatch(/\.copilot-search-approval-btn \{[\s\S]*height: 28px/);
-    expect(styles).toMatch(/\.copilot-search-approval-btn \{[\s\S]*min-width: 76px/);
-    expect(styles).toMatch(/\.copilot-search-approval-btn\.is-primary \{[\s\S]*box-shadow: none/);
+    expect(styles).not.toMatch(/\.copilot-search-approval-tabs/);
+    expect(styles).not.toMatch(/\.copilot-search-approval-btn/);
   });
 });

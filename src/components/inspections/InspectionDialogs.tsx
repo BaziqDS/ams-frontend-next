@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, type Page } from "@/lib/api";
 import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
+import { searchCentralRegisterItemOptions } from "@/lib/inspectionCopilotForm";
 import { ensureValueInOptions, normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { useAuth } from "@/contexts/AuthContext";
@@ -775,6 +776,10 @@ export function InspectionModal({
       submit: { requiredCapabilities: [{ module: "inspections", level: "manage" }] },
     },
     setValues: applyCopilotValues,
+    // Route items.N.item option searches through the hybrid backend endpoint
+    // (pgvector + tsvector + RRF). This is agent-only — human-facing dropdowns
+    // continue to use the standard keyword search via ItemViewSet.list.
+    searchOptions: searchCentralRegisterItemOptions,
     validate: () => {
       setTouched(true);
       return {
