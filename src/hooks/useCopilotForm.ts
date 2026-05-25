@@ -106,6 +106,22 @@ function matchesForm(formId: string, targetFormId: unknown) {
   return copilotFormIdsMatch(formId, targetFormId);
 }
 
+function snapshotSubmitValues(values: Record<string, unknown>) {
+  try {
+    if (typeof structuredClone === "function") {
+      return structuredClone(values);
+    }
+  } catch {
+    // Fall through to JSON clone.
+  }
+
+  try {
+    return JSON.parse(JSON.stringify(values)) as Record<string, unknown>;
+  } catch {
+    return { ...values };
+  }
+}
+
 export function useCopilotForm(config: CopilotFormConfig): CopilotFormController {
   const pathname = usePathname();
   const trackActivity = useCopilotActivity();
@@ -348,9 +364,13 @@ export function useCopilotForm(config: CopilotFormConfig): CopilotFormController
         return failure;
       }
 
+      const submittedValues = snapshotSubmitValues(config.values);
       try {
         const result = await config.submit(intent);
-        const normalized = normalizeCopilotSubmitResult(result);
+        const normalized = {
+          ...normalizeCopilotSubmitResult(result),
+          submittedValues,
+        };
         trackActivity(
           buildManualSubmitResultActivity({
             formId: config.formId,
@@ -362,7 +382,10 @@ export function useCopilotForm(config: CopilotFormConfig): CopilotFormController
         );
         return normalized;
       } catch (error) {
-        const normalized = normalizeCopilotSubmitError(error);
+        const normalized = {
+          ...normalizeCopilotSubmitError(error),
+          submittedValues,
+        };
         trackActivity(
           buildManualSubmitResultActivity({
             formId: config.formId,
@@ -381,6 +404,7 @@ export function useCopilotForm(config: CopilotFormConfig): CopilotFormController
       config.formId,
       config.submit,
       config.title,
+      config.values,
       pathname,
       trackActivity,
     ],
@@ -660,9 +684,13 @@ export function useCopilotForm(config: CopilotFormConfig): CopilotFormController
         formTitle: config.title,
         details: { intent: intent ?? "save" },
       });
+      const submittedValues = snapshotSubmitValues(config.values);
       try {
         const result = await config.submit?.(intent);
-        const normalized = normalizeCopilotSubmitResult(result);
+        const normalized = {
+          ...normalizeCopilotSubmitResult(result),
+          submittedValues,
+        };
         trackActivity({
           kind: "form_submit_result",
           actor: "assistant",
@@ -676,7 +704,10 @@ export function useCopilotForm(config: CopilotFormConfig): CopilotFormController
         });
         return normalized;
       } catch (error) {
-        const normalized = normalizeCopilotSubmitError(error);
+        const normalized = {
+          ...normalizeCopilotSubmitError(error),
+          submittedValues,
+        };
         trackActivity({
           kind: "form_submit_result",
           actor: "assistant",

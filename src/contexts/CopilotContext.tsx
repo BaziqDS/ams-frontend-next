@@ -174,6 +174,12 @@ type CopilotContextValue = {
   registerReadable: (readable: Readable) => () => void;
   registerAction: (action: CopilotAction) => () => void;
   setIframe: (element: HTMLIFrameElement | null) => void;
+  getContextSnapshot: () => {
+    readables: Readable[];
+    actions: ActionDef[];
+    contextVersion: number;
+    contextObservedAt: string;
+  };
   trackActivity: (event: CopilotActivityEventInput) => CopilotActivityEvent;
   sendVoiceCommand: (text: string) => CopilotVoiceCommand;
   sendHitlDecision: (
@@ -1460,6 +1466,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         registerReadable,
         registerAction,
         setIframe,
+        getContextSnapshot: buildContextPayload,
         trackActivity,
         sendVoiceCommand,
         sendHitlDecision,

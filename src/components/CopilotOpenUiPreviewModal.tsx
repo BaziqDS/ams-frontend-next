@@ -31,9 +31,11 @@ class CopilotOpenUiPreviewBoundary extends Component<
 
 export function CopilotOpenUiPreviewModal({
   code,
+  isStreaming,
   onClose,
 }: {
   code: string;
+  isStreaming: boolean;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -56,13 +58,13 @@ export function CopilotOpenUiPreviewModal({
       >
         <header className="copilot-openui-preview-head">
           <div className="copilot-openui-preview-label">
-            <span>Preview</span>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M15 3h6v6" />
-              <path d="M21 3l-7 7" />
-              <path d="M9 21H3v-6" />
-              <path d="M3 21l7-7" />
-            </svg>
+            <span>Generated UI</span>
+            {isStreaming ? (
+              <span className="copilot-openui-preview-live" aria-label="Generating preview">
+                <span aria-hidden="true" />
+                Building
+              </span>
+            ) : null}
           </div>
           <button
             type="button"
@@ -81,7 +83,7 @@ export function CopilotOpenUiPreviewModal({
               resetKey={code}
               fallback={<div className="assistant-genui-error">The generated UI could not be rendered safely.</div>}
             >
-              <Renderer library={openuiLibrary} response={code} isStreaming={false} />
+              <Renderer library={openuiLibrary} response={code} isStreaming={isStreaming} />
             </CopilotOpenUiPreviewBoundary>
           </ThemeProvider>
         </div>
