@@ -271,14 +271,13 @@ export function buildStockEntryCopilotReferenceContext({
       create_endpoint: "POST /api/inventory/stock-entries/",
       item_payload_fields: [
         "item",
-        "batch",
         "quantity",
         "instances",
         "stock_register",
         "page_number",
       ],
       note:
-        "ack_stock_register and ack_page_number belong to the receiver acknowledgement workflow, not the create stock-entry modal.",
+        "Issue entries auto-resolve quantity-tracked stock from available source stock; ack_stock_register and ack_page_number belong to the receiver acknowledgement workflow, not the create stock-entry modal.",
     },
     movement_modes: [
       {
@@ -291,7 +290,7 @@ export function buildStockEntryCopilotReferenceContext({
       {
         entry_type: "ISSUE",
         issue_target: "PERSON",
-        label: "Issue to person",
+        label: "Issue to employee",
         required_fields: ["from_location", "issued_to", "items"],
         result_status: "COMPLETED",
       },
@@ -307,7 +306,7 @@ export function buildStockEntryCopilotReferenceContext({
       {
         entry_type: "RECEIPT",
         return_source: "PERSON",
-        label: "Return from person",
+        label: "Return from employee",
         required_fields: ["to_location", "issued_to", "items"],
       },
       {
@@ -387,7 +386,7 @@ function buildSearchFieldsForStockEntry(
     },
     {
       name: "issued_to",
-      label: currentValues.entry_type === "ISSUE" ? "Receiving person" : "Returning person",
+      label: currentValues.entry_type === "ISSUE" ? "Receiving employee" : "Returning employee",
       type: "select",
       options: currentValues.entry_type === "ISSUE"
         ? context.receiving_person_options
@@ -395,7 +394,7 @@ function buildSearchFieldsForStockEntry(
       dependsOn: currentValues.entry_type === "ISSUE"
         ? ["from_location", "issue_target"]
         : ["to_location", "return_source"],
-      optionSource: "stockEntry.people",
+      optionSource: "stockEntry.employees",
       resolver: "search_form_options",
     },
     {
@@ -415,16 +414,16 @@ function buildSearchFieldsForStockEntry(
           optionSource: "stockEntry.availableItems",
           resolver: "search_form_options",
         },
-        {
+        ...(currentValues.entry_type === "RECEIPT" ? [{
           name: "batch",
           label: "Batch",
-          type: "select",
+          type: "select" as const,
           options: line?.batch_options ?? [],
           dependsOn: ["items[].item"],
           optionsState: optionsStateFor(line?.batch_options ?? [], itemSelected),
           optionSource: "stockEntry.availableBatches",
           resolver: "search_form_options",
-        },
+        }] : []),
         {
           name: "instances",
           label: "Instances",

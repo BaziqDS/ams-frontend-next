@@ -43,6 +43,7 @@ describe("ItemDetailDossier distribution helpers", () => {
       baseRow({
         id: "unit-10",
         name: "NED University",
+        kind: "unit",
         allocated: 2,
         available: 3,
         inTransit: 4,
@@ -79,11 +80,71 @@ describe("ItemDetailDossier distribution helpers", () => {
       baseRow({
         id: "store-7",
         name: "Computer Lab",
+        kind: "store",
         allocated: 2,
         available: 3,
         inTransit: 4,
         total: 9,
       }),
+    ]);
+  });
+
+  it("keeps employee and non-store allocation rows even when store rows exist", () => {
+    const rows = buildSubDistributionRows({
+      id: 10,
+      name: "CSIT",
+      code: "CSIT",
+      totalQuantity: 15,
+      availableQuantity: 9,
+      allocatedQuantity: 6,
+      inTransitQuantity: 0,
+      stores: [
+        {
+          id: 1,
+          locationId: 7,
+          locationName: "CSIT - Main Store",
+          quantity: 15,
+          availableQuantity: 9,
+          allocatedTotal: 6,
+          inTransitQuantity: 0,
+        },
+      ],
+      allocations: [
+        {
+          id: 101,
+          targetName: "CSIT Lab 1",
+          targetType: "LOCATION",
+          targetLocationId: 20,
+          sourceStoreId: 7,
+          sourceStoreName: "CSIT - Main Store",
+          batchNumber: null,
+          batchId: null,
+          quantity: 4,
+          allocatedAt: null,
+          stockEntryIds: [],
+          locationId: 20,
+        },
+        {
+          id: 102,
+          targetName: "Dr. A. Khan",
+          targetType: "PERSON",
+          targetLocationId: null,
+          sourceStoreId: 7,
+          sourceStoreName: "CSIT - Main Store",
+          batchNumber: null,
+          batchId: null,
+          quantity: 2,
+          allocatedAt: null,
+          stockEntryIds: [],
+          locationId: null,
+        },
+      ],
+    } as ItemDistributionUnit);
+
+    expect(rows.map(row => ({ name: row.name, kind: row.kind, total: row.total, badge: row.badge }))).toEqual([
+      { name: "CSIT - Main Store", kind: "store", total: 15, badge: undefined },
+      { name: "CSIT Lab 1", kind: "location", total: 4, badge: "Non-store" },
+      { name: "Dr. A. Khan", kind: "person", total: 2, badge: "Employee" },
     ]);
   });
 });

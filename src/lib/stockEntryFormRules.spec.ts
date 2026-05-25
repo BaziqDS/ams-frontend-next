@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildStockEntryPayload, validateStockEntryForm, type StockEntryFormState } from "./stockEntryFormRules";
+import { buildStockEntryPayload, getStockEntryDisplayDirection, getStockEntryRegisterStoreId, getStockEntrySourceRegisterOptions, validateStockEntryForm, type StockEntryFormState } from "./stockEntryFormRules";
 
 const baseForm: StockEntryFormState = {
   entry_type: "ISSUE",
@@ -24,7 +24,7 @@ const baseForm: StockEntryFormState = {
 };
 
 describe("stock entry form rules", () => {
-  it("builds issue payloads with source store and person recipient", () => {
+  it("builds issue payloads with source store and employee recipient", () => {
     expect(
       buildStockEntryPayload({
         ...baseForm,
@@ -56,7 +56,7 @@ describe("stock entry form rules", () => {
     });
   });
 
-  it("builds receipt payloads with receiving store and person return source", () => {
+  it("builds receipt payloads with receiving store and employee return source", () => {
     expect(
       buildStockEntryPayload({
         ...baseForm,
@@ -71,7 +71,7 @@ describe("stock entry form rules", () => {
       from_location: null,
       to_location: 10,
       issued_to: 7,
-      status: "PENDING_ACK",
+      status: "COMPLETED",
     });
   });
 
@@ -90,6 +90,7 @@ describe("stock entry form rules", () => {
       from_location: 33,
       to_location: 10,
       issued_to: null,
+      status: "COMPLETED",
     });
   });
 
@@ -111,7 +112,66 @@ describe("stock entry form rules", () => {
       }),
     ).toMatchObject({
       to_location: "Choose the receiving store.",
-      issued_to: "Choose the person returning stock.",
+      issued_to: "Choose the employee returning stock.",
+    });
+  });
+
+  it("uses the issue source store for source-register options", () => {
+    const registers = [
+      { id: 1, store: 10, is_active: true },
+      { id: 2, store: 20, is_active: true },
+      { id: 3, store: 10, is_active: false },
+    ];
+
+    expect(getStockEntryRegisterStoreId(baseForm)).toBe("10");
+    expect(getStockEntrySourceRegisterOptions(baseForm, registers).map(register => register.id)).toEqual([1]);
+  });
+
+  it("uses the receipt receiving store for source-register options", () => {
+    const receiptForm: StockEntryFormState = {
+      ...baseForm,
+      entry_type: "RECEIPT",
+      return_source: "PERSON",
+      from_location: "",
+      to_location: "20",
+      issued_to: "7",
+    };
+    const registers = [
+      { id: 1, store: 10, is_active: true },
+      { id: 2, store: 20, is_active: true },
+      { id: 3, store: 20, is_active: false },
+    ];
+
+    expect(getStockEntryRegisterStoreId(receiptForm)).toBe("20");
+    expect(getStockEntrySourceRegisterOptions(receiptForm, registers).map(register => register.id)).toEqual([2]);
+  });
+
+  it("displays employee return receipts from the employee back to the receiving store", () => {
+    expect(
+      getStockEntryDisplayDirection({
+        entry_type: "RECEIPT",
+        from_location_name: null,
+        to_location_name: "CSIT Main Store",
+        issued_to_name: "Dr. Umar Farooq",
+      }),
+    ).toEqual({
+      source: "Dr. Umar Farooq",
+      target: "CSIT Main Store",
+    });
+  });
+
+  it("displays inspection-generated receipts from the inspection contract", () => {
+    expect(
+      getStockEntryDisplayDirection({
+        entry_type: "RECEIPT",
+        from_location_name: null,
+        to_location_name: "Central Store",
+        issued_to_name: null,
+        inspection_certificate_number: "IC-2026-0042",
+      }),
+    ).toEqual({
+      source: "Inspection / IC-2026-0042",
+      target: "Central Store",
     });
   });
 });

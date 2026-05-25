@@ -38,11 +38,20 @@ export const ADMIN_PERMISSIONS = {
     change: "inventory.edit_stock_entries",
     delete: "inventory.delete_stock_entries",
   },
+  employees: {
+    view: "inventory.view_employees",
+    add: "inventory.create_employees",
+    change: "inventory.edit_employees",
+    delete: "inventory.delete_employees",
+  },
   stockRegisters: {
     view: "inventory.view_stock_registers",
     add: "inventory.create_stock_registers",
     change: "inventory.edit_stock_registers",
     delete: "inventory.delete_stock_registers",
+  },
+  reports: {
+    view: "inventory.view_reports",
   },
   inspections: {
     view: "inventory.view_inspectioncertificate",
@@ -68,7 +77,9 @@ export const PROTECTED_ADMIN_ROUTES = {
   "/categories": ADMIN_PERMISSIONS.categories.view,
   "/items": ADMIN_PERMISSIONS.items.view,
   "/stock-entries": ADMIN_PERMISSIONS.stockEntries.view,
+  "/employees": ADMIN_PERMISSIONS.employees.view,
   "/stock-registers": ADMIN_PERMISSIONS.stockRegisters.view,
+  "/reports": ADMIN_PERMISSIONS.reports.view,
   "/inspections": ADMIN_PERMISSIONS.inspections.view,
   "/maintenance": ADMIN_PERMISSIONS.maintenance.view,
 } as const;

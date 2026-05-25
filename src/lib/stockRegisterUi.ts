@@ -41,14 +41,5 @@ export function getCreatableStockRegisterStoreOptions(
   if (!assignedLocationIds?.length) return activeStores;
 
   const assignedIds = new Set(assignedLocationIds.map(Number));
-  const hasAssignedRootStandalone = locations.some(location => (
-    assignedIds.has(location.id)
-    && location.is_active
-    && location.is_standalone
-    && location.hierarchy_level === 0
-  ));
-
-  if (!hasAssignedRootStandalone) return activeStores;
-
   return activeStores.filter(location => assignedIds.has(location.id));
 }

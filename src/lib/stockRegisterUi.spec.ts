@@ -185,10 +185,14 @@ describe("stock register UI helpers", () => {
     ]);
   });
 
-  it("falls back to scoped active stores for non-root assignments", () => {
+  it("keeps stock-register creation tied to directly assigned stores for non-root assignments", () => {
     expect(getCreatableStockRegisterStoreOptions(csitScopedLocations, [12]).map(location => location.name)).toEqual([
-      "CSIT Lab Store",
+    ]);
+    expect(getCreatableStockRegisterStoreOptions(csitScopedLocations, [11]).map(location => location.name)).toEqual([
       "CSIT Main Store",
+    ]);
+    expect(getCreatableStockRegisterStoreOptions(csitScopedLocations, [13]).map(location => location.name)).toEqual([
+      "CSIT Lab Store",
     ]);
   });
 });

@@ -15,6 +15,7 @@ import {
   validateFullReversalRequest,
   type CorrectionMode,
 } from "@/lib/stockEntryCorrectionRules";
+import { getStockEntryDisplayDirection } from "@/lib/stockEntryFormRules";
 
 type EntryType = "RECEIPT" | "ISSUE" | "RETURN";
 type EntryStatus = "DRAFT" | "PENDING_ACK" | "COMPLETED" | "REJECTED" | "CANCELLED";
@@ -296,7 +297,22 @@ function acknowledgementMeta(entry: StockEntryRecord, related: RelatedEntries) {
 }
 
 function entryTarget(entry: StockEntryRecord) {
-  return entry.issued_to_name ?? entry.to_location_name ?? "-";
+  return getStockEntryDisplayDirection(entry).target;
+}
+
+function entrySource(entry: StockEntryRecord) {
+  return getStockEntryDisplayDirection(entry).source;
+}
+
+function entryTargetRole(entry: StockEntryRecord) {
+  if (entry.entry_type === "ISSUE" && entry.issued_to_name) return "Recipient employee";
+  return "Recipient location";
+}
+
+function entryTargetSub(entry: StockEntryRecord) {
+  if (entry.entry_type === "ISSUE" && entry.issued_to_name) return "Issued to employee";
+  if (entry.entry_type === "RECEIPT") return "Receiving store";
+  return "Destination location";
 }
 
 function typeSummary(entry: StockEntryRecord) {
@@ -506,7 +522,7 @@ function uniqueRefs(values: Array<string | null>) {
 
 function HeroStrip({ entry }: { entry: StockEntryRecord }) {
   const summary = typeSummary(entry);
-  const isPersonTarget = Boolean(entry.issued_to_name);
+  const isPersonTarget = entry.entry_type === "ISSUE" && Boolean(entry.issued_to_name);
 
   return (
     <section className="detail-card stock-movement-card">
@@ -524,7 +540,7 @@ function HeroStrip({ entry }: { entry: StockEntryRecord }) {
             </span>
             <span className="stock-movement-copy">
               <span className="eyebrow">{summary.sourceLabel}</span>
-              <strong>{entry.from_location_name ?? "System / Inspection"}</strong>
+              <strong>{entrySource(entry)}</strong>
             </span>
           </div>
 
@@ -632,13 +648,13 @@ function MovementOverview({ entry, related }: { entry: StockEntryRecord; related
       <div className="kv-grid cols-2">
         <div className="kv">
           <div className="kv-label">{summary.sourceLabel}</div>
-          <div className="kv-value">{entry.from_location_name ?? "System / inspection source"}</div>
+          <div className="kv-value">{entrySource(entry)}</div>
           <div className="kv-sub">Source side of this movement</div>
         </div>
         <div className="kv">
           <div className="kv-label">{summary.targetLabel}</div>
           <div className="kv-value">{entryTarget(entry)}</div>
-          <div className="kv-sub">{entry.issued_to_name ? "Issued to person" : "Destination location"}</div>
+          <div className="kv-sub">{entryTargetSub(entry)}</div>
         </div>
         <div className="kv">
           <div className="kv-label">Source Register</div>
@@ -739,6 +755,7 @@ function StockVoucherHead({ entry, related }: { entry: StockEntryRecord; related
   const entryAt = formatDate(entry.entry_date);
   const register = relevantRegisterRef(entry, related);
   const target = entryTarget(entry);
+  const source = entrySource(entry);
 
   return (
     <div className="page-head-detail stock-voucher-head">
@@ -746,7 +763,7 @@ function StockVoucherHead({ entry, related }: { entry: StockEntryRecord; related
         <div className="eyebrow">Stock Entry · {formatLabel(entry.entry_type)} voucher</div>
         <h1 className="display">{voucherTitle(entry)}</h1>
         <div className="page-sub">
-          {summary.sourceLabel} <strong>{entry.from_location_name ?? "System / inspection"}</strong> to <strong>{target}</strong>.
+          {summary.sourceLabel} <strong>{source}</strong> to <strong>{target}</strong>.
           {" "}{summary.stripNote}
         </div>
         <div className="page-id-row">
@@ -774,7 +791,7 @@ function AcknowledgementNotice({ entry, related, onAcknowledge }: { entry: Stock
   const title = isIssue ? "Waiting for acknowledgement from receiver" : "Acknowledgement required";
   const text = isIssue
     ? `${entryTarget(entry)} has not acknowledged this movement yet. ${pendingUnits} unit${pendingUnits === 1 ? "" : "s"} remain pending on the receiving side.`
-    : `Items have left ${entry.from_location_name ?? "the source"} but ${entryTarget(entry)} has not confirmed receipt. ${pendingUnits} unit${pendingUnits === 1 ? "" : "s"} still require receiver acknowledgement.`;
+    : `Items have left ${entrySource(entry)} but ${entryTarget(entry)} has not confirmed receipt. ${pendingUnits} unit${pendingUnits === 1 ? "" : "s"} still require receiver acknowledgement.`;
   const actionText = isIssue
     ? "The receiving side must capture the register and accepted quantities before this dispatch can close."
     : "Capture the receiving register and accepted quantities to close this receipt.";
@@ -803,7 +820,7 @@ function RoutingPanel({ entry, related }: { entry: StockEntryRecord; related: Re
     <div className="routing">
       <div className="routing-end">
         <div className="role">From · {entry.entry_type === "RECEIPT" ? "Source" : "Source store"}</div>
-        <div className="name">{entry.from_location_name ?? "System / Inspection"}</div>
+        <div className="name">{entrySource(entry)}</div>
         <div className="sub">{entry.entry_type === "ISSUE" ? firstRegisterRef(entry) : "Source register not shown on receipt voucher"}</div>
         <div className="person">Issued by {sourcePerson}</div>
       </div>
@@ -811,7 +828,7 @@ function RoutingPanel({ entry, related }: { entry: StockEntryRecord; related: Re
         <span className="arrow">{formatLabel(entry.entry_type)} <Ic d="M5 12h14M13 5l7 7-7 7" size={15} /></span>
       </div>
       <div className="routing-end">
-        <div className="role">To · {entry.issued_to_name ? "Recipient person" : "Recipient location"}</div>
+        <div className="role">To · {entryTargetRole(entry)}</div>
         <div className="name">{entryTarget(entry)}</div>
         <div className="sub">{entry.entry_type === "ISSUE" ? "Destination register captured on receipt voucher" : firstAckRegisterRef(entry, related)}</div>
         <div className="person">Recipient: {ack.by ?? entryTarget(entry)}</div>
@@ -888,7 +905,7 @@ function LineItemCards({ entry, related, instances }: { entry: StockEntryRecord;
               ) : null}
             </div>
             <div className="ins-item-foot">
-              <span>{entry.from_location_name ?? "Source not recorded"} to {entryTarget(entry)}</span>
+              <span>{entrySource(entry)} to {entryTarget(entry)}</span>
               <span className="mono-small">line id #{item.id}</span>
             </div>
           </div>
@@ -1911,7 +1928,7 @@ function FullReversalModal({ entry, onDone, onClose }: { entry: StockEntryRecord
   const [error, setError] = useState<string | null>(null);
 
   const validationMessage = validateFullReversalRequest(reason, responsibilityAccepted);
-  const movementSummary = `${entry.from_location_name ?? "Source store"} -> ${entry.to_location_name ?? "Receiving store"}`;
+  const movementSummary = `${entrySource(entry)} -> ${entryTarget(entry)}`;
 
   const submit = async () => {
     const validation = validateFullReversalRequest(reason, responsibilityAccepted);

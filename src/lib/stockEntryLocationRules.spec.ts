@@ -214,11 +214,11 @@ describe("stock entry store transfer hierarchy", () => {
     expect(getAllocatableTargetLocations("11", locations).map(location => location.name)).toEqual(["CS Lab 1"]);
   });
 
-  it("limits person allocation targets to active people in the source store standalone scope", () => {
+  it("limits employee allocation targets to active employees in the source store standalone scope", () => {
     expect(getAllocatableTargetPersons("13", locations, persons).map(person => person.name)).toEqual(["CS Faculty"]);
   });
 
-  it("limits return persons to active allocations from the receiving store", () => {
+  it("limits return employees to active allocations from the receiving store", () => {
     expect(getAllocatedReturnPersons("11", persons, allocations).map(person => person.name)).toEqual(["CS Faculty"]);
   });
 

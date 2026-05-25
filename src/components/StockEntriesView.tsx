@@ -9,7 +9,7 @@ import { apiFetch, type Page } from "@/lib/api";
 import { useClientPagination } from "@/lib/listPagination";
 import { getAllocatableTargetLocations, getAllocatableTargetPersons, getAllocatedReturnLocations, getAllocatedReturnPersons, getUserAssignedStores, type StockAllocationRecord } from "@/lib/stockEntryLocationRules";
 import { getIssueAvailableQuantity, getIssueBatchOptions, getIssueInstanceOptions, getIssueItemOptions, getReturnBatchOptions, getReturnInstanceOptions, getReturnItemOptions, getReturnQuantityLimit, type StockEntryItemInstance, type StockEntryStockRecord, type StockEntryReturnTarget } from "@/lib/stockEntryItemRules";
-import { buildStockEntryPayload, validateStockEntryForm, type CreatableStockEntryType, type StockEntryFormItem, type StockEntryFormState } from "@/lib/stockEntryFormRules";
+import { buildStockEntryPayload, getStockEntryDisplayDirection, getStockEntryRegisterStoreId, getStockEntrySourceRegisterOptions, validateStockEntryForm, type CreatableStockEntryType, type StockEntryFormItem, type StockEntryFormState } from "@/lib/stockEntryFormRules";
 import { applyStockEntryCopilotValuePatch, buildStockEntryCopilotReferenceContext, searchStockEntryCopilotOptions } from "@/lib/stockEntryCopilotForm";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -166,6 +166,15 @@ function StatusPill({ status }: { status: EntryStatus }) {
       {formatLabel(status)}
     </span>
   );
+}
+
+function stockEntryMatchesStoreScope(entry: StockEntryRecord, storeScope: string) {
+  if (storeScope === "all") return true;
+  const selectedStoreId = Number(storeScope);
+  if (!Number.isFinite(selectedStoreId)) return false;
+
+  if (entry.entry_type === "ISSUE") return Number(entry.from_location) === selectedStoreId;
+  return Number(entry.to_location) === selectedStoreId;
 }
 
 function CorrectionPill({ entry }: { entry: StockEntryRecord }) {
@@ -477,8 +486,8 @@ function isIndividualTracking(item: ItemRecord | undefined) {
   return item?.tracking_type === "INDIVIDUAL";
 }
 
-function isConsumableQuantityItem(item: ItemRecord | undefined) {
-  return item?.tracking_type === "QUANTITY" && item?.category_type === "CONSUMABLE";
+function isQuantityTrackedItem(item: ItemRecord | undefined) {
+  return item?.tracking_type === "QUANTITY";
 }
 
 function blankItem(): StockEntryFormItem {
@@ -530,8 +539,11 @@ function formFromEntry(entry: StockEntryRecord | null, locations: LocationRecord
 }
 
 function entryTarget(entry: StockEntryRecord) {
-  if (entry.issued_to_name) return entry.issued_to_name;
-  return entry.to_location_name ?? "—";
+  return getStockEntryDisplayDirection(entry).target;
+}
+
+function entrySource(entry: StockEntryRecord) {
+  return getStockEntryDisplayDirection(entry).source;
 }
 
 function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocationIds, isSuperuser = false, onClose, onSave }: { open: boolean; mode: "create" | "edit"; entry: StockEntryRecord | null; refs: ReferenceData; refsLoading: boolean; assignedLocationIds?: number[]; isSuperuser?: boolean; onClose: () => void; onSave: () => void | Promise<void> }) {
@@ -648,13 +660,8 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
   const getBatchOptions = (row: StockEntryFormItem) => getBatchOptionsForForm(form, row);
   const getQuantityLimit = (row: StockEntryFormItem) => getQuantityLimitForForm(form, row);
   const getInstanceOptions = (row: StockEntryFormItem) => getInstanceOptionsForForm(form, row);
-  const selectedSourceStoreId = form.entry_type === "ISSUE" ? form.from_location : "";
-  const sourceRegisterOptions = refs.registers.filter(
-    register =>
-      register.is_active &&
-      selectedSourceStoreId &&
-      String(register.store) === selectedSourceStoreId
-  );
+  const selectedSourceStoreId = getStockEntryRegisterStoreId(form);
+  const sourceRegisterOptions = getStockEntrySourceRegisterOptions(form, refs.registers);
 
   const update = <K extends keyof StockEntryFormState>(key: K, value: StockEntryFormState[K]) => {
     setForm(prev => {
@@ -731,7 +738,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
         }
       } else {
         const batchOptions = getBatchOptions(row);
-        const requiresExplicitBatch = !(form.entry_type === "ISSUE" && isConsumableQuantityItem(selectedItem));
+        const requiresExplicitBatch = !isQuantityTrackedItem(selectedItem);
         if (requiresExplicitBatch && batchOptions.length > 0 && !row.batch) {
           nextErrors[`items.${index}.batch`] = "Choose the batch.";
         }
@@ -817,7 +824,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
       options: [
         { value: "STORE", label: "Destination Store" },
         { value: "LOCATION", label: "Destination Non-store" },
-        { value: "PERSON", label: "Receiving Person" },
+        { value: "PERSON", label: "Receiving Employee" },
       ],
     },
     {
@@ -828,7 +835,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
       dependsOn: ["entry_type"],
       affects: ["from_location", "issued_to", "items"],
       options: [
-        { value: "PERSON", label: "Returning Person" },
+        { value: "PERSON", label: "Returning Employee" },
         { value: "LOCATION", label: "Returning Non-store" },
       ],
     },
@@ -874,7 +881,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
     },
     {
       name: "issued_to",
-      label: form.entry_type === "ISSUE" ? "Receiving person" : "Returning person",
+      label: form.entry_type === "ISSUE" ? "Receiving employee" : "Returning employee",
       type: "select",
       required:
         (form.entry_type === "ISSUE" && form.issue_target === "PERSON") ||
@@ -925,10 +932,10 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
             label: `${item.name}${item.code ? ` (${item.code})` : ""}`,
           })),
         },
-        {
+        ...(form.entry_type === "RECEIPT" ? [{
           name: "batch",
           label: "Batch",
-          type: "select",
+          type: "select" as const,
           dependsOn: ["items[].item"],
           optionSource: "stockEntry.availableBatches",
           resolver: "search_form_options",
@@ -936,7 +943,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
             value: String(batch.id),
             label: batch.batch_number,
           })),
-        },
+        }] : []),
         { name: "quantity", label: "Quantity", type: "number", required: true },
         {
           name: "instances",
@@ -992,13 +999,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
     const targetIssuePersonOptions = getAllocatableTargetPersons(targetForm.from_location, refs.locations, refs.persons);
     const targetReceiptNonStoreOptions = getAllocatedReturnLocations(targetForm.to_location, refs.locations, refs.allocations);
     const targetReceiptPersonOptions = getAllocatedReturnPersons(targetForm.to_location, refs.persons, refs.allocations);
-    const targetSourceRegisterOptions = refs.registers.filter(
-      register =>
-        register.is_active &&
-        targetForm.entry_type === "ISSUE" &&
-        targetForm.from_location &&
-        String(register.store) === targetForm.from_location,
-    );
+    const targetSourceRegisterOptions = getStockEntrySourceRegisterOptions(targetForm, refs.registers);
 
     return buildStockEntryCopilotReferenceContext({
       formId: copilotFormId,
@@ -1039,7 +1040,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
 
   useCopilotReadable({
     description: open
-      ? "Stock entry form reference data. Use this for valid movement modes, store/person/non-store choices, row-specific stock registers, batches, and item instances before calling set_form_values."
+      ? "Stock entry form reference data. Use this for valid movement modes, store/employee/non-store choices, row-specific stock registers, batches, and item instances before calling set_form_values."
       : "Stock entry form reference data is available when the create/edit modal is open.",
     value: stockEntryFormReference,
   });
@@ -1143,14 +1144,14 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
                     />
                   </Field>
                   {form.issue_target === "PERSON" ? (
-                    <Field label="Receiving Person" required error={errors.issued_to}>
+                    <Field label="Receiving Employee" required error={errors.issued_to}>
                       <SearchableSelect
                         value={form.issued_to}
                         options={issuePersonOptions.map(personOption)}
                         onChange={value => update("issued_to", value)}
-                        placeholder={form.from_location ? "Select person" : "Select source store first"}
-                        searchPlaceholder="Search people..."
-                        emptyLabel="No people available in this store scope"
+                        placeholder={form.from_location ? "Select employee" : "Select source store first"}
+                        searchPlaceholder="Search employees..."
+                        emptyLabel="No employees available in this store scope"
                         disabled={!form.from_location}
                       />
                     </Field>
@@ -1173,7 +1174,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
                   <Field label="Return From" required>
                     <div className="seg seg-inline">
                       {(["PERSON", "LOCATION"] as const).map(option => (
-                        <button key={option} type="button" className={"seg-btn" + (form.return_source === option ? " active" : "")} onClick={() => update("return_source", option)}>{option === "LOCATION" ? "Non-store" : "Person"}</button>
+                        <button key={option} type="button" className={"seg-btn" + (form.return_source === option ? " active" : "")} onClick={() => update("return_source", option)}>{option === "LOCATION" ? "Non-store" : "Employee"}</button>
                       ))}
                     </div>
                   </Field>
@@ -1189,14 +1190,14 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
                     />
                   </Field>
                   {form.return_source === "PERSON" ? (
-                    <Field label="Returning Person" required error={errors.issued_to}>
+                    <Field label="Returning Employee" required error={errors.issued_to}>
                       <SearchableSelect
                         value={form.issued_to}
                         options={receiptPersonOptions.map(personOption)}
                         onChange={value => update("issued_to", value)}
-                        placeholder={form.to_location ? "Select person" : "Select receiving store first"}
-                        searchPlaceholder="Search people with active allocations..."
-                        emptyLabel="No active person allocations from this store"
+                        placeholder={form.to_location ? "Select employee" : "Select receiving store first"}
+                        searchPlaceholder="Search employees with active allocations..."
+                        emptyLabel="No active employee allocations from this store"
                         disabled={!form.to_location}
                       />
                     </Field>
@@ -1234,7 +1235,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
                 const rowQuantityLimit = isIndividualTracking(selectedItem) ? rowInstanceOptions.length : getQuantityLimit(row);
                 const itemDisabled = !itemContextReady;
                 const individual = isIndividualTracking(selectedItem);
-                const autoAssignConsumableBatch = form.entry_type === "ISSUE" && isConsumableQuantityItem(selectedItem);
+                const autoResolveBatch = isQuantityTrackedItem(selectedItem);
                 const duplicate = row.item && selectedItemIds.has(row.item) && form.items.filter(item => item.item === row.item).length > 1;
                 return (
                   <div key={index} style={{ border: "1px solid var(--hairline)", borderRadius: "var(--radius)", padding: 12, background: "var(--surface-2)" }}>
@@ -1275,19 +1276,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
                           />
                         </Field>
                       ) : (
-                        autoAssignConsumableBatch ? (
-                          <Field
-                            label="Batch"
-                            hint={row.item ? "Assigned automatically from source stock to preserve inspection batch traceability." : "Select a consumable item first."}
-                          >
-                            <input
-                              className="input"
-                              value={row.item ? "Assigned automatically" : "Select item first"}
-                              readOnly
-                              disabled
-                            />
-                          </Field>
-                        ) : (
+                        !autoResolveBatch && (
                           <Field label="Batch" error={errors[`items.${index}.batch`]} hint={selectedItem?.tracking_type ? `Tracking: ${formatLabel(selectedItem.tracking_type)}` : undefined}>
                             <SearchableSelect
                               value={row.batch}
@@ -1531,9 +1520,10 @@ export function StockEntriesView() {
       }
       if (typeFilter !== "all" && entry.entry_type !== typeFilter) return false;
       if (statusFilter !== "all" && entry.status !== statusFilter) return false;
+      if (!stockEntryMatchesStoreScope(entry, storeScope)) return false;
       return true;
     });
-  }, [entries, search, statusFilter, typeFilter]);
+  }, [entries, search, statusFilter, storeScope, typeFilter]);
 
   const {
     page,
@@ -1552,7 +1542,7 @@ export function StockEntriesView() {
         type: "string",
         defaultValue: "",
         label: "Search",
-        description: "Search by entry number, item, location, person, purpose, or remarks.",
+        description: "Search by entry number, item, location, employee, purpose, or remarks.",
         setValue: value => setSearch(String(value ?? "")),
       },
       {
@@ -1804,7 +1794,7 @@ export function StockEntriesView() {
           <div className="filter-bar-left">
             <div className="search-input">
               <Ic d={<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>} size={14} />
-              <input placeholder="Search entry number, item, location, person, or purpose…" value={search} onChange={event => setSearch(event.target.value)} />
+              <input placeholder="Search entry number, item, location, employee, or purpose…" value={search} onChange={event => setSearch(event.target.value)} />
               {search && <button type="button" className="clear-search" onClick={() => setSearch("")}>×</button>}
             </div>
             <div className="filter-select-group">
@@ -1891,7 +1881,7 @@ export function StockEntriesView() {
                       <tr key={entry.id} onClick={() => router.push(`/stock-entries/${entry.id}`)} style={{ cursor: "pointer" }}>
                         <td><div className="user-cell"><div><div className="user-name">{entry.entry_number}</div><div className="user-username mono">{formatDate(entry.entry_date)}</div></div></div></td>
                         <td><span className="chip">{formatLabel(entry.entry_type)}</span></td>
-                        <td>{entry.from_location_name ?? "System / inspection"}</td>
+                        <td>{entrySource(entry)}</td>
                         <td>{entryTarget(entry)}</td>
                         <td><div className="group-cell">{entry.items.slice(0, 2).map(item => <span key={`${entry.id}-${item.id ?? item.item}`} className="chip">{item.item_name ?? `Item ${item.item}`} × {item.quantity}</span>)}{entry.items.length > 2 && <span className="muted-note mono">+{entry.items.length - 2} more</span>}</div></td>
                         <td>
@@ -1927,7 +1917,7 @@ export function StockEntriesView() {
                 </div>
                 <div className="user-card-name">{entry.entry_number}</div>
                 <div className="user-card-meta mono">{formatDate(entry.entry_date)}</div>
-                <div className="user-card-section"><div className="eyebrow">Movement</div><div style={{ fontSize: 13, color: "var(--text-1)" }}>{entry.from_location_name ?? "System"} → {entryTarget(entry)}</div></div>
+                <div className="user-card-section"><div className="eyebrow">Movement</div><div style={{ fontSize: 13, color: "var(--text-1)" }}>{entrySource(entry)} → {entryTarget(entry)}</div></div>
                 <div className="user-card-section"><div className="eyebrow">Line Items</div><div className="group-cell">{entry.items.slice(0, 3).map(item => <span key={`${entry.id}-card-${item.id ?? item.item}`} className="chip">{item.item_name ?? `Item ${item.item}`} × {item.quantity}</span>)}</div></div>
                 <div className="user-card-foot"><div><div className="eyebrow">Created</div><div className="user-card-last mono">{relTime(entry.created_at)}</div></div><RowActions entry={entry} canEdit={canManage} canDelete={canDelete} pageBusy={pageBusy} deleteBusy={deleteBusyId === entry.id} ackBusy={ackBusyId === entry.id} onEdit={() => openEditModal(entry)} onDelete={() => handleDelete(entry)} onAcknowledge={() => handleAcknowledge(entry)} /></div>
               </div>

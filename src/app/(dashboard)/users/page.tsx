@@ -516,9 +516,9 @@ export default function UsersPage() {
             <div className="page-sub">Manage user accounts, roles and location assignments across the university.</div>
           </div>
           <div className="page-head-actions">
-            <button type="button" className="btn btn-sm" disabled title="Persons Module unavailable in this build" style={unavailableActionStyle}>
+            <button type="button" className="btn btn-sm" disabled title="Employees module unavailable in this build" style={unavailableActionStyle}>
               <Ic d={<><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="7" r="2.6"/><path d="M21 19c0-2.7-1.8-5-4.5-5"/></>} size={13} />
-              Persons Module
+              Employees Module
             </button>
             {canViewRoles && (
               <Link href="/roles" className="btn btn-sm">

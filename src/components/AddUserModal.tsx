@@ -99,7 +99,7 @@ function Section({ n, title, sub, children }: { n: number; title: string; sub?: 
   );
 }
 
-function LocationScopePicker({
+export function LocationScopePicker({
   locations,
   value,
   onChange,
@@ -320,8 +320,8 @@ function LocationScopePicker({
           <div className="assignment-menu">
             <div className="assignment-list">
               {visibleStandaloneRows.length > 0 ? visibleStandaloneRows.map(({ standalone, visibleChildren }) => {
-                const standaloneChecked = valueSet.has(standalone.id);
                 const fixedStandalone = standaloneFixed && standaloneLocations[0]?.id === standalone.id;
+                const standaloneChecked = fixedStandalone || valueSet.has(standalone.id);
                 return (
                   <div key={standalone.id} className="assignment-group">
                     <button
