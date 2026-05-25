@@ -1,79 +1,119 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
+import {
+  AlertTriangle,
+  Bell,
+  ClipboardList,
+  type LucideIcon,
+  ShieldAlert,
+} from "lucide-react";
 import { Topbar } from "@/components/Topbar";
 import { useNotifications, type NotificationAlertRecord, type NotificationFeedItem } from "@/contexts/NotificationsContext";
+import {
+  buildNotificationAlertDisplay,
+  buildNotificationFeedDisplay,
+  formatNotificationModuleLabel,
+  getNotificationInitials,
+  notificationToneClass,
+} from "@/lib/notificationDisplay";
+import { Button } from "@/components/ui/button";
 
-function formatRelativeTime(value: string) {
-  const date = new Date(value);
-  const diff = Date.now() - date.getTime();
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+
+type StatCardProps = {
+  title: string;
+  value: number | string;
+  hint: string;
+  badge?: { label: string; tone: "neutral" | "warning" | "critical" | "ok" };
+  icon: LucideIcon;
+  iconTone: "neutral" | "warning" | "critical" | "ok";
+};
+
+function StatCard({ title, value, hint, badge, icon: Icon, iconTone }: StatCardProps) {
+  return (
+    <div className="notif-stat" data-tone={iconTone}>
+      <div className="notif-stat-body">
+        <div className="notif-stat-title">{title}</div>
+        <div className="notif-stat-value">{value}</div>
+        <div className="notif-stat-meta">
+          <span className="notif-stat-hint">{hint}</span>
+          {badge ? (
+            <span className={`notif-stat-badge is-${badge.tone}`}>{badge.label}</span>
+          ) : null}
+        </div>
+      </div>
+      <div className="notif-stat-icon" aria-hidden="true">
+        <Icon size={16} strokeWidth={2} />
+      </div>
+    </div>
+  );
 }
 
-function formatModuleLabel(module: string) {
-  return module.replace(/[_-]+/g, " ").replace(/\b\w/g, char => char.toUpperCase());
+function NotificationAvatar({ label, severity, unread }: { label: string; severity: string; unread?: boolean }) {
+  return (
+    <span className={`tb-notify-avatar ${notificationToneClass(severity)}${unread ? " is-unread" : ""}`} aria-hidden="true">
+      {getNotificationInitials(label, severity === "critical" ? "!" : "AM")}
+    </span>
+  );
 }
 
-function alertToneClass(severity: string) {
-  if (severity === "critical") return "is-critical";
-  if (severity === "warning") return "is-warning";
-  return "is-info";
+function NotificationMeta({ parts }: { parts: string[] }) {
+  return (
+    <span className="tb-notify-meta">
+      {parts.map((part, index) => (
+        <span key={`${part}-${index}`}>
+          {index > 0 ? <span aria-hidden="true"> - </span> : null}
+          {part}
+        </span>
+      ))}
+    </span>
+  );
 }
 
 function NotificationAlertRow({ alert }: { alert: NotificationAlertRecord }) {
+  const display = buildNotificationAlertDisplay(alert);
+
   return (
-    <Link href={alert.href || "#"} className="tb-notify-row">
-      <span className={`tb-notify-indicator ${alertToneClass(alert.severity)}`} />
+    <Link href={alert.href || "#"} className={`tb-notify-row ${notificationToneClass(alert.severity)}`}>
+      <NotificationAvatar label={display.avatarLabel} severity={alert.severity} unread />
       <span className="tb-notify-copy">
-        <span className="tb-notify-topline">
-          <span className="tb-notify-title">{alert.title}</span>
-          <span className={`tb-notify-chip ${alertToneClass(alert.severity)}`}>{formatModuleLabel(alert.module)}</span>
+        <span className="tb-notify-line">
+          <strong>{display.headline}</strong>
         </span>
-        <span className="tb-notify-text">{alert.message}</span>
+        <span className="tb-notify-preview">{display.preview}</span>
+        <NotificationMeta parts={display.metaParts} />
       </span>
-      <span className="tb-notify-count mono">{alert.count > 99 ? "99+" : alert.count}</span>
     </Link>
   );
 }
 
 function NotificationFeedRow({ item, onOpen }: { item: NotificationFeedItem; onOpen: (item: NotificationFeedItem) => void }) {
+  const display = buildNotificationFeedDisplay(item);
   const content = (
     <>
-      <span className={`tb-notify-indicator ${alertToneClass(item.severity)}`} />
+      <NotificationAvatar label={display.avatarLabel} severity={item.severity} unread={!item.is_read} />
       <span className="tb-notify-copy">
-        <span className="tb-notify-topline">
-          <span className="tb-notify-title">{item.title}</span>
+        <span className="tb-notify-line">
+          <strong>{display.headline}</strong>
           {!item.is_read ? <span className="tb-notify-unread-dot" aria-hidden="true" /> : null}
         </span>
-        <span className="tb-notify-text">{item.message}</span>
-        <span className="tb-notify-meta">
-          <span>{formatModuleLabel(item.module)}</span>
-          {item.actor_name ? <><span>•</span><span>{item.actor_name}</span></> : null}
-          <span>•</span>
-          <span>{formatRelativeTime(item.created_at)}</span>
-        </span>
+        {display.preview ? <span className="tb-notify-preview">{display.preview}</span> : null}
+        <NotificationMeta parts={display.metaParts} />
       </span>
     </>
   );
 
   if (item.href) {
     return (
-      <Link href={item.href} className={"tb-notify-row" + (item.is_read ? " is-read" : "")} onClick={() => onOpen(item)}>
+      <Link href={item.href} className={`tb-notify-row ${notificationToneClass(item.severity)}${item.is_read ? " is-read" : ""}`} onClick={() => onOpen(item)}>
         {content}
       </Link>
     );
   }
 
   return (
-    <button type="button" className={"tb-notify-row" + (item.is_read ? " is-read" : "")} onClick={() => onOpen(item)}>
+    <button type="button" className={`tb-notify-row ${notificationToneClass(item.severity)}${item.is_read ? " is-read" : ""}`} onClick={() => onOpen(item)}>
       {content}
     </button>
   );
@@ -88,6 +128,19 @@ export default function NotificationsPage() {
   }, [loadPanelData, refreshSummary]);
 
   const criticalAlertCount = Object.values(summary.modules ?? {}).reduce((total, moduleSummary) => total + (moduleSummary.critical ?? 0), 0);
+  const topModule = useMemo(() => {
+    const entries = Object.entries(summary.modules ?? {});
+    if (entries.length === 0) return null;
+    const sorted = [...entries].sort((a, b) => (b[1]?.count ?? 0) - (a[1]?.count ?? 0));
+    const [moduleKey, moduleSummary] = sorted[0];
+    if (!moduleSummary || (moduleSummary.count ?? 0) === 0) return null;
+    return {
+      key: moduleKey,
+      label: formatNotificationModuleLabel(moduleKey),
+      count: moduleSummary.count,
+      critical: moduleSummary.critical ?? 0,
+    };
+  }, [summary.modules]);
 
   const handleRefresh = () => {
     void loadPanelData();
@@ -112,22 +165,49 @@ export default function NotificationsPage() {
           </div>
         </div>
 
-        <div className="detail-stat-strip notifications-summary-strip">
-          <div className="detail-stat">
-            <div className="detail-stat-label">Needs action</div>
-            <div className="detail-stat-value">{summary.open_alerts}</div>
-            <div className="detail-stat-sub">Active system alerts</div>
-          </div>
-          <div className="detail-stat">
-            <div className="detail-stat-label">Unread updates</div>
-            <div className="detail-stat-value">{summary.unread_notifications}</div>
-            <div className="detail-stat-sub">Feed items not opened yet</div>
-          </div>
-          <div className="detail-stat">
-            <div className="detail-stat-label">Critical alerts</div>
-            <div className="detail-stat-value">{criticalAlertCount}</div>
-            <div className="detail-stat-sub">Highest-priority items awaiting review</div>
-          </div>
+        <div className="notif-stat-grid">
+          <StatCard
+            title="Needs action"
+            value={summary.open_alerts}
+            hint="Active alerts"
+            badge={summary.open_alerts > 0
+              ? { label: `${summary.open_alerts} open`, tone: "warning" }
+              : { label: "All clear", tone: "ok" }}
+            icon={ShieldAlert}
+            iconTone={summary.open_alerts > 0 ? "warning" : "ok"}
+          />
+          <StatCard
+            title="Critical"
+            value={criticalAlertCount}
+            hint="Highest priority"
+            badge={criticalAlertCount > 0
+              ? { label: "Review now", tone: "critical" }
+              : { label: "None", tone: "ok" }}
+            icon={AlertTriangle}
+            iconTone={criticalAlertCount > 0 ? "critical" : "ok"}
+          />
+          <StatCard
+            title="Unread updates"
+            value={summary.unread_notifications}
+            hint="Feed items not opened"
+            badge={summary.unread_notifications > 0
+              ? { label: `${summary.unread_notifications} new`, tone: "neutral" }
+              : { label: "Caught up", tone: "ok" }}
+            icon={Bell}
+            iconTone="neutral"
+          />
+          <StatCard
+            title={topModule ? topModule.label : "Top module"}
+            value={topModule ? topModule.count : 0}
+            hint={topModule ? "Most alerts in this module" : "No module breakdowns yet"}
+            badge={topModule && topModule.critical > 0
+              ? { label: `${topModule.critical} critical`, tone: "critical" }
+              : topModule
+                ? { label: "Open", tone: "warning" }
+                : undefined}
+            icon={ClipboardList}
+            iconTone={topModule && topModule.critical > 0 ? "critical" : topModule ? "warning" : "neutral"}
+          />
         </div>
 
         <div className="notifications-page-stack">
@@ -140,13 +220,13 @@ export default function NotificationsPage() {
                   <div className="notifications-section-sub">Curated alerts that still require operational attention.</div>
                 </div>
               </div>
-              <button type="button" className="btn btn-xs btn-ghost" onClick={handleRefresh} disabled={isPanelLoading || isPanelRefreshing}>
-                {isPanelRefreshing ? "Refreshing…" : "Refresh"}
-              </button>
+              <Button type="button" variant="ghost" size="xs" onClick={handleRefresh} disabled={isPanelLoading || isPanelRefreshing}>
+                {isPanelRefreshing ? "Refreshing..." : "Refresh"}
+              </Button>
             </div>
             <div className="notifications-section-body">
               {isPanelLoading ? (
-                <div className="tb-notify-empty">Loading alerts…</div>
+                <div className="tb-notify-empty">Loading alerts...</div>
               ) : alerts.length > 0 ? (
                 <div className="tb-notify-list">
                   {alerts.map(alert => (
@@ -169,17 +249,17 @@ export default function NotificationsPage() {
                 </div>
               </div>
               <div className="notifications-section-actions">
-                <button type="button" className="btn btn-xs btn-ghost" onClick={() => void markAllRead()} disabled={summary.unread_notifications === 0}>
+                <Button type="button" variant="ghost" size="xs" onClick={() => void markAllRead()} disabled={summary.unread_notifications === 0}>
                   Mark all read
-                </button>
-                <button type="button" className="btn btn-xs btn-ghost" onClick={() => void clearFeed()} disabled={feed.length === 0}>
+                </Button>
+                <Button type="button" variant="ghost" size="xs" onClick={() => void clearFeed()} disabled={feed.length === 0}>
                   Clear updates
-                </button>
+                </Button>
               </div>
             </div>
             <div className="notifications-section-body">
               {isPanelLoading ? (
-                <div className="tb-notify-empty">Loading notifications…</div>
+                <div className="tb-notify-empty">Loading notifications...</div>
               ) : feed.length > 0 ? (
                 <div className="tb-notify-list">
                   {feed.map(item => (

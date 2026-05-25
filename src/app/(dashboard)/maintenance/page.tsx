@@ -29,6 +29,8 @@ import {
   type MaintenanceTriggerType,
   type MaintenanceWorkOrderRecord,
 } from "@/lib/maintenanceUi";
+import { Button } from "@/components/ui/button";
+
 
 type MaintenanceTab = "work-orders" | "plans" | "readings";
 type Density = "compact" | "balanced" | "comfortable";
@@ -238,7 +240,7 @@ function Alert({ children, onDismiss }: { children: ReactNode; onDismiss?: () =>
       <div className="notice-body">
         <div className="notice-text">{children}</div>
       </div>
-      {onDismiss ? <div className="notice-actions"><button type="button" className="btn btn-ghost btn-sm" onClick={onDismiss}>Dismiss</button></div> : null}
+      {onDismiss ? <div className="notice-actions"><Button type="button" variant="ghost" size="sm" onClick={onDismiss}>Dismiss</Button></div> : null}
     </div>
   );
 }
@@ -590,9 +592,9 @@ export default function MaintenancePage() {
             <p className="page-sub">Plan, execute, and evidence preventive and corrective maintenance for individual assets and quantity batches.</p>
           </div>
           <div className="page-head-actions">
-            {canFull ? <button type="button" className="btn btn-sm" onClick={() => setShowPlanModal(true)}>Add Plan</button> : null}
-            {canManage ? <button type="button" className="btn btn-sm" onClick={() => setShowReadingModal(true)}>Record Reading</button> : null}
-            {canManage ? <button type="button" className="btn btn-sm btn-primary" onClick={() => setShowWorkOrderModal(true)}>Add Work Order</button> : null}
+            {canFull ? <Button type="button" variant="outline" size="sm" onClick={() => setShowPlanModal(true)}>Add Plan</Button> : null}
+            {canManage ? <Button type="button" variant="outline" size="sm" onClick={() => setShowReadingModal(true)}>Record Reading</Button> : null}
+            {canManage ? <Button type="button" size="sm" onClick={() => setShowWorkOrderModal(true)}>Add Work Order</Button> : null}
           </div>
         </div>
 
@@ -675,11 +677,11 @@ export default function MaintenancePage() {
                         <td>{toNumber(row.actual_cost) ? `PKR ${toNumber(row.actual_cost).toLocaleString("en-US")}` : row.estimated_cost ? `Est. PKR ${toNumber(row.estimated_cost).toLocaleString("en-US")}` : "-"}</td>
                         <td className="col-actions">
                           <div className="row-actions">
-                            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setHistoryTarget(row)}>History</button>
-                            {canFull && row.status === "REQUESTED" ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => void runWorkOrderAction(row, "approve")}>Approve</button> : null}
-                            {canManage && !isClosedMaintenance(row.status) && row.status !== "IN_PROGRESS" ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => void runWorkOrderAction(row, "start")}>Start</button> : null}
-                            {canManage && !isClosedMaintenance(row.status) ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setCompleteTarget(row); setCompletionForm({ ...EMPTY_COMPLETION_FORM, condition_after: row.condition_after ?? "", actual_cost: fieldValue(row.actual_cost) }); }}>Complete</button> : null}
-                            {canManage && !isClosedMaintenance(row.status) ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => void cancelWorkOrder(row)}>Cancel</button> : null}
+                            <Button type="button" variant="ghost" size="sm" onClick={() => setHistoryTarget(row)}>History</Button>
+                            {canFull && row.status === "REQUESTED" ? <Button type="button" variant="ghost" size="sm" onClick={() => void runWorkOrderAction(row, "approve")}>Approve</Button> : null}
+                            {canManage && !isClosedMaintenance(row.status) && row.status !== "IN_PROGRESS" ? <Button type="button" variant="ghost" size="sm" onClick={() => void runWorkOrderAction(row, "start")}>Start</Button> : null}
+                            {canManage && !isClosedMaintenance(row.status) ? <Button type="button" variant="ghost" size="sm" onClick={() => { setCompleteTarget(row); setCompletionForm({ ...EMPTY_COMPLETION_FORM, condition_after: row.condition_after ?? "", actual_cost: fieldValue(row.actual_cost) }); }}>Complete</Button> : null}
+                            {canManage && !isClosedMaintenance(row.status) ? <Button type="button" variant="ghost" size="sm" onClick={() => void cancelWorkOrder(row)}>Cancel</Button> : null}
                           </div>
                         </td>
                       </tr>
@@ -739,9 +741,9 @@ export default function MaintenancePage() {
                       <td><span className={plan.is_active ? "pill pill-success" : "pill pill-neutral"}>{plan.is_active ? "Active" : "Inactive"}</span></td>
                       <td className="col-actions">
                         {canFull ? (
-                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => void generateFromPlan(plan)} disabled={!plan.instance && !plan.batch} title={!plan.instance && !plan.batch ? "Item-level plans need a specific target before generation" : undefined}>
+                          <Button type="button" variant="ghost" size="sm" onClick={() => void generateFromPlan(plan)} disabled={!plan.instance && !plan.batch} title={!plan.instance && !plan.batch ? "Item-level plans need a specific target before generation" : undefined}>
                             Generate WO
-                          </button>
+                          </Button>
                         ) : "-"}
                       </td>
                     </tr>
@@ -825,8 +827,8 @@ export default function MaintenancePage() {
             <>
               <span className="modal-foot-meta">Client targets are validated against instance status or batch stock at location.</span>
               <div className="modal-foot-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowWorkOrderModal(false)}>Cancel</button>
-                <button type="submit" form="maintenance-work-order-form" className="btn btn-primary">Create</button>
+                <Button type="button" variant="secondary" onClick={() => setShowWorkOrderModal(false)}>Cancel</Button>
+                <Button type="submit" form="maintenance-work-order-form" >Create</Button>
               </div>
             </>
           )}
@@ -901,8 +903,8 @@ export default function MaintenancePage() {
             <>
               <span className="modal-foot-meta">Calendar, meter, and condition plans create auditable future work orders.</span>
               <div className="modal-foot-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowPlanModal(false)}>Cancel</button>
-                <button type="submit" form="maintenance-plan-form" className="btn btn-primary">Save Plan</button>
+                <Button type="button" variant="secondary" onClick={() => setShowPlanModal(false)}>Cancel</Button>
+                <Button type="submit" form="maintenance-plan-form" >Save Plan</Button>
               </div>
             </>
           )}
@@ -986,8 +988,8 @@ export default function MaintenancePage() {
             <>
               <span className="modal-foot-meta">Readings support meter and condition-based maintenance triggers.</span>
               <div className="modal-foot-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowReadingModal(false)}>Cancel</button>
-                <button type="submit" form="maintenance-reading-form" className="btn btn-primary">Record</button>
+                <Button type="button" variant="secondary" onClick={() => setShowReadingModal(false)}>Cancel</Button>
+                <Button type="submit" form="maintenance-reading-form" >Record</Button>
               </div>
             </>
           )}
@@ -1044,8 +1046,8 @@ export default function MaintenancePage() {
             <>
               <span className="modal-foot-meta">Closure writes an immutable history log and restores instance availability.</span>
               <div className="modal-foot-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setCompleteTarget(null)}>Cancel</button>
-                <button type="submit" form="maintenance-complete-form" className="btn btn-primary">Complete</button>
+                <Button type="button" variant="secondary" onClick={() => setCompleteTarget(null)}>Cancel</Button>
+                <Button type="submit" form="maintenance-complete-form" >Complete</Button>
               </div>
             </>
           )}
@@ -1092,7 +1094,7 @@ export default function MaintenancePage() {
           eyebrow="Maintenance audit trail"
           onClose={() => setHistoryTarget(null)}
           wide
-          footer={<button type="button" className="btn btn-primary" onClick={() => setHistoryTarget(null)}>Close</button>}
+          footer={<Button type="button"  onClick={() => setHistoryTarget(null)}>Close</Button>}
         >
           <Section n={1} title="Work order history" sub={`${historyTarget.target_label} · ${formatMaintenanceLabel(historyTarget.status)} · Created ${formatDateTime(historyTarget.created_at)}`}>
             <div className="h-scroll">

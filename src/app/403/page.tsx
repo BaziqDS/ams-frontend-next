@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
+
 
 export default function ForbiddenPage() {
   return (
@@ -12,8 +14,8 @@ export default function ForbiddenPage() {
         </p>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <Link href="/dashboard" className="btn btn-sm">Go to Dashboard</Link>
-          <Link href="/login" className="btn btn-sm btn-primary">Sign in as another user</Link>
+          <Button asChild variant="outline" size="sm"><Link href="/dashboard" >Go to Dashboard</Link></Button>
+          <Button asChild size="sm"><Link href="/login" >Sign in as another user</Link></Button>
         </div>
       </div>
     </div>

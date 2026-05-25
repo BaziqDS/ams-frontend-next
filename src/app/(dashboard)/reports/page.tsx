@@ -8,6 +8,8 @@ import { ApiError, apiFetch, type Page } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { ADMIN_PERMISSIONS } from "@/lib/adminPermissions";
 import styles from "./reports.module.css";
+import { Button } from "@/components/ui/button";
+
 
 type ReportFamily = "all" | "operational" | "audit" | "finance" | "executive";
 type Tone = "blue" | "green" | "amber" | "red" | "violet";
@@ -1578,10 +1580,10 @@ export default function ReportsPage() {
             <h1>Reports</h1>
             <div className="page-sub">Generate operational, audit, and financial reports from live asset data.</div>
           </div>
-          <button type="button" className="btn" onClick={loadReport} disabled={loading}>
+          <Button type="button" variant="outline" onClick={loadReport} disabled={loading}>
             <Icon><path d="M3 12a9 9 0 109-9" /><path d="M3 3v6h6" /></Icon>
             Refresh Data
-          </button>
+          </Button>
         </div>
 
         <div className={styles.tabs}>
@@ -1599,15 +1601,15 @@ export default function ReportsPage() {
                 <div className="eyebrow">Report Catalog</div>
                 {!catalogCollapsed ? <span>{REPORTS.length} live report views</span> : null}
               </div>
-              <button
+              <Button
                 type="button"
-                className="btn btn-xs btn-icon"
+                variant="outline" size="icon-xs"
                 onClick={() => setCatalogCollapsed(!catalogCollapsed)}
                 title={catalogCollapsed ? "Expand catalog" : "Collapse catalog"}
                 aria-label={catalogCollapsed ? "Expand report catalog" : "Collapse report catalog"}
               >
                 <Icon>{catalogCollapsed ? <path d="M9 18l6-6-6-6" /> : <path d="M15 18l-6-6 6-6" />}</Icon>
-              </button>
+              </Button>
             </div>
             {catalogCollapsed ? (
               <div className={styles.catalogCollapsedList}>
@@ -1651,18 +1653,18 @@ export default function ReportsPage() {
               <div className={styles.actions}>
                 {!isProcurementTrace ? (
                   <>
-                    <button type="button" className="btn btn-primary" onClick={loadReport} disabled={loading}>
+                    <Button type="button"  onClick={loadReport} disabled={loading}>
                       <Icon><path d="M5 3l14 9-14 9V3z" /></Icon>
                       {loading ? "Running..." : "Run Report"}
-                    </button>
-                    <button type="button" className="btn" onClick={() => view ? exportReportCsv(selected, view) : undefined} disabled={!view?.rows.length}>
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => view ? exportReportCsv(selected, view) : undefined} disabled={!view?.rows.length}>
                       <Icon><path d="M12 3v12" /><path d="M7 10l5 5 5-5" /><path d="M5 21h14" /></Icon>
                       Export CSV
-                    </button>
-                    <button type="button" className="btn" onClick={() => view ? openReportPdfPrintView(selected, view) : undefined} disabled={!view?.rows.length}>
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => view ? openReportPdfPrintView(selected, view) : undefined} disabled={!view?.rows.length}>
                       <Icon><path d="M7 3h10l4 4v14H7z" /><path d="M17 3v5h5" /></Icon>
                       Download
-                    </button>
+                    </Button>
                   </>
                 ) : null}
               </div>
@@ -1760,12 +1762,12 @@ export default function ReportsPage() {
                     />
                   </label>
                   <div className={styles.filterActions}>
-                    <button type="button" className="btn btn-primary" onClick={loadReport} disabled={loading}>
+                    <Button type="button"  onClick={loadReport} disabled={loading}>
                       Apply Filters
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
-                      className="btn"
+                      variant="outline"
                       onClick={() => {
                         const scope = scopeOptions.default[0] ?? scopeOptions.options[0]?.id ?? "all";
                         setInventoryFilters({ scope, locationId: "", itemQuery: "", categoryType: "", updatedFrom: "", updatedTo: "" });
@@ -1773,7 +1775,7 @@ export default function ReportsPage() {
                       }}
                     >
                       Clear
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ) : isPendingAcknowledgement ? (
@@ -1845,16 +1847,16 @@ export default function ReportsPage() {
                     />
                   </label>
                   <div className={styles.filterActions}>
-                    <button type="button" className="btn btn-primary" onClick={loadReport} disabled={loading}>
+                    <Button type="button"  onClick={loadReport} disabled={loading}>
                       Apply Filters
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
-                      className="btn"
+                      variant="outline"
                       onClick={() => setPendingFilters({ fromLocation: "", toLocation: "", itemQuery: "", createdBy: "", createdFrom: "", createdTo: "" })}
                     >
                       Clear
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ) : isAssetCustody ? (
@@ -1867,7 +1869,7 @@ export default function ReportsPage() {
                   <label className="field"><span className="field-label">Allocation Status</span><select className="input" value={assetFilters.status} onChange={event => setAssetFilters(current => ({ ...current, status: event.target.value }))}><option value="">All statuses</option>{assetStatusOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></label>
                   <label className="field"><span className="field-label">Allocated From</span><input className="input" type="date" value={assetFilters.allocatedFrom} onChange={event => setAssetFilters(current => ({ ...current, allocatedFrom: event.target.value }))} /></label>
                   <label className="field"><span className="field-label">Allocated To</span><input className="input" type="date" value={assetFilters.allocatedTo} onChange={event => setAssetFilters(current => ({ ...current, allocatedTo: event.target.value }))} /></label>
-                  <div className={styles.filterActions}><button type="button" className="btn btn-primary" onClick={loadReport} disabled={loading}>Apply Filters</button><button type="button" className="btn" onClick={() => setAssetFilters({ sourceLocation: "", person: "", targetLocation: "", itemQuery: "", batch: "", status: "", allocatedFrom: "", allocatedTo: "" })}>Clear</button></div>
+                  <div className={styles.filterActions}><Button type="button"  onClick={loadReport} disabled={loading}>Apply Filters</Button><Button type="button" variant="outline" onClick={() => setAssetFilters({ sourceLocation: "", person: "", targetLocation: "", itemQuery: "", batch: "", status: "", allocatedFrom: "", allocatedTo: "" })}>Clear</Button></div>
                 </div>
               ) : isMovementLedger ? (
                 <div className={styles.filters}>
@@ -1877,7 +1879,7 @@ export default function ReportsPage() {
                   <label className="field"><span className="field-label">Location</span><select className="input" value={movementFilters.location} onChange={event => setMovementFilters(current => ({ ...current, location: event.target.value }))}><option value="">All locations</option>{movementLocationOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
                   <label className="field"><span className="field-label">Batch</span><select className="input" value={movementFilters.batch} onChange={event => setMovementFilters(current => ({ ...current, batch: event.target.value }))}><option value="">All batches</option>{movementBatchOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
                   <label className="field"><span className="field-label">Instance / Serial</span><input className="input" value={movementFilters.instanceSerial} onChange={event => setMovementFilters(current => ({ ...current, instanceSerial: event.target.value }))} placeholder="Search serial" /></label>
-                  <div className={styles.filterActions}><button type="button" className="btn btn-primary" onClick={loadReport} disabled={loading}>Apply Filters</button><button type="button" className="btn" onClick={() => setMovementFilters({ dateFrom: "", dateTo: "", itemQuery: "", location: "", batch: "", instanceSerial: "" })}>Clear</button></div>
+                  <div className={styles.filterActions}><Button type="button"  onClick={loadReport} disabled={loading}>Apply Filters</Button><Button type="button" variant="outline" onClick={() => setMovementFilters({ dateFrom: "", dateTo: "", itemQuery: "", location: "", batch: "", instanceSerial: "" })}>Clear</Button></div>
                 </div>
               ) : isCorrectionControl ? (
                 <div className={styles.filters}>
@@ -1886,7 +1888,7 @@ export default function ReportsPage() {
                   <label className="field"><span className="field-label">Status</span><select className="input" value={correctionFilters.status} onChange={event => setCorrectionFilters(current => ({ ...current, status: event.target.value }))}><option value="">All statuses</option>{correctionStatusOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></label>
                   <label className="field"><span className="field-label">Resolution Type</span><select className="input" value={correctionFilters.resolutionType} onChange={event => setCorrectionFilters(current => ({ ...current, resolutionType: event.target.value }))}><option value="">All resolutions</option>{correctionResolutionOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></label>
                   <label className="field"><span className="field-label">Requested By</span><select className="input" value={correctionFilters.requestedBy} onChange={event => setCorrectionFilters(current => ({ ...current, requestedBy: event.target.value }))}><option value="">All users</option>{correctionRequesterOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
-                  <div className={styles.filterActions}><button type="button" className="btn btn-primary" onClick={loadReport} disabled={loading}>Apply Filters</button><button type="button" className="btn" onClick={() => setCorrectionFilters({ dateFrom: "", dateTo: "", status: "", resolutionType: "", requestedBy: "" })}>Clear</button></div>
+                  <div className={styles.filterActions}><Button type="button"  onClick={loadReport} disabled={loading}>Apply Filters</Button><Button type="button" variant="outline" onClick={() => setCorrectionFilters({ dateFrom: "", dateTo: "", status: "", resolutionType: "", requestedBy: "" })}>Clear</Button></div>
                 </div>
               ) : isProcurementTrace ? (
                 <div className={styles.traceLookup}>
@@ -1911,15 +1913,15 @@ export default function ReportsPage() {
                     </div>
                   ) : null}
                   <div className={styles.traceLookupActions}>
-                    <button type="button" className="btn btn-primary" onClick={generateProcurementTraceReport} disabled={loading || !procurementFilters.inspectionId}>
+                    <Button type="button"  onClick={generateProcurementTraceReport} disabled={loading || !procurementFilters.inspectionId}>
                       {loading ? "Generating..." : "Generate Report"}
-                    </button>
-                    <button type="button" className="btn" onClick={() => {
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => {
                       setProcurementFilters({ inspectionId: "" });
                       setView({ metrics: [], columns: ["Stage", "Recorded At", "Recorded By", "Evidence", "Status"], rows: [], traceRows: [], note: "Select an inspection certificate to generate its procurement-to-register trace." });
                     }}>
                       Clear
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ) : (
@@ -1988,9 +1990,9 @@ export default function ReportsPage() {
               <div className="table-card-foot">
                 <div className="eyebrow">{view?.note ?? "Live report data only. No mock data is rendered."}</div>
                 <div className="pager">
-                  <button type="button" className="btn btn-xs" disabled>‹ Prev</button>
+                  <Button type="button" variant="outline" size="xs" disabled>‹ Prev</Button>
                   <span className="mono pager-current">1</span>
-                  <button type="button" className="btn btn-xs" disabled>Next ›</button>
+                  <Button type="button" variant="outline" size="xs" disabled>Next ›</Button>
                 </div>
               </div>
             </section> : null}

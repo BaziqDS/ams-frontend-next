@@ -17,7 +17,9 @@ describe("detached copilot mirrored state", () => {
     // pending may be set through the centralized safety setter OR the raw
     // setter — both flip the same React state, the safety wrapper just also
     // arms an auto-unlock timeout.
-    expect(source).toMatch(/setPendingWithSafety\(true\)|setQuickMessagePending\(true\)/);
+    expect(source).toMatch(
+      /setPendingWithSafety\(true\)|setQuickMessagePending\(true\)/,
+    );
     expect(source).toMatch(
       /event\.data\.isLoading === true[\s\S]*set(?:Pending(?:WithSafety)?|QuickMessagePending)\(true\)/,
     );
@@ -42,10 +44,12 @@ describe("detached copilot mirrored state", () => {
     // The submit handler must NOT clear the input on submit — the user
     // wants to see "I sent: Hi" while the spinner runs, otherwise the
     // composer looks empty and they wonder if anything was sent.
+    const submitStart = source.indexOf("const submitQuickMessage");
+    const submitEnd = source.indexOf("const stopDetachedRun");
     const submitFn =
-      source.match(
-        /const submitQuickMessage = useCallback[\s\S]*?\}, \[[^\]]*\]\);/,
-      )?.[0] ?? "";
+      submitStart >= 0 && submitEnd > submitStart
+        ? source.slice(submitStart, submitEnd)
+        : "";
     expect(submitFn).not.toMatch(/setQuickMessage\(""\)/);
     // It DOES record the submitted text and resets the user-edited flag so
     // the auto-clear can fire when the run truly completes.
@@ -73,7 +77,9 @@ describe("detached copilot mirrored state", () => {
   });
 
   it("does not reset iframe readiness after the child already announced ready", () => {
-    expect(source).not.toMatch(/onLoad=\{\(\) => \{[\s\S]*iframeReadyRef\.current = false/);
+    expect(source).not.toMatch(
+      /onLoad=\{\(\) => \{[\s\S]*iframeReadyRef\.current = false/,
+    );
   });
 
   it("shows a stock-details-primary reply popover instead of a red unread badge", () => {
@@ -82,25 +88,41 @@ describe("detached copilot mirrored state", () => {
     expect(source).toMatch(/onClick=\{openPanel\}/);
     expect(source).not.toMatch(/copilot-dock-unread/);
     expect(styles).toMatch(/\.copilot-dock-reply-pop \{[\s\S]*right: 0/);
-    expect(styles).toMatch(/\.copilot-dock-reply-pop \{[\s\S]*var\(--primary\)/);
+    expect(styles).toMatch(
+      /\.copilot-dock-reply-pop \{[\s\S]*var\(--primary\)/,
+    );
     expect(styles).toMatch(/\.copilot-dock-reply-pop::after/);
     expect(styles).toMatch(/copilot-reply-spark-spin/);
     expect(styles).toMatch(/copilot-reply-dot-pulse/);
-    expect(styles).not.toMatch(/\.copilot-dock-unread \{[\s\S]*var\(--danger\)/);
+    expect(styles).not.toMatch(
+      /\.copilot-dock-unread \{[\s\S]*var\(--danger\)/,
+    );
   });
 
   it("matches the chat panel composer corner radius in detached mode", () => {
-    expect(styles).toMatch(/\.copilot-search-overlay \{[^}]*border-radius: 18px/);
-    expect(styles).toMatch(/\.copilot-search-active-task \{[^}]*border-radius: 18px 18px 0 0/);
-    expect(styles).toMatch(/\.copilot-search-approval-bubble \{[^}]*border-radius: 18px/);
+    expect(styles).toMatch(
+      /\.copilot-search-overlay \{[^}]*border-radius: 18px/,
+    );
+    expect(styles).toMatch(
+      /\.copilot-search-active-task \{[^}]*border-radius: 18px 18px 0 0/,
+    );
+    expect(styles).toMatch(
+      /\.copilot-search-approval-bubble \{[^}]*border-radius: 18px 18px 0 0/,
+    );
   });
 
   it("lets the detached composer stop a pending agent run", () => {
     expect(source).toMatch(/const stopDetachedRun = useCallback/);
     expect(source).toMatch(/type: "STOP_RUN"/);
-    expect(source).toMatch(/type=\{quickMessagePending \? "button" : "submit"\}/);
-    expect(source).toMatch(/onClick=\{quickMessagePending \? stopDetachedRun : undefined\}/);
-    expect(source).toMatch(/aria-label=\{quickMessagePending \? "Stop task" : "Send message"\}/);
+    expect(source).toMatch(
+      /type=\{quickMessagePending \? "button" : "submit"\}/,
+    );
+    expect(source).toMatch(
+      /onClick=\{quickMessagePending \? stopDetachedRun : undefined\}/,
+    );
+    expect(source).toMatch(
+      /aria-label=\{quickMessagePending \? "Stop task" : "Send message"\}/,
+    );
   });
 
   it("guards against stuck pending state with a stop window and safety timeout", () => {
@@ -150,17 +172,20 @@ describe("detached copilot mirrored state", () => {
 });
 
 describe("detached approval bubble layout", () => {
-  it("renders a compact approval bubble that opens the full chat panel", () => {
+  it("renders a slim detached HITL approval bar with inline decisions", () => {
     expect(source).toMatch(/buildDetachedApprovalReview/);
     expect(source).toMatch(/copilot-search-approval-bubble/);
-    expect(source).toMatch(/Approval needed/);
+    expect(source).toMatch(/HITL/);
+    expect(source).toMatch(/Human approval required/);
+    expect(source).toMatch(/Pending your response/);
     expect(source).toMatch(/Open chat panel to review/);
     expect(source).toMatch(/onClick=\{openPanel\}/);
+    expect(source).toMatch(/sendHitlDecision\(decision\)/);
+    expect(source).toMatch(/handleDetachedApproval\("reject"\)/);
+    expect(source).toMatch(/handleDetachedApproval\("approve"\)/);
     expect(source).toMatch(/copilot-search-overlay.*has-approval/);
     expect(source).toMatch(/unreadCount > 0 && !hasApproval/);
     expect(source).not.toMatch(/approvalReviewTab/);
-    expect(source).not.toMatch(/sendHitlDecision/);
-    expect(source).not.toMatch(/handleApproval/);
     expect(source).not.toMatch(/copilot-search-approval-tabs/);
     expect(source).not.toMatch(/copilot-search-approval-meta/);
     expect(source).not.toMatch(/copilot-search-approval-field-list/);
@@ -170,14 +195,50 @@ describe("detached approval bubble layout", () => {
     expect(source).not.toMatch(/Intent/);
     expect(source).not.toMatch(/ListChecks|is-preview/);
     expect(source).not.toMatch(/View fields/);
-    expect(source).not.toMatch(/1 of \{approvalInterrupt\.actionRequests\.length\} action/);
-    expect(styles).toMatch(/\.copilot-search-approval-bubble \{[\s\S]*bottom: calc\(100% \+ 10px\)/);
-    expect(styles).toMatch(/\.copilot-search-approval-bubble \{[\s\S]*width: min\(356px, calc\(100vw - 32px\)\)/);
-    expect(styles).toMatch(/\.copilot-search-approval-bubble-text \{[\s\S]*text-overflow: ellipsis/);
-    expect(styles).toMatch(/\.copilot-search-approval-bubble::after/);
+    expect(source).not.toMatch(
+      /1 of \{approvalInterrupt\.actionRequests\.length\} action/,
+    );
+    const approvalStyles =
+      styles.match(/\.copilot-search-approval-bubble \{[^}]*\}/)?.[0] ?? "";
+    const approvalThemeStyles = [
+      ...styles.matchAll(/\.copilot-search-approval[^{]*\{[^}]*\}/g),
+    ]
+      .map((match) => match[0])
+      .join("\n");
+    expect(styles).toMatch(
+      /\.copilot-search-overlay\.has-approval \{[\s\S]*width: min\(464px, calc\(100vw - 32px\)\)/,
+    );
+    expect(approvalStyles).toMatch(/position: relative/);
+    expect(approvalStyles).toMatch(/width: calc\(100% \+ 18px\)/);
+    expect(approvalStyles).toMatch(/max-width: none/);
+    expect(approvalStyles).toMatch(/margin: -7px -9px 5px/);
+    expect(approvalStyles).toMatch(/min-height: 54px/);
+    expect(styles).toMatch(/\.copilot-search-approval-bubble-main/);
+    expect(styles).toMatch(
+      /\.copilot-search-approval-bubble-text \{[\s\S]*display: none/,
+    );
+    expect(styles).toMatch(
+      /\.copilot-search-approval-bubble-eyebrow \{[\s\S]*white-space: nowrap/,
+    );
+    expect(styles).toMatch(
+      /\.copilot-search-approval-bubble-main \{[\s\S]*overflow: hidden/,
+    );
+    expect(styles).toMatch(
+      /\.copilot-search-approval-bubble-title \{[\s\S]*text-overflow: ellipsis/,
+    );
+    expect(styles).toMatch(
+      /\.copilot-search-approval-bubble-action\.is-reject/,
+    );
+    expect(styles).toMatch(
+      /\.copilot-search-approval-bubble-action\.is-approve/,
+    );
+    expect(approvalThemeStyles).toMatch(/#eaf4ff|#1e4f8a/);
+    expect(approvalThemeStyles).not.toMatch(/var\(--warn/);
+    expect(styles).not.toMatch(/\.copilot-search-approval-bubble::after/);
+    expect(styles).not.toMatch(/\.copilot-search-approval-bubble-open/);
     expect(styles).not.toMatch(/copilot-search-approval-step/);
     expect(styles).not.toMatch(/\.copilot-search-approval\s*\{/);
-    expect(styles).not.toMatch(/\.copilot-search-overlay\.has-approval \{[\s\S]*width: min\(760px, calc\(100vw - 32px\)\)/);
+    expect(approvalStyles).not.toMatch(/bottom: calc\(100%/);
     expect(styles).not.toMatch(/\.copilot-search-approval-tabs/);
     expect(styles).not.toMatch(/\.copilot-search-approval-btn/);
   });

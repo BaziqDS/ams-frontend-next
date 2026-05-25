@@ -35,6 +35,8 @@ import {
   buildInspectionItemArrayCopilotFields,
   parseInspectionItemFieldPath,
 } from "@/lib/inspectionCopilotForm";
+import { Button } from "@/components/ui/button";
+
 
 export const InspectionIcon = ({ d, size = 16 }: { d: React.ReactNode | string; size?: number }) => (
   <svg
@@ -779,7 +781,10 @@ export function InspectionModal({
     // Route items.N.item option searches through the hybrid backend endpoint
     // (pgvector + tsvector + RRF). This is agent-only — human-facing dropdowns
     // continue to use the standard keyword search via ItemViewSet.list.
-    searchOptions: searchCentralRegisterItemOptions,
+    searchOptions: request => searchCentralRegisterItemOptions({
+      ...request,
+      fields: copilotFields,
+    }),
     validate: () => {
       setTouched(true);
       return {
@@ -928,9 +933,9 @@ export function InspectionModal({
                           {touched && errors[`item_${index}_desc`] && <div className="field-error">{errors[`item_${index}_desc`]}</div>}
                         </div>
                         {canEditItems && (
-                          <button type="button" className="btn btn-xs btn-danger-ghost" onClick={() => removeItem(index)} disabled={items.length <= 1} title="Remove item">
+                          <Button type="button" variant="outline" size="xs" className="btn-danger-ghost" onClick={() => removeItem(index)} disabled={items.length <= 1} title="Remove item">
                             <InspectionIcon d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12h6l1-12" size={12} />
-                          </button>
+                          </Button>
                         )}
                       </div>
 
@@ -1045,10 +1050,10 @@ export function InspectionModal({
                 })}
               </div>
               {canEditItems && (
-                <button type="button" className="btn btn-sm" onClick={addItem} style={{ marginTop: 8 }}>
+                <Button type="button" variant="outline" size="sm" onClick={addItem} style={{ marginTop: 8 }}>
                   <InspectionIcon d="M12 5v14M5 12h14" size={13} />
                   Add Item
-                </button>
+                </Button>
               )}
             </Section>
 
@@ -1088,10 +1093,10 @@ export function InspectionModal({
                     style={{ display: "none" }}
                   />
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-                    <button type="button" className="btn btn-sm" onClick={() => fileInputRef.current?.click()}>
+                    <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
                       <InspectionIcon d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" size={13} />
                       Upload Files
-                    </button>
+                    </Button>
                     {files.length > 0 && <span className="mono" style={{ fontSize: 12, color: "var(--muted)" }}>{files.length} file(s) queued</span>}
                   </div>
                   {files.length > 0 && (
@@ -1167,14 +1172,14 @@ export function InspectionModal({
               )}
             </div>
             <div className="modal-foot-actions">
-              <button type="button" className="btn btn-md" onClick={onClose}>Cancel</button>
+              <Button type="button" variant="outline" size="md" onClick={onClose}>Cancel</Button>
               {!isReadOnly && mode === "create" && (
-                <button type="button" className="btn btn-md" onClick={() => { void submitManually("save_draft"); }} disabled={submitting || refsLoading}>
+                <Button type="button" variant="outline" size="md" onClick={() => { void submitManually("save_draft"); }} disabled={submitting || refsLoading}>
                   {submitting ? "Saving…" : "Save as Draft"}
-                </button>
+                </Button>
               )}
               {!isReadOnly && (
-                <button type="button" className="btn btn-md btn-primary" onClick={() => { void submitManually("submit"); }} disabled={submitting || refsLoading}>
+                <Button type="button" size="md" onClick={() => { void submitManually("submit"); }} disabled={submitting || refsLoading}>
                   {submitting
                     ? "Saving…"
                     : mode === "create"
@@ -1182,7 +1187,7 @@ export function InspectionModal({
                       : canEditStage4
                         ? "Save Finance Review"
                         : "Save Changes"}
-                </button>
+                </Button>
               )}
             </div>
           </footer>
@@ -1252,10 +1257,10 @@ export function RejectInspectionModal({
         <footer className="modal-foot">
           <div className="modal-foot-meta">This will close the inspection and record the supplied reason in the workflow history.</div>
           <div className="modal-foot-actions">
-            <button type="button" className="btn btn-md" onClick={onClose}>Back</button>
-            <button type="button" className="btn btn-md btn-danger" onClick={() => { setTouched(true); if (reason.trim()) onConfirm(reason.trim()); }} disabled={!reason.trim()}>
+            <Button type="button" variant="outline" size="md" onClick={onClose}>Back</Button>
+            <Button type="button" variant="destructive" size="md" onClick={() => { setTouched(true); if (reason.trim()) onConfirm(reason.trim()); }} disabled={!reason.trim()}>
               Cancel inspection
-            </button>
+            </Button>
           </div>
         </footer>
       </div>
@@ -1328,10 +1333,10 @@ export function ReturnInspectionModal({
         <footer className="modal-foot">
           <div className="modal-foot-meta">The officer reopening this certificate will see this revision request at the top of the detail page.</div>
           <div className="modal-foot-actions">
-            <button type="button" className="btn btn-md" onClick={onClose} disabled={submitting}>Cancel</button>
-            <button
+            <Button type="button" variant="outline" size="md" onClick={onClose} disabled={submitting}>Cancel</Button>
+            <Button
               type="button"
-              className="btn btn-md btn-primary"
+              size="md"
               onClick={() => {
                 setTouched(true);
                 if (reason.trim()) onConfirm(reason.trim());
@@ -1339,7 +1344,7 @@ export function ReturnInspectionModal({
               disabled={!reason.trim() || submitting}
             >
               {submitting ? "Returning..." : targetLabel}
-            </button>
+            </Button>
           </div>
         </footer>
       </div>

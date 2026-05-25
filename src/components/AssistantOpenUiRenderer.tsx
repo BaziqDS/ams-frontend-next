@@ -4,6 +4,8 @@ import { Component, type ErrorInfo, type ReactNode, useEffect, useState } from "
 import { createPortal } from "react-dom";
 import { Renderer } from "@openuidev/react-lang";
 import { MarkDownRenderer, ThemeProvider, createTheme, openuiChatLibrary } from "@openuidev/react-ui";
+import { Button } from "@/components/ui/button";
+
 
 const assistantOpenUiTheme = createTheme({
   background: "oklch(0.982 0.006 95)",
@@ -196,16 +198,16 @@ export function AssistantOpenUiRenderer({
                 <div className="eyebrow">OpenUI Preview</div>
                 <div className="assistant-genui-modal-title">Larger generated UI view</div>
               </div>
-              <button
+              <Button
                 type="button"
-                className="btn btn-ghost btn-icon"
+                variant="ghost" size="icon"
                 onClick={() => setIsExpanded(false)}
                 aria-label="Close larger generated UI view"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M18 6L6 18M6 6l12 12" />
                 </svg>
-              </button>
+              </Button>
             </div>
             <div className="assistant-genui-modal-body">
               <ThemeProvider mode="light" lightTheme={assistantOpenUiTheme} cssSelector=".assistant-openui-theme">

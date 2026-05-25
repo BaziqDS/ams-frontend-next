@@ -7,6 +7,8 @@ import type { LocationRecord, StockRegisterRecord } from "@/lib/userUiShared";
 import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
 import { ensureValueInOptions, normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
 import { focusCopilotFormField } from "@/lib/copilotFocus";
+import { Button } from "@/components/ui/button";
+
 
 const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
   <svg aria-hidden="true" focusable="false" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -396,8 +398,8 @@ export function StockRegisterModal({ open, mode, register, stores, storesLoading
               : <span className="foot-ok">Register ready to save</span>}
           </div>
           <div className="modal-foot-actions">
-            <button type="button" className="btn btn-md" onClick={onClose}>Cancel</button>
-            <button type="button" className="btn btn-md btn-primary" onClick={() => { void submitManually("submit"); }} disabled={!canSave}>{submitting ? "Saving…" : isEditMode ? "Save changes" : "Create register"}</button>
+            <Button type="button" variant="outline" size="md" onClick={onClose}>Cancel</Button>
+            <Button type="button" size="md" onClick={() => { void submitManually("submit"); }} disabled={!canSave}>{submitting ? "Saving…" : isEditMode ? "Save changes" : "Create register"}</Button>
           </div>
         </footer>
       </div>

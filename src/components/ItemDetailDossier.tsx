@@ -48,6 +48,8 @@ import {
   workspaceTrackingTone,
 } from "@/components/ItemModuleViews";
 import styles from "./ItemDetailDossier.module.css";
+import { Button } from "@/components/ui/button";
+
 
 type SectionKey = "distribution" | "instances" | "batches" | "info" | "activity";
 
@@ -467,10 +469,6 @@ export function ItemDetailDossierView({ itemId }: { itemId: string }) {
       <Topbar breadcrumb={["Inventory", "Items", item.name]} />
 
       <div className={styles.shell}>
-        <Link className="detail-page-back" href="/items">
-          <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
-          Back to Items
-        </Link>
         {actionError ? (
           <div style={{ marginBottom: 14 }}>
             <Alert onDismiss={() => setActionError(null)}>{actionError}</Alert>
@@ -478,7 +476,7 @@ export function ItemDetailDossierView({ itemId }: { itemId: string }) {
         ) : null}
         {fetchError ? (
           <div style={{ marginBottom: 14 }}>
-            <Alert onDismiss={() => setFetchError(null)} action={<button type="button" className="btn btn-xs" onClick={() => load()}>Retry</button>}>
+            <Alert onDismiss={() => setFetchError(null)} action={<Button type="button" variant="outline" size="xs" onClick={() => load()}>Retry</Button>}>
               {fetchError}
             </Alert>
           </div>
@@ -646,20 +644,20 @@ function ItemOverviewLayout({
 
         <div className={styles.heroActionRail}>
           {canManageItems ? (
-            <button type="button" className="btn btn-primary" onClick={onEdit}>
+            <Button type="button"  onClick={onEdit}>
               <Ic d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.1 2.1 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5Z" size={14} />
               Edit Item
-            </button>
+            </Button>
           ) : null}
-          <button type="button" className="btn" onClick={() => setDistributionOpen(true)}>
+          <Button type="button" variant="outline" onClick={() => setDistributionOpen(true)}>
             <Ic d="M4 7h16M4 12h16M4 17h16M8 7v10M16 7v10" size={14} />
             View Distribution
-          </button>
-          <button type="button" className="btn" onClick={onLocate}>
+          </Button>
+          <Button type="button" variant="outline" onClick={onLocate}>
             <Ic d="M12 12h.01M18 12h.01M6 12h.01" size={16} />
             More
             <Ic d="M6 9l6 6 6-6" size={12} />
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -926,10 +924,10 @@ function DistributionDrawer({
         </div>
 
         <footer className={styles.distributionDrawerFoot}>
-          <button type="button" className="btn" onClick={() => exportDistributionCsv(item, units, acctUnit)}>
+          <Button type="button" variant="outline" onClick={() => exportDistributionCsv(item, units, acctUnit)}>
             <Ic d="M12 3v12M7 10l5 5 5-5M5 21h14" size={16} />
             Export Distribution
-          </button>
+          </Button>
         </footer>
       </aside>
     </div>
@@ -1463,14 +1461,14 @@ function UnitDetail({
 
       <div className={styles.locDetailActions}>
         {showInstances ? (
-          <button type="button" className="btn btn-xs btn-ghost" onClick={onJumpInstances}>
+          <Button type="button" variant="ghost" size="xs" onClick={onJumpInstances}>
             Instances here
-          </button>
+          </Button>
         ) : null}
         {showBatches ? (
-          <button type="button" className="btn btn-xs btn-ghost" onClick={onJumpBatches}>
+          <Button type="button" variant="ghost" size="xs" onClick={onJumpBatches}>
             {isFixedLot ? "Asset lots here" : "Batches here"}
-          </button>
+          </Button>
         ) : null}
       </div>
     </div>

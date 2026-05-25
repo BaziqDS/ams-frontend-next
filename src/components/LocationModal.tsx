@@ -8,6 +8,8 @@ import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
 import { ensureValueInOptions, normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
 import { focusCopilotFormField } from "@/lib/copilotFocus";
 import { buildLocationCopilotValuePatch, type LocationCopilotFormState } from "@/lib/locationCopilotForm";
+import { Button } from "@/components/ui/button";
+
 
 const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
   <svg aria-hidden="true" focusable="false" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -601,8 +603,8 @@ export function LocationModal({ open, mode, location, createContext = "default",
                   : <span className="foot-ok">{form.create_main_store ? "Main store" : `${locationTypeLabel(form.location_type)}${form.is_store ? " store" : " location"}`} ready</span>}
           </div>
           <div className="modal-foot-actions">
-            <button type="button" className="btn btn-md" onClick={onClose}>Cancel</button>
-            <button type="button" className="btn btn-md btn-primary" onClick={() => { void submitManually("submit"); }} disabled={!canSave}>{submitting ? "Saving…" : isEditMode ? "Save changes" : "Create location"}</button>
+            <Button type="button" variant="outline" size="md" onClick={onClose}>Cancel</Button>
+            <Button type="button" size="md" onClick={() => { void submitManually("submit"); }} disabled={!canSave}>{submitting ? "Saving…" : isEditMode ? "Save changes" : "Create location"}</Button>
           </div>
         </footer>
       </div>

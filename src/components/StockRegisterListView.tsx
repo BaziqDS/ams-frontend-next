@@ -17,6 +17,8 @@ import { consumePendingOpen, SAME_PAGE_OPEN_EVENT } from "@/lib/copilotPendingAc
 import { useClientPagination } from "@/lib/listPagination";
 import { filterStockRegisters, getCreatableStockRegisterStoreOptions } from "@/lib/stockRegisterUi";
 import { relTime, type LocationRecord, type StockRegisterRecord } from "@/lib/userUiShared";
+import { Button } from "@/components/ui/button";
+
 
 const STOCK_REGISTERS_PAGE_SIZE = 12;
 
@@ -137,28 +139,28 @@ function RowActions({
   return (
     <div className="row-actions">
       {canRenderEdit && (
-        <button type="button" className="btn btn-xs btn-ghost row-action" onClick={(event) => { event.stopPropagation(); onEdit?.(); }} title="Edit stock register" disabled={disabled}>
+        <Button type="button" variant="ghost" size="xs" className="row-action" onClick={(event) => { event.stopPropagation(); onEdit?.(); }} title="Edit stock register" disabled={disabled}>
           <Ic d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" size={13} />
           <span className="ra-label">Edit</span>
-        </button>
+        </Button>
       )}
       {canRenderClose && (
-        <button type="button" className="btn btn-xs btn-ghost row-action" onClick={(event) => { event.stopPropagation(); onClose?.(); }} title="Close stock register" disabled={disabled}>
+        <Button type="button" variant="ghost" size="xs" className="row-action" onClick={(event) => { event.stopPropagation(); onClose?.(); }} title="Close stock register" disabled={disabled}>
           <Ic d="M19 7L10 16l-5-5" size={13} />
           <span className="ra-label">Close</span>
-        </button>
+        </Button>
       )}
       {canRenderReopen && (
-        <button type="button" className="btn btn-xs btn-ghost row-action" onClick={(event) => { event.stopPropagation(); onReopen?.(); }} title="Reopen stock register" disabled={disabled}>
+        <Button type="button" variant="ghost" size="xs" className="row-action" onClick={(event) => { event.stopPropagation(); onReopen?.(); }} title="Reopen stock register" disabled={disabled}>
           <Ic d="M3 12a9 9 0 101.8-5.4M3 4v5h5" size={13} />
           <span className="ra-label">Reopen</span>
-        </button>
+        </Button>
       )}
       {canRenderDelete && (
-        <button type="button" className="btn btn-xs btn-danger-ghost row-action" onClick={(event) => { event.stopPropagation(); onDelete?.(); }} title="Delete stock register" disabled={disabled}>
+        <Button type="button" variant="outline" size="xs" className="btn-danger-ghost row-action" onClick={(event) => { event.stopPropagation(); onDelete?.(); }} title="Delete stock register" disabled={disabled}>
           <Ic d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12h6l1-12" size={13} />
           <span className="ra-label">{deleteBusy ? "Deleting…" : "Delete"}</span>
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -378,10 +380,10 @@ function RegisterLifecycleModal({
             {isClose ? "Closed registers are hidden from active stock-register dropdowns." : "Reopened registers return to active stock-register dropdowns."}
           </div>
           <div className="modal-foot-actions">
-            <button type="button" className="btn btn-md" onClick={onClose} disabled={submitting}>Cancel</button>
-            <button type="button" className="btn btn-md btn-primary" onClick={() => onConfirm(reason)} disabled={submitting}>
+            <Button type="button" variant="outline" size="md" onClick={onClose} disabled={submitting}>Cancel</Button>
+            <Button type="button" size="md" onClick={() => onConfirm(reason)} disabled={submitting}>
               {submitting ? (isClose ? "Closing…" : "Reopening…") : (isClose ? "Close register" : "Reopen register")}
-            </button>
+            </Button>
           </div>
         </footer>
       </div>
@@ -766,10 +768,10 @@ export function StockRegisterListView() {
               </button>
             </div>
             {canManageRegisters && (
-              <button type="button" className="btn btn-sm btn-primary" onClick={openCreateModal} disabled={pageBusy}>
+              <Button type="button" size="sm" onClick={openCreateModal} disabled={pageBusy}>
                 <Ic d="M12 5v14M5 12h14" size={14} />
                 Add Register
-              </button>
+              </Button>
             )}
           </div>
         </div>

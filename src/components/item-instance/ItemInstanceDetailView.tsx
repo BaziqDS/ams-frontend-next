@@ -22,6 +22,8 @@ import {
   type MaintenanceWorkOrderRecord,
 } from "@/lib/maintenanceUi";
 import styles from "./ItemInstanceDetailView.module.css";
+import { Button } from "@/components/ui/button";
+
 
 interface ItemInstanceRecord {
   id: number;
@@ -371,14 +373,9 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
     <div>
       <Topbar breadcrumb={breadcrumb} />
       <div className="page">
-        <Link className={styles.pageBack} href={`/items/${itemId}/instances`}>
-          <Icon d="M19 12H5M12 19l-7-7 7-7" size={12} />
-          Back to {itemName} — instances
-        </Link>
-
         {fetchError && (
           <Alert>
-            {fetchError} <button type="button" className="btn btn-xs" onClick={() => load()}>Retry</button>
+            {fetchError} <Button type="button" variant="outline" size="xs" onClick={() => load()}>Retry</Button>
           </Alert>
         )}
 
@@ -400,22 +397,28 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
               </div>
 
               <div className={styles.pageActions}>
+                <Button asChild variant="outline" size="sm" className={styles.pageBackAction}>
+                  <Link href={`/items/${itemId}/instances`}>
+                    <Icon d="M19 12H5M12 19l-7-7 7-7" size={12} />
+                    Back to instances
+                  </Link>
+                </Button>
                 {canManageItems && !isEditingSerial ? (
-                  <button type="button" className="btn btn-sm" onClick={handleStartSerialEdit}>
+                  <Button type="button" variant="outline" size="sm" onClick={handleStartSerialEdit}>
                     <Icon d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.1 2.1 0 113 3L12 15l-4 1 1-4 9.5-9.5Z" size={14} />
                     Edit Instance
-                  </button>
+                  </Button>
                 ) : null}
                 {qrHref ? (
-                  <a className="btn btn-sm" href={qrHref} target="_blank" rel="noopener noreferrer">
+                  <Button asChild variant="outline" size="sm"><a  href={qrHref} target="_blank" rel="noopener noreferrer">
                     <Icon d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z" size={14} />
                     Print Label
-                  </a>
+                  </a></Button>
                 ) : null}
-                <Link className="btn btn-sm" href={latestRelatedEntry ? `/stock-entries/${latestRelatedEntry.id}` : `/stock-entries?search=${encodeURIComponent(itemName)}`}>
+                <Button asChild variant="outline" size="sm"><Link  href={latestRelatedEntry ? `/stock-entries/${latestRelatedEntry.id}` : `/stock-entries?search=${encodeURIComponent(itemName)}`}>
                   <Icon d="M4 6h16M4 12h16M4 18h10" size={14} />
                   View Movements
-                </Link>
+                </Link></Button>
               </div>
             </div>
 
@@ -471,12 +474,12 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
                               disabled={isSavingSerial}
                             />
                             <div className={styles.serialActions}>
-                              <button type="submit" className="btn btn-xs" disabled={isSavingSerial}>
+                              <Button type="submit" variant="outline" size="xs" disabled={isSavingSerial}>
                                 {isSavingSerial ? "Saving..." : "Save"}
-                              </button>
-                              <button type="button" className="btn btn-xs btn-ghost" onClick={handleCancelSerialEdit} disabled={isSavingSerial}>
+                              </Button>
+                              <Button type="button" variant="ghost" size="xs" onClick={handleCancelSerialEdit} disabled={isSavingSerial}>
                                 Cancel
-                              </button>
+                              </Button>
                             </div>
                             <div className={serialSaveError ? styles.serialError : styles.serialHint}>
                               {serialSaveError ?? "Leave the field empty if this unit has no serial number."}
@@ -607,9 +610,9 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
                       <DetailField label="Print size" value="40mm x 40mm" />
                       <DetailField label="Format" value={qrHref ? "Image available" : "Not generated"} />
                       {qrHref ? (
-                        <a className="btn btn-sm" href={qrHref} target="_blank" rel="noopener noreferrer" download>
+                        <Button asChild variant="outline" size="sm"><a  href={qrHref} target="_blank" rel="noopener noreferrer" download>
                           Download
-                        </a>
+                        </a></Button>
                       ) : null}
                     </div>
                   </div>

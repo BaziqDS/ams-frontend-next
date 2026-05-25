@@ -60,6 +60,8 @@ import {
   syncInspectionItemReferences,
 } from "@/lib/inspectionCopilotForm";
 import { buildCopilotDetailContext } from "@/lib/copilotPageContext";
+import { Button } from "@/components/ui/button";
+
 
 type InspectionLocationDetail = {
   id: number;
@@ -539,20 +541,20 @@ function ActiveStageCard({
             </div>
             <div className="stage-action-foot-actions">
               {canReturn && returnLabel ? (
-                <button type="button" className="btn btn-sm btn-ghost" onClick={onReturn} disabled={busyAction !== null}>
+                <Button type="button" variant="ghost" size="sm" onClick={onReturn} disabled={busyAction !== null}>
                   <InspectionIcon d="M15 18l-6-6 6-6" size={14} />
                   {returnLabel}
-                </button>
+                </Button>
               ) : null}
-              <button type="button" className="btn btn-sm" onClick={onSave} disabled={readOnly}>
+              <Button type="button" variant="outline" size="sm" onClick={onSave} disabled={readOnly}>
                 <InspectionIcon d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2zM17 21v-8H7v8M7 3v5h8" size={14} />
                 Save progress
-              </button>
+              </Button>
               {actionLabel && canSubmit ? (
-                <button type="button" className="btn btn-sm btn-primary" onClick={onSubmit} disabled={busyAction !== null}>
+                <Button type="button" size="sm" onClick={onSubmit} disabled={busyAction !== null}>
                   <InspectionIcon d="M20 6L9 17l-5-5" size={14} />
                   {busyAction ? "Processing..." : actionLabel}
-                </button>
+                </Button>
               ) : null}
             </div>
           </div>
@@ -1414,11 +1416,6 @@ export default function InspectionDetailPage() {
       <Topbar breadcrumb={["Operations", "Inspection Certificates", inspection?.contract_no ?? activeStageLabel]} />
 
       <div className="page" id="page-ins" data-density="balanced">
-        <Link className="detail-page-back" href="/inspections">
-          <InspectionIcon d="M19 12H5M12 19l-7-7 7-7" size={12} />
-          Back to Inspections
-        </Link>
-
         {error ? (
           <div className="detail-alert">
             <strong>Action failed</strong>
@@ -1445,21 +1442,27 @@ export default function InspectionDetailPage() {
               </div>
 
               <div className="page-head-actions">
-                <button type="button" className="btn btn-sm" onClick={openPdf}>
+                <Button asChild variant="outline" size="sm" className="page-head-back">
+                  <Link href="/inspections">
+                    <InspectionIcon d="M19 12H5M12 19l-7-7 7-7" size={12} />
+                    Back to Inspections
+                  </Link>
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={openPdf}>
                   <InspectionIcon d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" size={14} />
                   Export PDF
-                </button>
+                </Button>
                 {canCancel ? (
-                  <button type="button" className="btn btn-sm btn-danger-ghost" onClick={() => setCancelOpen(true)} disabled={busyAction !== null}>
+                  <Button type="button" variant="outline" size="sm" className="btn-danger-ghost" onClick={() => setCancelOpen(true)} disabled={busyAction !== null}>
                     <InspectionIcon d={<><circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" /></>} size={14} />
                     Cancel inspection
-                  </button>
+                  </Button>
                 ) : null}
                 {canDelete ? (
-                  <button type="button" className="btn btn-sm btn-danger-ghost" onClick={handleDelete} disabled={busyAction !== null}>
+                  <Button type="button" variant="outline" size="sm" className="btn-danger-ghost" onClick={handleDelete} disabled={busyAction !== null}>
                     <InspectionIcon d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12h6l1-12" size={14} />
                     Delete draft
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             </div>

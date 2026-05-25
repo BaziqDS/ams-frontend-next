@@ -21,6 +21,14 @@ import { relTime, type LocationRecord } from "@/lib/userUiShared";
 import { normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
 import { buildCopilotListContext } from "@/lib/copilotPageContext";
 import { consumePendingOpen, SAME_PAGE_OPEN_EVENT } from "@/lib/copilotPendingAction";
+import {
+  Alert as SharedAlert,
+  AlertActions,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/Alert";
+import { Button } from "@/components/ui/button";
+
 
 type Density = "compact" | "balanced" | "comfortable";
 type EntryType = "RECEIPT" | "ISSUE" | "RETURN";
@@ -201,15 +209,34 @@ function DensityToggle({ density, setDensity }: { density: Density; setDensity: 
   );
 }
 
-function Alert({ children, action, onDismiss }: { children: ReactNode; action?: ReactNode; onDismiss?: () => void }) {
+function Alert({
+  title,
+  children,
+  action,
+  onDismiss,
+  variant,
+}: {
+  title?: string;
+  children: ReactNode;
+  action?: ReactNode;
+  onDismiss?: () => void;
+  variant?: "destructive" | "warning" | "info" | "success";
+}) {
   return (
-    <div style={{ padding: "12px 16px", background: "var(--danger-weak)", border: "1px solid color-mix(in oklch, var(--danger) 30%, transparent)", borderRadius: "var(--radius)", color: "var(--danger)", fontSize: 13, marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-      <span>{children}</span>
-      <div style={{ display: "flex", gap: 8 }}>
-        {action}
-        {onDismiss && <button type="button" className="btn btn-xs btn-ghost" onClick={onDismiss}>Dismiss</button>}
-      </div>
-    </div>
+    <SharedAlert variant={variant ?? "destructive"}>
+      {title ? <AlertTitle>{title}</AlertTitle> : null}
+      <AlertDescription>{children}</AlertDescription>
+      {(action || onDismiss) ? (
+        <AlertActions>
+          {action}
+          {onDismiss && (
+            <Button type="button" variant="ghost" size="xs" onClick={onDismiss}>
+              Dismiss
+            </Button>
+          )}
+        </AlertActions>
+      ) : null}
+    </SharedAlert>
   );
 }
 
@@ -1104,10 +1131,19 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
         </div>
 
         <div className="modal-body">
-          {submitError && <Alert onDismiss={() => setSubmitError(null)}>{submitError}</Alert>}
+          {submitError && (
+            <Alert
+              title="Couldn't save the stock entry"
+              onDismiss={() => setSubmitError(null)}
+            >
+              {submitError}
+            </Alert>
+          )}
           {refsLoading && <div style={{ padding: 16, color: "var(--muted)", fontSize: 13 }}>Loading dropdown data…</div>}
           {mode === "create" && !isSuperuser && !refsLoading && selectableStoreOptions.length === 0 && (
-            <Alert>A directly assigned store is required before this account can create stock entries.</Alert>
+            <Alert variant="warning" title="Store assignment required">
+              Your account isn't directly assigned to a store yet. Ask an administrator to assign you to a source store before creating stock entries here.
+            </Alert>
           )}
 
           <Section n={1} title="Movement" sub={form.entry_type === "ISSUE" ? "Choose the store sending stock, then choose who or where receives it." : "Choose the store receiving returned stock, then choose who or where it is returning from."}>
@@ -1241,7 +1277,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
                   <div key={index} style={{ border: "1px solid var(--hairline)", borderRadius: "var(--radius)", padding: 12, background: "var(--surface-2)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                       <div className="eyebrow">Item {index + 1}{duplicate ? " · Duplicate item" : ""}</div>
-                      <button type="button" className="btn btn-xs btn-ghost" onClick={() => removeRow(index)} disabled={form.items.length === 1}>Remove</button>
+                      <Button type="button" variant="ghost" size="xs" onClick={() => removeRow(index)} disabled={form.items.length === 1}>Remove</Button>
                     </div>
                     <div className="form-grid cols-2">
                       <Field label="Item" required error={errors[`items.${index}.item`]}>
@@ -1334,9 +1370,9 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
                   </div>
                 );
               })}
-              <button type="button" className="btn btn-sm btn-ghost" onClick={addRow}>
+              <Button type="button" variant="ghost" size="sm" onClick={addRow}>
                 <Ic d="M12 5v14M5 12h14" size={14} /> Add line item
-              </button>
+              </Button>
             </div>
           </Section>
         </div>
@@ -1344,8 +1380,8 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
         <div className="modal-foot">
           <div className="modal-foot-meta">Backend scoping still enforces which source and destination rows you can use.</div>
           <div className="modal-foot-actions">
-            <button type="button" className="btn btn-ghost" onClick={onClose} disabled={submitting}>Cancel</button>
-            <button type="button" className="btn btn-primary" onClick={() => { void submitManually("submit"); }} disabled={!canSubmit}>{submitting ? "Saving…" : mode === "edit" ? "Save Changes" : "Create Entry"}</button>
+            <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>Cancel</Button>
+            <Button type="button"  onClick={() => { void submitManually("submit"); }} disabled={!canSubmit}>{submitting ? "Saving…" : mode === "edit" ? "Save Changes" : "Create Entry"}</Button>
           </div>
         </div>
       </div>
@@ -1360,9 +1396,9 @@ function RowActions({ entry, canEdit, canDelete, pageBusy, deleteBusy, ackBusy, 
   if (!showAcknowledge && !showEdit && !showDelete) return <span className="muted-note mono">No actions</span>;
   return (
     <div className="row-actions">
-      {showAcknowledge && <button type="button" className="btn btn-xs btn-primary row-action ack-action" onClick={event => { event.stopPropagation(); onAcknowledge(); }} disabled={pageBusy}><Ic d="M20 6L9 17l-5-5" size={13} /><span className="ra-label">{ackBusy ? "Acknowledging…" : "Acknowledge"}</span></button>}
-      {showEdit && <button type="button" className="btn btn-xs btn-ghost row-action" onClick={event => { event.stopPropagation(); onEdit(); }} disabled={pageBusy}><Ic d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" size={13} /><span className="ra-label">Edit</span></button>}
-      {showDelete && <button type="button" className="btn btn-xs btn-danger-ghost row-action" onClick={event => { event.stopPropagation(); onDelete(); }} disabled={pageBusy}><Ic d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12h6l1-12" size={13} /><span className="ra-label">{deleteBusy ? "Deleting…" : "Delete"}</span></button>}
+      {showAcknowledge && <Button type="button" size="xs" className="row-action ack-action" onClick={event => { event.stopPropagation(); onAcknowledge(); }} disabled={pageBusy}><Ic d="M20 6L9 17l-5-5" size={13} /><span className="ra-label">{ackBusy ? "Acknowledging…" : "Acknowledge"}</span></Button>}
+      {showEdit && <Button type="button" variant="ghost" size="xs" className="row-action" onClick={event => { event.stopPropagation(); onEdit(); }} disabled={pageBusy}><Ic d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" size={13} /><span className="ra-label">Edit</span></Button>}
+      {showDelete && <Button type="button" variant="outline" size="xs" className="btn-danger-ghost row-action" onClick={event => { event.stopPropagation(); onDelete(); }} disabled={pageBusy}><Ic d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12h6l1-12" size={13} /><span className="ra-label">{deleteBusy ? "Deleting…" : "Delete"}</span></Button>}
     </div>
   );
 }
@@ -1779,8 +1815,28 @@ export function StockEntriesView() {
       <StockEntryModal open={modalOpen} mode={modalMode} entry={editingEntry} refs={refs} refsLoading={refsLoading} assignedLocationIds={user?.assigned_locations} isSuperuser={user?.is_superuser} onClose={closeModal} onSave={handleSave} />
       <Topbar breadcrumb={["Operations", "Stock Entries"]} />
       <div className="page">
-        {fetchError && <Alert action={<button type="button" className="btn btn-xs" onClick={() => { loadEntries(); loadRefs(); }}>Retry</button>} onDismiss={() => setFetchError(null)}>{fetchError}</Alert>}
-        {actionError && <Alert onDismiss={() => setActionError(null)}>{actionError}</Alert>}
+        {fetchError && (
+          <Alert
+            title="Couldn't load stock entries"
+            action={
+              <Button
+                type="button"
+                variant="outline" size="xs"
+                onClick={() => { loadEntries(); loadRefs(); }}
+              >
+                Retry
+              </Button>
+            }
+            onDismiss={() => setFetchError(null)}
+          >
+            {fetchError}
+          </Alert>
+        )}
+        {actionError && (
+          <Alert title="Action failed" onDismiss={() => setActionError(null)}>
+            {actionError}
+          </Alert>
+        )}
 
         <div className="page-head">
           <div className="page-title-group">
@@ -1860,7 +1916,7 @@ export function StockEntriesView() {
               <button type="button" className={"seg-btn icon-only" + (mode === "table" ? " active" : "")} onClick={() => setMode("table")} title="Table"><Ic d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" size={14} /></button>
               <button type="button" className={"seg-btn icon-only" + (mode === "grid" ? " active" : "")} onClick={() => setMode("grid")} title="Grid"><Ic d={<><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></>} size={14} /></button>
             </div>
-            {canManage && <button type="button" className="btn btn-sm btn-primary" onClick={openCreateModal} disabled={pageBusy}><Ic d="M12 5v14M5 12h14" size={14} /> New Entry</button>}
+            {canManage && <Button type="button" size="sm" onClick={openCreateModal} disabled={pageBusy}><Ic d="M12 5v14M5 12h14" size={14} /> New Entry</Button>}
           </div>
         </div>
 

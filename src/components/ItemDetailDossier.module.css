@@ -86,7 +86,7 @@
   border-radius: 999px;
   background: var(--muted-2);
 }
-.identityTracking[data-t="individual"] .identityTrackingDot { background: var(--primary); }
+.identityTracking[data-t="individual"] .identityTrackingDot { background: var(--tracking-individual); }
 .identityTracking[data-t="quantity"] .identityTrackingDot { background: var(--success); }
 .identityTracking[data-t="perishable"] .identityTrackingDot { background: var(--warn); }
 
@@ -1012,9 +1012,21 @@
 }
 
 .trackChip[data-t="individual"] {
-  border-color: var(--primary-weak-border);
-  background: var(--primary-weak);
-  color: var(--primary);
+  border-color: var(--tracking-individual-border);
+  background: var(--tracking-individual-weak);
+  color: var(--tracking-individual);
+}
+
+.trackChip[data-t="quantity"] {
+  border-color: color-mix(in oklch, var(--success) 30%, transparent);
+  background: color-mix(in oklch, var(--success) 12%, white);
+  color: color-mix(in oklch, var(--success) 82%, black);
+}
+
+.trackChip[data-t="perishable"] {
+  border-color: color-mix(in oklch, var(--warn) 32%, transparent);
+  background: color-mix(in oklch, var(--warn-weak) 72%, white);
+  color: color-mix(in oklch, var(--warn) 82%, black);
 }
 
 .trackChip > span,

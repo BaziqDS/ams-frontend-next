@@ -13,6 +13,8 @@ import { shouldLoadUserAssignmentSelectors } from "@/lib/userAssignmentSelectors
 import { apiFetch, type Page } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { ADMIN_PERMISSIONS } from "@/lib/adminPermissions";
+import { Button } from "@/components/ui/button";
+
 
 // ── Tiny icon ─────────────────────────────────────────────────────────────────
 
@@ -192,9 +194,9 @@ function RowActions({
   return (
     <div className="row-actions">
       {canRenderEdit && (
-        <button
+        <Button
           type="button"
-          className="btn btn-xs btn-ghost row-action"
+          variant="ghost" size="xs" className="row-action"
           onClick={onEdit}
           title={editTitle}
           disabled={editDisabled}
@@ -202,12 +204,12 @@ function RowActions({
         >
           <Ic d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" size={13} />
           <span className="ra-label">Edit</span>
-        </button>
+        </Button>
       )}
       {canRenderToggle && (
-        <button
+        <Button
           type="button"
-          className="btn btn-xs btn-ghost row-action"
+          variant="ghost" size="xs" className="row-action"
           onClick={onToggleActive}
           title={toggleTitle}
           disabled={toggleDisabled}
@@ -215,13 +217,13 @@ function RowActions({
         >
           <Ic d="M18.36 6.64A9 9 0 015.64 19.36M23 12a11 11 0 11-22 0 11 11 0 0122 0z" size={13} />
           <span className="ra-label">{toggleBusy ? (active ? "Disabling…" : "Enabling…") : (active ? "Disable" : "Enable")}</span>
-        </button>
+        </Button>
       )}
       {canRenderDelete && (
         <div className="row-action-more" ref={moreRef}>
-          <button type="button" className="btn btn-xs btn-ghost" onClick={() => setOpen(prev => !prev)} disabled={supportedLocked} style={supportedLocked ? busyActionStyle : undefined}>
+          <Button type="button" variant="ghost" size="xs" onClick={() => setOpen(prev => !prev)} disabled={supportedLocked} style={supportedLocked ? busyActionStyle : undefined}>
             <Ic d={<><circle cx="12" cy="5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/></>} size={14} />
-          </button>
+          </Button>
           {open && (
             <div ref={menuRef} className={"row-menu" + (openUp ? " row-menu-up" : "")}>
               <button type="button" className="row-menu-item" disabled style={unavailableActionStyle} title="View profile unavailable in this build">View profile</button>
@@ -516,15 +518,15 @@ export default function UsersPage() {
             <div className="page-sub">Manage user accounts, roles and location assignments across the university.</div>
           </div>
           <div className="page-head-actions">
-            <button type="button" className="btn btn-sm" disabled title="Employees module unavailable in this build" style={unavailableActionStyle}>
+            <Button type="button" variant="outline" size="sm" disabled title="Employees module unavailable in this build" style={unavailableActionStyle}>
               <Ic d={<><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="7" r="2.6"/><path d="M21 19c0-2.7-1.8-5-4.5-5"/></>} size={13} />
               Employees Module
-            </button>
+            </Button>
             {canViewRoles && (
-              <Link href="/roles" className="btn btn-sm">
+              <Button asChild variant="outline" size="sm"><Link href="/roles" >
                 <Ic d={<><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></>} size={13} />
                 Manage Roles
-              </Link>
+              </Link></Button>
             )}
           </div>
         </div>
@@ -592,14 +594,14 @@ export default function UsersPage() {
                 <Ic d={<><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></>} size={14} />
               </button>
             </div>
-            <button type="button" className="btn btn-sm" disabled title="Export unavailable in this build" style={unavailableActionStyle}>
+            <Button type="button" variant="outline" size="sm" disabled title="Export unavailable in this build" style={unavailableActionStyle}>
               <Ic d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" size={13} />
               Export
-            </button>
+            </Button>
             {canAddUser && (
-              <button
+              <Button
                 type="button"
-                className="btn btn-sm btn-primary"
+                size="sm"
                 onClick={() => { if (canOpenCreateUser) setAddOpen(true); }}
                 disabled={!canOpenCreateUser}
                 title={addUserTitle}
@@ -607,7 +609,7 @@ export default function UsersPage() {
               >
                 <Ic d="M12 5v14M5 12h14" size={14} />
                 Add User
-              </button>
+              </Button>
             )}
           </div>
         </div>

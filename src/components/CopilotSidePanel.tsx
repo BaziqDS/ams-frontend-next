@@ -1,21 +1,40 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type CSSProperties } from "react";
-import { ClipboardList, LoaderCircle, MessageCircle, Mic, Maximize2, SendHorizontal, Sparkles, SquarePen, X } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type CSSProperties,
+} from "react";
+import {
+  ArrowUpIcon,
+  Check,
+  Clock3,
+  LoaderCircle,
+  MessageCircle,
+  Mic,
+  Maximize2,
+  Sparkles,
+  SquarePen,
+  UserRound,
+  X,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   COPILOT_HITL_INTERRUPT_EVENT,
   type CopilotHitlInterrupt,
   useCopilotInternal,
 } from "@/contexts/CopilotContext";
 import { CopilotOpenUiPreviewModal } from "@/components/CopilotOpenUiPreviewModal";
-import {
-  buildDetachedApprovalReview,
-} from "@/lib/copilotDetachedApproval";
+import { buildDetachedApprovalReview } from "@/lib/copilotDetachedApproval";
 
 const CHAT_URL = process.env.NEXT_PUBLIC_COPILOT_URL ?? "http://localhost:3001";
 const CHAT_ORIGIN = CHAT_URL.replace(/\/$/, "");
 const DOCK_STORAGE_KEY = "ams-copilot-open";
-const DOCK_POS_KEY   = "ams-copilot-pos";
+const DOCK_POS_KEY = "ams-copilot-pos";
 const DETACHED_PENDING_KEY = "ams-copilot-detached-pending";
 const DETACHED_PENDING_TTL_MS = 10 * 60 * 1000;
 // After the user clicks stop, ignore any straggler ASSISTANT_LOADING=true /
@@ -46,8 +65,11 @@ type ApprovalContextSnapshot = {
 
 function loadPos(): Pos | null {
   if (typeof window === "undefined") return null;
-  try { return JSON.parse(window.localStorage.getItem(DOCK_POS_KEY) ?? "null"); }
-  catch { return null; }
+  try {
+    return JSON.parse(window.localStorage.getItem(DOCK_POS_KEY) ?? "null");
+  } catch {
+    return null;
+  }
 }
 
 function loadDetachedPending(): DetachedPending {
@@ -88,36 +110,41 @@ function clearDetachedPending() {
 
 export function CopilotSidePanel() {
   const restoredPendingRef = useRef<DetachedPending>(loadDetachedPending());
-  const [isOpen, setIsOpen] = useState(() => (
-    typeof window !== "undefined" &&
-    window.localStorage.getItem(DOCK_STORAGE_KEY) === "true"
-  ));
-  const [unreadCount, setUnreadCount]   = useState(0);
+  const [isOpen, setIsOpen] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.localStorage.getItem(DOCK_STORAGE_KEY) === "true",
+  );
+  const [unreadCount, setUnreadCount] = useState(0);
   const [quickMessage, setQuickMessage] = useState(
     () => restoredPendingRef.current?.text ?? "",
   );
-  const [quickMessagePending, setQuickMessagePending] = useState(
-    () => Boolean(restoredPendingRef.current),
+  const [quickMessagePending, setQuickMessagePending] = useState(() =>
+    Boolean(restoredPendingRef.current),
   );
   const [currentTodo, setCurrentTodo] = useState<DetachedTodo>(null);
   const [approvalInterrupt, setApprovalInterrupt] =
     useState<CopilotHitlInterrupt | null>(null);
+  const [approvalBusy, setApprovalBusy] = useState<"approve" | "reject" | null>(
+    null,
+  );
   const [approvalReviewContext, setApprovalReviewContext] =
     useState<ApprovalContextSnapshot | null>(null);
-  const [approvalRequestedAt, setApprovalRequestedAt] =
-    useState<Date | null>(null);
+  const [approvalRequestedAt, setApprovalRequestedAt] = useState<Date | null>(
+    null,
+  );
   const [hideToolCalls, setHideToolCalls] = useState(false);
-  const [placeholder, setPlaceholder]   = useState(PLACEHOLDER_PHRASES[0]);
-  const [dragPos, setDragPos]           = useState<Pos | null>(loadPos);
-  const [isDragging, setIsDragging]     = useState(false);
+  const [placeholder, setPlaceholder] = useState(PLACEHOLDER_PHRASES[0]);
+  const [dragPos, setDragPos] = useState<Pos | null>(loadPos);
+  const [isDragging, setIsDragging] = useState(false);
   const [openUiPreview, setOpenUiPreview] = useState<{
     id: string;
     code: string;
     isStreaming: boolean;
   } | null>(null);
 
-  const iframeRef       = useRef<HTMLIFrameElement>(null);
-  const panelRef        = useRef<HTMLElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const searchTextareaRef = useRef<HTMLTextAreaElement>(null);
   const loadingStartedRef = useRef(false);
   const iframeReadyRef = useRef(false);
@@ -127,20 +154,27 @@ export function CopilotSidePanel() {
   // are treated as stragglers from a just-stopped run and ignored.
   const stopGuardUntilRef = useRef(0);
   // Safety timer that auto-clears a stuck pending state.
-  const pendingSafetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSafetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   // The text the user last sent. The composer keeps showing this text while
   // the agent runs (visual receipt that "I sent this"), and auto-clears it
   // only when the run truly completes — and only if the user has NOT edited
   // the input in the meantime (we never want to clobber a new draft).
   const lastSubmittedTextRef = useRef<string | null>(null);
   const userEditedSinceSubmitRef = useRef(false);
-  const { setIframe, getContextSnapshot } = useCopilotInternal();
+  const { setIframe, getContextSnapshot, sendHitlDecision } =
+    useCopilotInternal();
 
-  const showApprovalInterrupt = useCallback((interrupt: CopilotHitlInterrupt | null) => {
-    setApprovalInterrupt(interrupt);
-    setApprovalReviewContext(interrupt ? getContextSnapshot() : null);
-    setApprovalRequestedAt(interrupt ? new Date() : null);
-  }, [getContextSnapshot]);
+  const showApprovalInterrupt = useCallback(
+    (interrupt: CopilotHitlInterrupt | null) => {
+      setApprovalInterrupt(interrupt);
+      setApprovalReviewContext(interrupt ? getContextSnapshot() : null);
+      setApprovalRequestedAt(interrupt ? new Date() : null);
+      setApprovalBusy(null);
+    },
+    [getContextSnapshot],
+  );
 
   // Centralized setter for quickMessagePending that also arms / disarms the
   // safety timeout. Use this everywhere instead of setQuickMessagePending so
@@ -169,25 +203,35 @@ export function CopilotSidePanel() {
     }
   }, []);
 
-  useEffect(() => () => {
-    if (pendingSafetyTimerRef.current) {
-      clearTimeout(pendingSafetyTimerRef.current);
-      pendingSafetyTimerRef.current = null;
-    }
-  }, []);
+  useEffect(
+    () => () => {
+      if (pendingSafetyTimerRef.current) {
+        clearTimeout(pendingSafetyTimerRef.current);
+        pendingSafetyTimerRef.current = null;
+      }
+    },
+    [],
+  );
 
-  useEffect(() => { setIframe(iframeRef.current); return () => setIframe(null); }, [setIframe]);
+  useEffect(() => {
+    setIframe(iframeRef.current);
+    return () => setIframe(null);
+  }, [setIframe]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
     document.documentElement.classList.toggle("ams-copilot-docked", isOpen);
     window.localStorage.setItem(DOCK_STORAGE_KEY, isOpen ? "true" : "false");
     if (isOpen) setUnreadCount(0);
-    return () => { document.documentElement.classList.remove("ams-copilot-docked"); };
+    return () => {
+      document.documentElement.classList.remove("ams-copilot-docked");
+    };
   }, [isOpen]);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && isOpen) setIsOpen(false); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isOpen) setIsOpen(false);
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [isOpen]);
@@ -277,7 +321,8 @@ export function CopilotSidePanel() {
         return;
       }
       if (event.data?.type === "HUMAN_MESSAGE") {
-        const text = typeof event.data.text === "string" ? event.data.text.trim() : "";
+        const text =
+          typeof event.data.text === "string" ? event.data.text.trim() : "";
         if (!text) return;
         // After stop, don't re-lock from an echo of the cancelled message.
         if (Date.now() < stopGuardUntilRef.current) return;
@@ -332,7 +377,9 @@ export function CopilotSidePanel() {
 
   useEffect(() => {
     const onHitlInterrupt = (event: Event) => {
-      showApprovalInterrupt((event as CustomEvent<CopilotHitlInterrupt | null>).detail ?? null);
+      showApprovalInterrupt(
+        (event as CustomEvent<CopilotHitlInterrupt | null>).detail ?? null,
+      );
     };
 
     window.addEventListener(COPILOT_HITL_INTERRUPT_EVENT, onHitlInterrupt);
@@ -344,15 +391,19 @@ export function CopilotSidePanel() {
   // Typewriter cycling placeholder
   useEffect(() => {
     if (isOpen) return;
-    let phraseIdx = 0, charIdx = 0, deleting = false;
+    let phraseIdx = 0,
+      charIdx = 0,
+      deleting = false;
     let tid: ReturnType<typeof setTimeout>;
     const tick = () => {
       const phrase = PLACEHOLDER_PHRASES[phraseIdx];
       if (!deleting) {
         charIdx++;
         setPlaceholder(phrase.slice(0, charIdx));
-        if (charIdx === phrase.length) { deleting = true; tid = setTimeout(tick, 1800); }
-        else tid = setTimeout(tick, 55);
+        if (charIdx === phrase.length) {
+          deleting = true;
+          tid = setTimeout(tick, 1800);
+        } else tid = setTimeout(tick, 55);
       } else {
         charIdx--;
         setPlaceholder(phrase.slice(0, charIdx));
@@ -370,7 +421,10 @@ export function CopilotSidePanel() {
   // Focus rescue: pull focus out of iframe when panel closes
   useEffect(() => {
     if (!isOpen) {
-      const t = window.setTimeout(() => searchTextareaRef.current?.focus(), 120);
+      const t = window.setTimeout(
+        () => searchTextareaRef.current?.focus(),
+        120,
+      );
       return () => window.clearTimeout(t);
     }
   }, [isOpen]);
@@ -384,34 +438,53 @@ export function CopilotSidePanel() {
     const panel = panelRef.current;
     if (!panel) return;
 
-    const r  = panel.getBoundingClientRect();
-    const sx = e.clientX, sy = e.clientY;
-    const sl = r.left,    st = r.top;
+    const r = panel.getBoundingClientRect();
+    const sx = e.clientX,
+      sy = e.clientY;
+    const sl = r.left,
+      st = r.top;
 
     setIsDragging(true);
     e.preventDefault();
 
-    const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+    const clamp = (v: number, lo: number, hi: number) =>
+      Math.max(lo, Math.min(hi, v));
 
     const onMove = (ev: MouseEvent) => {
-      const left = clamp(sl + ev.clientX - sx, 8, window.innerWidth  - r.width  - 8);
-      const top  = clamp(st + ev.clientY - sy, 8, window.innerHeight - r.height - 8);
+      const left = clamp(
+        sl + ev.clientX - sx,
+        8,
+        window.innerWidth - r.width - 8,
+      );
+      const top = clamp(
+        st + ev.clientY - sy,
+        8,
+        window.innerHeight - r.height - 8,
+      );
       setDragPos({ left, top });
     };
 
     const onUp = (ev: MouseEvent) => {
       document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup",   onUp);
-      const left = clamp(sl + ev.clientX - sx, 8, window.innerWidth  - r.width  - 8);
-      const top  = clamp(st + ev.clientY - sy, 8, window.innerHeight - r.height - 8);
-      const pos  = { left, top };
+      document.removeEventListener("mouseup", onUp);
+      const left = clamp(
+        sl + ev.clientX - sx,
+        8,
+        window.innerWidth - r.width - 8,
+      );
+      const top = clamp(
+        st + ev.clientY - sy,
+        8,
+        window.innerHeight - r.height - 8,
+      );
+      const pos = { left, top };
       setDragPos(pos);
       setIsDragging(false);
       window.localStorage.setItem(DOCK_POS_KEY, JSON.stringify(pos));
     };
 
     document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup",   onUp);
+    document.addEventListener("mouseup", onUp);
   }, []);
   // ────────────────────────────────────────────────────────────────────────────
 
@@ -421,24 +494,45 @@ export function CopilotSidePanel() {
     setIsOpen(true);
   }, []);
 
-  const postQuickMessage = useCallback((text: string, attempt = 0) => {
-    const iframe = iframeRef.current;
-    if (!iframe?.contentWindow) {
-      if (attempt < 6) window.setTimeout(() => postQuickMessage(text, attempt + 1), 120);
-      else {
-        clearDetachedPending();
-        loadingStartedRef.current = false;
-        setPendingWithSafety(false);
-        setQuickMessage(text);
+  const handleDetachedApproval = useCallback(
+    (decision: "approve" | "reject") => {
+      setApprovalBusy(decision);
+      const sent = sendHitlDecision(decision);
+      if (sent) {
+        showApprovalInterrupt(null);
+        return;
       }
-      return;
-    }
-    if (!iframeReadyRef.current) {
-      queuedQuickMessageRef.current = text;
-      return;
-    }
-    iframe.contentWindow.postMessage({ source: "ams-copilot", type: "QUICK_MESSAGE", text }, CHAT_ORIGIN);
-  }, [setPendingWithSafety]);
+      setApprovalBusy(null);
+      openPanel();
+    },
+    [openPanel, sendHitlDecision, showApprovalInterrupt],
+  );
+
+  const postQuickMessage = useCallback(
+    (text: string, attempt = 0) => {
+      const iframe = iframeRef.current;
+      if (!iframe?.contentWindow) {
+        if (attempt < 6)
+          window.setTimeout(() => postQuickMessage(text, attempt + 1), 120);
+        else {
+          clearDetachedPending();
+          loadingStartedRef.current = false;
+          setPendingWithSafety(false);
+          setQuickMessage(text);
+        }
+        return;
+      }
+      if (!iframeReadyRef.current) {
+        queuedQuickMessageRef.current = text;
+        return;
+      }
+      iframe.contentWindow.postMessage(
+        { source: "ams-copilot", type: "QUICK_MESSAGE", text },
+        CHAT_ORIGIN,
+      );
+    },
+    [setPendingWithSafety],
+  );
 
   useEffect(() => {
     const restored = restoredPendingRef.current;
@@ -452,23 +546,26 @@ export function CopilotSidePanel() {
     userEditedSinceSubmitRef.current = false;
   }, [postQuickMessage]);
 
-  const submitQuickMessage = useCallback((event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const text = quickMessage.trim();
-    if (!text || quickMessagePending) return;
-    // Keep the text in the composer as a visual receipt — the empty input
-    // looks "lost" to the user. The send button flips to a spinning Cancel
-    // button alongside it so the run-in-flight state is clear. The text
-    // auto-clears when the run truly ends (ASSISTANT_LOADING=false) and
-    // only if the user has not started typing a new draft.
-    setQuickMessage(text);
-    lastSubmittedTextRef.current = text;
-    userEditedSinceSubmitRef.current = false;
-    setPendingWithSafety(true);
-    loadingStartedRef.current = true;
-    saveDetachedPending(text);
-    postQuickMessage(text);
-  }, [postQuickMessage, quickMessage, quickMessagePending, setPendingWithSafety]);
+  const submitQuickMessage = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      const text = quickMessage.trim();
+      if (!text || quickMessagePending) return;
+      // Keep the text in the composer as a visual receipt — the empty input
+      // looks "lost" to the user. The send button flips to a spinning Cancel
+      // button alongside it so the run-in-flight state is clear. The text
+      // auto-clears when the run truly ends (ASSISTANT_LOADING=false) and
+      // only if the user has not started typing a new draft.
+      setQuickMessage(text);
+      lastSubmittedTextRef.current = text;
+      userEditedSinceSubmitRef.current = false;
+      setPendingWithSafety(true);
+      loadingStartedRef.current = true;
+      saveDetachedPending(text);
+      postQuickMessage(text);
+    },
+    [postQuickMessage, quickMessage, quickMessagePending, setPendingWithSafety],
+  );
 
   const stopDetachedRun = useCallback(() => {
     // Open a short guard window so any straggler "loading=true" events from
@@ -493,7 +590,8 @@ export function CopilotSidePanel() {
     setIsOpen(true);
     window.setTimeout(() => {
       iframeRef.current?.contentWindow?.postMessage(
-        { source: "ams-copilot", type: "START_VOICE_CAPTURE" }, CHAT_ORIGIN,
+        { source: "ams-copilot", type: "START_VOICE_CAPTURE" },
+        CHAT_ORIGIN,
       );
     }, 180);
   }, []);
@@ -502,7 +600,8 @@ export function CopilotSidePanel() {
     setHideToolCalls((current) => {
       const next = !current;
       iframeRef.current?.contentWindow?.postMessage(
-        { source: "ams-copilot", type: "SET_HIDE_TOOL_CALLS", value: next }, CHAT_ORIGIN,
+        { source: "ams-copilot", type: "SET_HIDE_TOOL_CALLS", value: next },
+        CHAT_ORIGIN,
       );
       return next;
     });
@@ -520,7 +619,8 @@ export function CopilotSidePanel() {
     setCurrentTodo(null);
     showApprovalInterrupt(null);
     iframeRef.current?.contentWindow?.postMessage(
-      { source: "ams-copilot", type: "START_NEW_THREAD" }, CHAT_ORIGIN,
+      { source: "ams-copilot", type: "START_NEW_THREAD" },
+      CHAT_ORIGIN,
     );
   }, [setPendingWithSafety, showApprovalInterrupt]);
 
@@ -528,13 +628,15 @@ export function CopilotSidePanel() {
   // Panel: when dragged, override the CSS-based centering with exact left/top.
   // Hide via opacity only (not slide-off-screen transform) so it fades in/out
   // from its custom position rather than animating to/from center-bottom.
-  const panelStyle: CSSProperties | undefined = dragPos ? {
-    left:      dragPos.left,
-    top:       dragPos.top,
-    right:     "auto",
-    bottom:    "auto",
-    transform: "none",
-  } : undefined;
+  const panelStyle: CSSProperties | undefined = dragPos
+    ? {
+        left: dragPos.left,
+        top: dragPos.top,
+        right: "auto",
+        bottom: "auto",
+        transform: "none",
+      }
+    : undefined;
   const currentTodoText =
     typeof currentTodo?.content === "string" ? currentTodo.content.trim() : "";
   const hasApproval = Boolean(approvalInterrupt?.actionRequests?.length);
@@ -557,11 +659,13 @@ export function CopilotSidePanel() {
     : "";
   // Overlay: appear at the same horizontal position as the panel so it feels
   // like the panel "collapsed" in place.
-  const overlayStyle: CSSProperties | undefined = dragPos ? {
-    left:      dragPos.left,
-    bottom:    "18px",
-    transform: "none",   // override the default translateX(-50%)
-  } : undefined;
+  const overlayStyle: CSSProperties | undefined = dragPos
+    ? {
+        left: dragPos.left,
+        bottom: "18px",
+        transform: "none", // override the default translateX(-50%)
+      }
+    : undefined;
   // ────────────────────────────────────────────────────────────────────────────
 
   return (
@@ -573,37 +677,81 @@ export function CopilotSidePanel() {
           onSubmit={submitQuickMessage}
         >
           {hasApproval && approvalReview ? (
-            <button
-              type="button"
+            <section
               className="copilot-search-approval-bubble"
-              aria-label={`Approval needed for ${approvalReview.title}. Open chat panel to review.`}
+              aria-label={`Human approval required for ${approvalReview.title}. ${approvalBubbleText}`}
               aria-live="polite"
-              onClick={openPanel}
             >
-              <span className="copilot-search-approval-bubble-icon" aria-hidden="true">
-                <ClipboardList size={15} strokeWidth={2} />
-              </span>
-              <span className="copilot-search-approval-bubble-copy">
-                <span className="copilot-search-approval-bubble-title">
-                  Approval needed
+              <button
+                type="button"
+                className="copilot-search-approval-bubble-main"
+                aria-label={`Open chat panel to review ${approvalReview.title}`}
+                onClick={openPanel}
+              >
+                <span
+                  className="copilot-search-approval-bubble-icon"
+                  aria-hidden="true"
+                >
+                  <UserRound size={16} strokeWidth={2.1} />
+                  <span className="copilot-search-approval-bubble-check">
+                    <Check size={8} strokeWidth={2.4} />
+                  </span>
                 </span>
-                <span className="copilot-search-approval-bubble-text">
-                  {approvalBubbleText}
+                <span
+                  className="copilot-search-approval-bubble-divider"
+                  aria-hidden="true"
+                />
+                <span className="copilot-search-approval-bubble-copy">
+                  <span className="copilot-search-approval-bubble-heading">
+                    <span className="copilot-search-approval-bubble-eyebrow">
+                      HITL
+                    </span>
+                    <span className="copilot-search-approval-bubble-title">
+                      Human approval required
+                    </span>
+                  </span>
+                  <span className="copilot-search-approval-bubble-text">
+                    The agent is waiting for your approval to proceed.
+                  </span>
+                  <span className="copilot-search-approval-bubble-status">
+                    <Clock3 size={13} strokeWidth={1.9} />
+                    Pending your response
+                  </span>
                 </span>
+              </button>
+              <span className="copilot-search-approval-bubble-actions">
+                <button
+                  type="button"
+                  className="copilot-search-approval-bubble-action is-reject"
+                  onClick={() => handleDetachedApproval("reject")}
+                  disabled={approvalBusy !== null}
+                >
+                  <X size={18} strokeWidth={2.1} />
+                  {approvalBusy === "reject" ? "Rejecting..." : "Reject"}
+                </button>
+                <button
+                  type="button"
+                  className="copilot-search-approval-bubble-action is-approve"
+                  onClick={() => handleDetachedApproval("approve")}
+                  disabled={approvalBusy !== null}
+                >
+                  <Check size={18} strokeWidth={2.1} />
+                  {approvalBusy === "approve" ? "Approving..." : "Approve"}
+                </button>
               </span>
-              <Maximize2
-                className="copilot-search-approval-bubble-open"
-                size={14}
-                strokeWidth={2}
-                aria-hidden="true"
-              />
-            </button>
+            </section>
           ) : currentTodoText ? (
-            <section className="copilot-search-active-task" role="status" aria-live="polite">
+            <section
+              className="copilot-search-active-task"
+              role="status"
+              aria-live="polite"
+            >
               <div className="copilot-search-active-task-main">
                 <LoaderCircle size={16} strokeWidth={2} aria-hidden="true" />
                 <div className="copilot-search-active-task-copy">
-                  <span className="copilot-search-active-task-title">Tasks</span>
+                  <span className="copilot-search-active-task-title">
+                    Tasks
+                  </span>
                   <span className="copilot-search-active-task-text">
                     <strong>Now:</strong> {currentTodoText}
                   </span>
@@ -642,22 +790,40 @@ export function CopilotSidePanel() {
           />
           <div className="copilot-search-actions">
             <div className="copilot-search-right-actions">
-              <button type="button" className="copilot-search-icon-btn"
-                aria-label="Start voice" title="Start voice" onClick={startVoiceFromSearch}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="copilot-search-icon-btn"
+                aria-label="Start voice"
+                title="Start voice"
+                onClick={startVoiceFromSearch}
+              >
                 <Mic size={15} strokeWidth={1.9} />
-              </button>
-              <button type="button" className="copilot-search-expand-btn"
-                aria-label="Open chat panel" title="Open chat panel" onClick={openPanel}>
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="copilot-search-expand-btn"
+                aria-label="Open chat panel"
+                title="Open chat panel"
+                onClick={openPanel}
+              >
                 <Maximize2 size={14} strokeWidth={2} />
-              </button>
-              <button
+              </Button>
+              <Button
                 type={quickMessagePending ? "button" : "submit"}
+                variant="outline"
+                size="icon"
                 className={
                   "copilot-search-send" +
                   (quickMessagePending ? " is-loading" : "")
                 }
                 aria-label={quickMessagePending ? "Stop task" : "Send message"}
-                title={quickMessagePending ? "Stop task (click to cancel)" : "Send message"}
+                title={
+                  quickMessagePending
+                    ? "Stop task (click to cancel)"
+                    : "Send message"
+                }
                 disabled={!quickMessagePending && !quickMessage.trim()}
                 onClick={quickMessagePending ? stopDetachedRun : undefined}
               >
@@ -672,9 +838,9 @@ export function CopilotSidePanel() {
                     aria-hidden="true"
                   />
                 ) : (
-                  <SendHorizontal size={12} strokeWidth={2} />
+                  <ArrowUpIcon size={14} strokeWidth={2} />
                 )}
-              </button>
+              </Button>
             </div>
           </div>
           {unreadCount > 0 && !hasApproval ? (
@@ -705,15 +871,27 @@ export function CopilotSidePanel() {
           onMouseDown={startPanelDrag}
           style={{ cursor: isDragging ? "move" : "default" }}
         >
-          <button type="button" className="copilot-dock-icon-btn"
-            aria-label="Close assistant" title="Close assistant" onClick={closePanel}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="copilot-dock-icon-btn"
+            aria-label="Close assistant"
+            title="Close assistant"
+            onClick={closePanel}
+          >
             <X size={14} strokeWidth={1.8} />
-          </button>
+          </Button>
           <div className="copilot-dock-actions">
-            <button type="button" className="copilot-dock-icon-btn"
-              aria-label="New chat" title="New chat" onClick={startNewChat}>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="copilot-dock-icon-btn"
+              aria-label="New chat"
+              title="New chat"
+              onClick={startNewChat}
+            >
               <SquarePen size={14} strokeWidth={1.8} />
-            </button>
+            </Button>
           </div>
         </header>
 

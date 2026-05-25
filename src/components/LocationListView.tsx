@@ -16,6 +16,8 @@ import { useCopilotReadable } from "@/hooks/useCopilotReadable";
 import { buildCopilotListContext } from "@/lib/copilotPageContext";
 import { consumePendingOpen, SAME_PAGE_OPEN_EVENT } from "@/lib/copilotPendingAction";
 import { useClientPagination } from "@/lib/listPagination";
+import { Button } from "@/components/ui/button";
+
 
 const LOCATIONS_PAGE_SIZE = 15;
 
@@ -47,11 +49,15 @@ function StatusPill({ active }: { active: boolean }) {
   );
 }
 
+function locationTypeChipClass(type: string) {
+  return `chip chip-location-type chip-location-type-${type.toLowerCase().replace(/_/g, "-")}`;
+}
+
 function LocationTypeChips({ location }: { location: LocationRecord }) {
   const baseType = locationTypeLabel(location.location_type);
   return (
     <span className="location-type-chips">
-      <span className="chip">{baseType}</span>
+      <span className={locationTypeChipClass(location.location_type)}>{baseType}</span>
       {location.is_store && baseType.toLowerCase() !== "store" ? <span className="chip chip-store">Store</span> : null}
     </span>
   );
@@ -105,16 +111,16 @@ function LocationActions({
   return (
     <div className="row-actions">
       {canRenderEdit && (
-        <button type="button" className="btn btn-xs btn-ghost row-action" onClick={event => { event.stopPropagation(); onEdit?.(); }} title="Edit location" disabled={disabled}>
+        <Button type="button" variant="ghost" size="xs" className="row-action" onClick={event => { event.stopPropagation(); onEdit?.(); }} title="Edit location" disabled={disabled}>
           <Ic d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" size={13} />
           <span className="ra-label">Edit</span>
-        </button>
+        </Button>
       )}
       {canRenderDelete && (
-        <button type="button" className="btn btn-xs btn-danger-ghost row-action" onClick={event => { event.stopPropagation(); onDelete?.(); }} title="Delete location" disabled={disabled}>
+        <Button type="button" variant="outline" size="xs" className="btn-danger-ghost row-action" onClick={event => { event.stopPropagation(); onDelete?.(); }} title="Delete location" disabled={disabled}>
           <Ic d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12h6l1-12" size={13} />
           <span className="ra-label">{deleteBusy ? "Deleting…" : "Delete"}</span>
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -535,12 +541,6 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
       <Topbar breadcrumb={isChildrenView ? ["Inventory", "Locations", parentLocation?.name ?? "Details"] : ["Inventory", "Locations"]} />
 
       <div className="page">
-        {isChildrenView ? (
-          <Link className="detail-page-back" href="/locations">
-            <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
-            Back to Locations
-          </Link>
-        ) : null}
         {fetchError && (
           <div style={{ padding: "12px 16px", background: "var(--danger-weak)", border: "1px solid color-mix(in oklch, var(--danger) 30%, transparent)", borderRadius: "var(--radius)", color: "var(--danger)", fontSize: 13, marginBottom: 16 }}>
             {fetchError}
@@ -562,6 +562,16 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
             <div className="eyebrow">Inventory</div>
             <h1>{title}</h1>
             <div className="page-sub">{subtitle}</div>
+          </div>
+          <div className="page-head-actions">
+            {isChildrenView ? (
+              <Button asChild variant="outline" size="sm" className="page-head-back">
+                <Link href="/locations">
+                  <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
+                  Back to Locations
+                </Link>
+              </Button>
+            ) : null}
           </div>
         </div>
 
@@ -622,10 +632,10 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
               </button>
             </div>
             {canAddLocation && (
-              <button type="button" className="btn btn-sm btn-primary" onClick={openCreateModal} disabled={pageBusy}>
+              <Button type="button" size="sm" onClick={openCreateModal} disabled={pageBusy}>
                 <Ic d="M12 5v14M5 12h14" size={14} />
                 {createLabel}
-              </button>
+              </Button>
             )}
           </div>
         </div>

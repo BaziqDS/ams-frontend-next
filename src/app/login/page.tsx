@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
+
 
 function CampusPlaceholder() {
   return (
@@ -165,14 +167,14 @@ export default function LoginPage() {
               <span>Keep me signed in on this device</span>
             </label>
 
-            <button type="submit" className="btn btn-primary btn-login" disabled={loading} suppressHydrationWarning>
+            <Button type="submit" className="btn-login" disabled={loading} suppressHydrationWarning>
               {loading ? "Signing in…" : "Sign In"}
               {!loading && (
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M5 12h14M13 5l7 7-7 7"/>
                 </svg>
               )}
-            </button>
+            </Button>
           </form>
         </div>
       </div>

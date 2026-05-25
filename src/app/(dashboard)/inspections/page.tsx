@@ -45,6 +45,8 @@ import {
   buildCopilotListContext,
   buildInspectionWorkflowContext,
 } from "@/lib/copilotPageContext";
+import { Button } from "@/components/ui/button";
+
 
 const busyActionStyle = { opacity: 0.75, cursor: "wait" } as const;
 const unavailableActionStyle = {
@@ -143,9 +145,9 @@ function InspectionRowActions({
   return (
     <div className="row-actions" onClick={(event) => event.stopPropagation()}>
       <div className="row-action-more" ref={moreRef}>
-        <button
+        <Button
           type="button"
-          className="btn btn-xs btn-ghost"
+          variant="ghost" size="xs"
           onClick={() => setOpen((prev) => !prev)}
           disabled={busy}
           style={busy ? busyActionStyle : undefined}
@@ -160,7 +162,7 @@ function InspectionRowActions({
             }
             size={14}
           />
-        </button>
+        </Button>
         {open && (
           <div
             ref={menuRef}
@@ -884,14 +886,14 @@ export default function InspectionsPage() {
           <div className="filter-bar-right">
             <DensityToggle density={density} setDensity={setDensity} />
             {canInitiateInspection && (
-              <button
+              <Button
                 type="button"
-                className="btn btn-sm btn-primary"
+                size="sm"
                 onClick={() => setCreateOpen(true)}
               >
                 <InspectionIcon d="M12 5v14M5 12h14" size={14} />
                 New Certificate
-              </button>
+              </Button>
             )}
           </div>
         </div>

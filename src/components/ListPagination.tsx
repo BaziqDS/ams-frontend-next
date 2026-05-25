@@ -1,5 +1,7 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
+
 interface ListPaginationProps {
   summary: string;
   page: number;
@@ -15,13 +17,13 @@ export function ListPagination({ summary, page, totalPages, onPrev, onNext, stan
       <div className="eyebrow">{summary}</div>
       {totalPages > 1 && (
         <div className="pager">
-          <button type="button" className="btn btn-xs" onClick={onPrev} disabled={page <= 1}>
+          <Button type="button" variant="outline" size="xs" onClick={onPrev} disabled={page <= 1}>
             ‹ Prev
-          </button>
+          </Button>
           <span className="mono pager-current">{page} / {totalPages}</span>
-          <button type="button" className="btn btn-xs" onClick={onNext} disabled={page >= totalPages}>
+          <Button type="button" variant="outline" size="xs" onClick={onNext} disabled={page >= totalPages}>
             Next ›
-          </button>
+          </Button>
         </div>
       )}
     </div>

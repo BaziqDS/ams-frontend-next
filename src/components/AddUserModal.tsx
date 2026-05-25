@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { apiFetch, type Page } from "@/lib/api";
 import { type Location, type User } from "@/lib/userUiShared";
 import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
+
 
 // ── Backend API types ─────────────────────────────────────────────────────────
 
@@ -892,10 +894,10 @@ export function AddUserModal({
                           : <span className="foot-ok">Ready to save</span>}
           </div>
           <div className="modal-foot-actions">
-            <button type="button" className="btn btn-md" onClick={onClose}>Cancel</button>
-            <button type="button" className="btn btn-md btn-primary" onClick={submit} disabled={!canSave}>
+            <Button type="button" variant="outline" size="md" onClick={onClose}>Cancel</Button>
+            <Button type="button" size="md" onClick={submit} disabled={!canSave}>
               {submitting ? "Saving…" : isEditMode ? "Save changes" : "Save user"}
-            </button>
+            </Button>
           </div>
         </footer>
       </div>

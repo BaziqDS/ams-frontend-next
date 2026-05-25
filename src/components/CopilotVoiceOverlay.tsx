@@ -16,6 +16,7 @@ import {
   translateText,
   type TranslateResult,
 } from "@/lib/voiceTranslate";
+import { Button } from "@/components/ui/button";
 
 type VoiceStatus =
   | "idle"
@@ -528,22 +529,21 @@ export function CopilotVoiceOverlay() {
             })}
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              <button
+              <Button
                 type="button"
-                className="btn"
+                variant="outline"
                 disabled={approvalBusy !== null}
                 onClick={() => handleApproval("reject")}
               >
                 {approvalBusy === "reject" ? "Rejecting..." : "Reject"}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className="btn btn-primary"
                 disabled={approvalBusy !== null}
                 onClick={() => handleApproval("approve")}
               >
                 {approvalBusy === "approve" ? "Approving..." : "Approve"}
-              </button>
+              </Button>
             </div>
           </div>
         </section>

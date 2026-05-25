@@ -19,6 +19,8 @@ import {
 import { buildCopilotDetailContext, buildCopilotListContext } from "@/lib/copilotPageContext";
 import { useClientPagination } from "@/lib/listPagination";
 import { relTime } from "@/lib/userUiShared";
+import { Button } from "@/components/ui/button";
+
 
 const Ic = ({ d, size = 16 }: { d: React.ReactNode | string; size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden="true" focusable="false">
@@ -70,6 +72,13 @@ function deleteBlockedMessage(blockers: string[] | undefined, fallback: string) 
   return blockers && blockers.length > 0 ? blockers.join(" ") : fallback;
 }
 
+function trackingChipClass(trackingType: string | null | undefined) {
+  if (!trackingType) return "chip";
+  if (trackingType === "INDIVIDUAL") return "chip chip-tracking chip-tracking-individual";
+  if (trackingType === "QUANTITY") return "chip chip-tracking chip-tracking-quantity";
+  return "chip chip-tracking chip-tracking-perishable";
+}
+
 function SubcategorySummary({ names }: { names: string[] }) {
   if (names.length === 0) return <span className="muted-note">No subcategories</span>;
   const { shown, rest } = compactList(names, 1);
@@ -94,16 +103,16 @@ function RowActions({ onEdit, onDelete, canEdit, canDelete, disabled = false, de
   return (
     <div className="row-actions">
       {canRenderEdit && (
-        <button type="button" className="btn btn-xs btn-ghost row-action" onClick={event => { event.stopPropagation(); onEdit?.(); }} title="Edit category" disabled={disabled}>
+        <Button type="button" variant="ghost" size="xs" className="row-action" onClick={event => { event.stopPropagation(); onEdit?.(); }} title="Edit category" disabled={disabled}>
           <Ic d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" size={13} />
           <span className="ra-label">Edit</span>
-        </button>
+        </Button>
       )}
       {canRenderDelete && (
-        <button type="button" className="btn btn-xs btn-danger-ghost row-action" onClick={event => { event.stopPropagation(); onDelete?.(); }} title="Delete category" disabled={disabled}>
+        <Button type="button" variant="outline" size="xs" className="btn-danger-ghost row-action" onClick={event => { event.stopPropagation(); onDelete?.(); }} title="Delete category" disabled={disabled}>
           <Ic d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12h6l1-12" size={13} />
           <span className="ra-label">{deleteBusy ? "Deleting…" : "Delete"}</span>
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -133,7 +142,7 @@ function CategoryRow({ category, isChildrenView, childCount, childNames, trackin
       {isChildrenView ? (
         <td>
           <div className="group-cell">
-            <span className="chip">{formatLabel(resolvedTracking)}</span>
+            <span className={trackingChipClass(resolvedTracking)}>{formatLabel(resolvedTracking)}</span>
             {resolvedTracking !== category.tracking_type && <span className="muted-note mono">Raw: {formatLabel(category.tracking_type)}</span>}
           </div>
         </td>
@@ -172,7 +181,7 @@ function CategoryCard({ category, childCount, childNames, trackingSummary, canEd
         <div className="eyebrow">Classification</div>
         <div className="group-cell">
           <span className="chip">{formatLabel(resolvedType)}</span>
-          {resolvedTracking ? <span className="chip">{formatLabel(resolvedTracking)}</span> : <span className="chip">{trackingSummary}</span>}
+          {resolvedTracking ? <span className={trackingChipClass(resolvedTracking)}>{formatLabel(resolvedTracking)}</span> : <span className="chip">{trackingSummary}</span>}
         </div>
       </div>
       <div className="user-card-section">
@@ -661,22 +670,16 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
       <Topbar breadcrumb={isChildrenView ? ["Inventory", "Categories", parentCategory?.name ?? "Details"] : ["Inventory", "Categories"]} />
 
       <div className="page">
-        {isChildrenView ? (
-          <Link className="detail-page-back" href="/categories">
-            <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
-            Back to Categories
-          </Link>
-        ) : null}
         {fetchError && (
           <div style={{ padding: "12px 16px", background: "var(--danger-weak)", border: "1px solid color-mix(in oklch, var(--danger) 30%, transparent)", borderRadius: "var(--radius)", color: "var(--danger)", fontSize: 13, marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
             <span>{fetchError}</span>
             <div style={{ display: "flex", gap: 8 }}>
-              <button type="button" className="btn btn-xs" onClick={() => loadCategories()}>
+              <Button type="button" variant="outline" size="xs" onClick={() => loadCategories()}>
                 Retry
-              </button>
-              <button type="button" className="btn btn-xs btn-ghost" onClick={clearFetchError}>
+              </Button>
+              <Button type="button" variant="ghost" size="xs" onClick={clearFetchError}>
                 Dismiss
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -684,9 +687,9 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
         {actionError && (
           <div style={{ padding: "12px 16px", background: "var(--danger-weak)", border: "1px solid color-mix(in oklch, var(--danger) 30%, transparent)", borderRadius: "var(--radius)", color: "var(--danger)", fontSize: 13, marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
             <span>{actionError}</span>
-            <button type="button" className="btn btn-xs btn-ghost" onClick={clearActionError}>
+            <Button type="button" variant="ghost" size="xs" onClick={clearActionError}>
               Dismiss
-            </button>
+            </Button>
           </div>
         )}
 
@@ -696,7 +699,16 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
             <h1>{title}</h1>
             <div className="page-sub">{subtitle}</div>
           </div>
-          <div className="page-head-actions" />
+          <div className="page-head-actions">
+            {isChildrenView ? (
+              <Button asChild variant="outline" size="sm" className="page-head-back">
+                <Link href="/categories">
+                  <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
+                  Back to Categories
+                </Link>
+              </Button>
+            ) : null}
+          </div>
         </div>
 
         <div className="filter-bar">
@@ -756,10 +768,10 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
               </button>
             </div>
             {canManageCategories && (
-              <button type="button" className="btn btn-sm btn-primary" onClick={openCreateModal} disabled={pageBusy || (isChildrenView && !parentCategory)}>
+              <Button type="button" size="sm" onClick={openCreateModal} disabled={pageBusy || (isChildrenView && !parentCategory)}>
                 <Ic d="M12 5v14M5 12h14" size={14} />
                 {createLabel}
-              </button>
+              </Button>
             )}
           </div>
         </div>

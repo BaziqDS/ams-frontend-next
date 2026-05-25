@@ -24,6 +24,8 @@ import type {
   InspectionStockRegisterOption,
 } from "@/lib/inspectionUi";
 import { InspectionIcon } from "./InspectionDialogs";
+import { Button } from "@/components/ui/button";
+
 
 type StageFormProps = {
   data: InspectionRecord;
@@ -312,16 +314,16 @@ function CatalogItemSearchField({
         </div>
 
         {!disabled ? (
-          <button
+          <Button
             type="button"
-            className="btn btn-xs btn-icon stage3-catalog-create-btn"
+            variant="outline" size="icon-xs" className="stage3-catalog-create-btn"
             onClick={onCreate}
             disabled={createDisabled}
             title="Create new catalog item"
             aria-label="Create new catalog item"
           >
             <InspectionIcon d="M12 5v14M5 12h14" size={12} />
-          </button>
+          </Button>
         ) : null}
       </div>
     </div>
@@ -442,10 +444,10 @@ export function Stage1Form({ data, onChange, readOnly }: StageFormProps) {
               </div>
             </div>
             {!readOnly && data.items.length > 1 ? (
-              <button type="button" className="btn btn-xs btn-danger-ghost" onClick={() => removeItem(index)}>
+              <Button type="button" variant="outline" size="xs" className="btn-danger-ghost" onClick={() => removeItem(index)}>
                 <InspectionIcon d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12h6l1-12" size={12} />
                 Remove
-              </button>
+              </Button>
             ) : null}
           </div>
 
@@ -519,10 +521,10 @@ export function Stage1Form({ data, onChange, readOnly }: StageFormProps) {
       ))}
 
       {!readOnly ? (
-        <button type="button" className="btn btn-sm" onClick={addItem}>
+        <Button type="button" variant="outline" size="sm" onClick={addItem}>
           <InspectionIcon d="M12 5v14M5 12h14" size={13} />
           Add item
-        </button>
+        </Button>
       ) : null}
     </div>
   );

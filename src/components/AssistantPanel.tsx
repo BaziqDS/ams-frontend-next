@@ -8,6 +8,8 @@ import {
   buildAssistantHistory,
   streamAssistantResponse,
 } from "@/lib/assistant";
+import { Button } from "@/components/ui/button";
+
 
 const WELCOME_MESSAGE: AssistantThreadMessage = {
   id: "assistant-welcome",
@@ -187,11 +189,11 @@ export function AssistantPanel() {
               <div className="assistant-panel-title">AMS Assistant</div>
               <div className="assistant-panel-sub">Live inventory answers rendered in a compact side panel.</div>
             </div>
-            <button type="button" className="btn btn-ghost btn-icon" onClick={() => setIsOpen(false)} aria-label="Close AI assistant">
+            <Button type="button" variant="ghost" size="icon" onClick={() => setIsOpen(false)} aria-label="Close AI assistant">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M18 6L6 18M6 6l12 12" />
               </svg>
-            </button>
+            </Button>
           </div>
 
           <div className="assistant-panel-meta">
@@ -254,9 +256,9 @@ export function AssistantPanel() {
               Full-database SQL access is enabled for this testing slice.
               {requestError ? <span className="assistant-composer-error"> {requestError}</span> : null}
             </div>
-            <button type="submit" className="btn btn-primary" disabled={!canSend}>
+            <Button type="submit"  disabled={!canSend}>
               {isSending ? "Working..." : "Send"}
-            </button>
+            </Button>
           </div>
         </form>
       </aside>

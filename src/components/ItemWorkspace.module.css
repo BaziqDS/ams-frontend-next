@@ -702,6 +702,24 @@
   font-weight: 500;
 }
 
+.detailTrackingPill[data-t="individual"] {
+  border-color: var(--tracking-individual-border);
+  background: var(--tracking-individual-weak);
+  color: var(--tracking-individual);
+}
+
+.detailTrackingPill[data-t="quantity"] {
+  border-color: color-mix(in oklch, var(--success) 30%, transparent);
+  background: color-mix(in oklch, var(--success) 12%, white);
+  color: color-mix(in oklch, var(--success) 82%, black);
+}
+
+.detailTrackingPill[data-t="perishable"] {
+  border-color: color-mix(in oklch, var(--warn) 32%, transparent);
+  background: color-mix(in oklch, var(--warn-weak) 72%, white);
+  color: color-mix(in oklch, var(--warn) 82%, black);
+}
+
 .detailTrackingDot {
   width: 6px;
   height: 6px;
@@ -710,7 +728,7 @@
 }
 
 .detailTrackingPill[data-t="quantity"] .detailTrackingDot { background: oklch(0.5 0.1 220); }
-.detailTrackingPill[data-t="individual"] .detailTrackingDot { background: oklch(0.5 0.13 270); }
+.detailTrackingPill[data-t="individual"] .detailTrackingDot { background: var(--tracking-individual); }
 .detailTrackingPill[data-t="perishable"] .detailTrackingDot { background: oklch(0.55 0.14 70); }
 
 .detailMeta {

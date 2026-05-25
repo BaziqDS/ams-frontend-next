@@ -10,6 +10,8 @@ import { apiFetch, type Page } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { ADMIN_PERMISSIONS } from "@/lib/adminPermissions";
 import { useClientPagination } from "@/lib/listPagination";
+import { Button } from "@/components/ui/button";
+
 
 type Density = "compact" | "balanced" | "comfortable";
 type ViewMode = "table" | "grid";
@@ -224,9 +226,9 @@ function EmployeeModal({
             <div className="eyebrow">{employee ? "Edit employee" : "New employee"}</div>
             <h2>{employee ? employee.name : "Add Employee"}</h2>
           </div>
-          <button type="button" className="btn btn-sm btn-ghost" onClick={onClose} disabled={isSaving} aria-label="Close">
+          <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={isSaving} aria-label="Close">
             <Ic d="M18 6L6 18M6 6l12 12" />
-          </button>
+          </Button>
         </div>
         <div className="modal-body">
           {error ? <div className="error-banner">{error}</div> : null}
@@ -279,10 +281,10 @@ function EmployeeModal({
           </section>
         </div>
         <div className="modal-foot">
-          <button type="button" className="btn" onClick={onClose} disabled={isSaving}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={isSaving || !form.name.trim() || !form.perse_number.trim()}>
+          <Button type="button" variant="outline" onClick={onClose} disabled={isSaving}>Cancel</Button>
+          <Button type="submit"  disabled={isSaving || !form.name.trim() || !form.perse_number.trim()}>
             {isSaving ? "Saving..." : employee ? "Save Changes" : "Create Employee"}
-          </button>
+          </Button>
         </div>
       </form>
     </div>
@@ -481,15 +483,15 @@ export default function EmployeesPage() {
           <div className="filter-bar-right">
             <DensityToggle density={density} setDensity={setDensity} />
             <ViewToggle viewMode={viewMode} setViewMode={setViewMode} />
-            <button type="button" className="btn btn-sm" disabled title="Export unavailable in this build" style={{ opacity: 0.55, cursor: "not-allowed" }}>
+            <Button type="button" variant="outline" size="sm" disabled title="Export unavailable in this build" style={{ opacity: 0.55, cursor: "not-allowed" }}>
               <Ic d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" size={13} />
               Export
-            </button>
+            </Button>
             {canAdd ? (
-              <button type="button" className="btn btn-sm btn-primary" onClick={openCreate}>
+              <Button type="button" size="sm" onClick={openCreate}>
                 <Ic d="M12 5v14M5 12h14" size={14} />
                 Add Employee
-              </button>
+              </Button>
             ) : null}
           </div>
         </div>
@@ -543,22 +545,22 @@ export default function EmployeesPage() {
                       <td className="col-actions">
                         <div className="row-actions">
                           {canChange ? (
-                            <button type="button" className="btn btn-xs btn-ghost row-action" onClick={() => openEdit(employee)} disabled={busyId === employee.id}>
+                            <Button type="button" variant="ghost" size="xs" className="row-action" onClick={() => openEdit(employee)} disabled={busyId === employee.id}>
                               <Ic d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" size={13} />
                               <span className="ra-label">Edit</span>
-                            </button>
+                            </Button>
                           ) : null}
                           {canChange ? (
-                            <button type="button" className="btn btn-xs btn-ghost row-action" onClick={() => toggleActive(employee)} disabled={busyId === employee.id}>
+                            <Button type="button" variant="ghost" size="xs" className="row-action" onClick={() => toggleActive(employee)} disabled={busyId === employee.id}>
                               <Ic d="M18.36 6.64A9 9 0 015.64 19.36M23 12a11 11 0 11-22 0 11 11 0 0122 0z" size={13} />
                               <span className="ra-label">{employee.is_active ? "Disable" : "Enable"}</span>
-                            </button>
+                            </Button>
                           ) : null}
                           {canDelete ? (
-                            <button type="button" className="btn btn-xs btn-ghost row-action btn-danger-ghost" onClick={() => deleteEmployee(employee)} disabled={busyId === employee.id}>
+                            <Button type="button" variant="ghost" size="xs" className="row-action btn-danger-ghost" onClick={() => deleteEmployee(employee)} disabled={busyId === employee.id}>
                               <Ic d="M3 6h18M8 6V4h8v2M10 11v6M14 11v6M5 6l1 16h12l1-16" size={13} />
                               <span className="ra-label">Delete</span>
-                            </button>
+                            </Button>
                           ) : null}
                           {!canChange && !canDelete ? <span className="muted-note mono">No actions</span> : null}
                         </div>
@@ -600,8 +602,8 @@ export default function EmployeesPage() {
                 <div className="user-card-foot">
                   <div className="muted-note mono">{employee.designation || "No designation"}</div>
                   <div className="row-actions">
-                    {canChange ? <button type="button" className="btn btn-xs btn-ghost row-action" onClick={() => openEdit(employee)} disabled={busyId === employee.id}>Edit</button> : null}
-                    {canDelete ? <button type="button" className="btn btn-xs btn-ghost row-action btn-danger-ghost" onClick={() => deleteEmployee(employee)} disabled={busyId === employee.id}>Delete</button> : null}
+                    {canChange ? <Button type="button" variant="ghost" size="xs" className="row-action" onClick={() => openEdit(employee)} disabled={busyId === employee.id}>Edit</Button> : null}
+                    {canDelete ? <Button type="button" variant="ghost" size="xs" className="row-action btn-danger-ghost" onClick={() => deleteEmployee(employee)} disabled={busyId === employee.id}>Delete</Button> : null}
                   </div>
                 </div>
               </article>

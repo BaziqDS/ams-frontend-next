@@ -10,6 +10,8 @@ import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
 import { apiFetch, type Page } from "@/lib/api";
 import { useClientPagination } from "@/lib/listPagination";
 import { formatItemDate, formatItemLabel, formatQuantity, toNumber, type DepreciationSummary } from "@/lib/itemUi";
+import { Button } from "@/components/ui/button";
+
 
 type DepreciationTab = "setup" | "capitalize" | "register" | "runs" | "adjustments";
 type Density = "compact" | "balanced" | "comfortable";
@@ -240,7 +242,7 @@ function Alert({ children, onDismiss }: { children: ReactNode; onDismiss?: () =>
   return (
     <div style={{ padding: "12px 16px", background: "var(--danger-weak)", border: "1px solid color-mix(in oklch, var(--danger) 30%, transparent)", borderRadius: "var(--radius)", color: "var(--danger)", fontSize: 13, marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
       <span>{children}</span>
-      {onDismiss ? <button type="button" className="btn btn-xs btn-ghost" onClick={onDismiss}>Dismiss</button> : null}
+      {onDismiss ? <Button type="button" variant="ghost" size="xs" onClick={onDismiss}>Dismiss</Button> : null}
     </div>
   );
 }
@@ -743,10 +745,10 @@ export default function DepreciationPage() {
             <div className="page-sub">Finance setup, capitalization queue, fixed asset register, yearly runs, and adjustments.</div>
           </div>
           <div className="page-head-actions">
-            <button type="button" className="btn btn-sm" onClick={() => load()} disabled={isLoading || busy !== null}>
+            <Button type="button" variant="outline" size="sm" onClick={() => load()} disabled={isLoading || busy !== null}>
               <Icon d="M21 12a9 9 0 11-2.64-6.36M21 3v6h-6" size={14} />
               Refresh
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -775,12 +777,12 @@ export default function DepreciationPage() {
             {activeTab === "setup" ? (
               <>
                 <ViewModeToggle value={setupViewMode} onChange={setSetupViewMode} />
-                {canViewCategories ? <Link href="/categories" className="btn btn-sm btn-ghost">Open categories</Link> : null}
+                {canViewCategories ? <Button asChild variant="ghost" size="sm"><Link href="/categories" >Open categories</Link></Button> : null}
                 {canManage ? (
-                  <button type="button" className="btn btn-sm btn-primary" onClick={() => openRateModal()}>
+                  <Button type="button" size="sm" onClick={() => openRateModal()}>
                     <Icon d="M12 5v14M5 12h14" size={14} />
                     Add rate
-                  </button>
+                  </Button>
                 ) : null}
               </>
             ) : null}
@@ -850,9 +852,9 @@ export default function DepreciationPage() {
                           <td>{formatMoney(asset.depreciation_summary?.current_wdv ?? asset.original_cost)}</td>
                           <td><span className={statusPillClass(asset.status)}>{formatItemLabel(asset.status)}</span></td>
                           <td>
-                            <button type="button" className="btn btn-xs btn-ghost" onClick={() => loadSchedule(asset.id)} disabled={busy === `schedule-${asset.id}`}>
+                            <Button type="button" variant="ghost" size="xs" onClick={() => loadSchedule(asset.id)} disabled={busy === `schedule-${asset.id}`}>
                               View
-                            </button>
+                            </Button>
                           </td>
                         </tr>
                       ))}
@@ -919,9 +921,9 @@ export default function DepreciationPage() {
                     <input type="number" min={2001} value={runYear} onChange={event => setRunYear(event.target.value)} />
                   </Field>
                   <div style={{ alignSelf: "end" }}>
-                    <button type="button" className="btn btn-sm" onClick={createRun} disabled={busy === "create-run"}>
+                    <Button type="button" variant="outline" size="sm" onClick={createRun} disabled={busy === "create-run"}>
                       Create draft run
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -955,18 +957,18 @@ export default function DepreciationPage() {
                         <td>{formatQuantity(run.entry_count)}</td>
                         <td>{formatItemDate(run.posted_at)}</td>
                         <td className="col-actions">
-                          <button type="button" className="btn btn-xs btn-ghost row-action" onClick={() => previewRun(run.id)} disabled={busy === `preview-${run.id}`}>
+                          <Button type="button" variant="ghost" size="xs" className="row-action" onClick={() => previewRun(run.id)} disabled={busy === `preview-${run.id}`}>
                             Preview
-                          </button>
+                          </Button>
                           {canFull && run.status === "DRAFT" ? (
-                            <button type="button" className="btn btn-xs row-action" onClick={() => postRun(run.id)} disabled={busy === `post-${run.id}`}>
+                            <Button type="button" variant="outline" size="xs" className="row-action" onClick={() => postRun(run.id)} disabled={busy === `post-${run.id}`}>
                               Post
-                            </button>
+                            </Button>
                           ) : null}
                           {canFull && run.status === "POSTED" ? (
-                            <button type="button" className="btn btn-xs btn-danger-ghost row-action" onClick={() => reverseRun(run.id)} disabled={busy === `reverse-${run.id}`}>
+                            <Button type="button" variant="outline" size="xs" className="btn-danger-ghost row-action" onClick={() => reverseRun(run.id)} disabled={busy === `reverse-${run.id}`}>
                               Reverse
-                            </button>
+                            </Button>
                           ) : null}
                         </td>
                       </tr>
@@ -1025,16 +1027,16 @@ export default function DepreciationPage() {
                         </div>
                         <div className="row-actions">
                           {row.assetClass ? (
-                            <button type="button" className="btn btn-xs btn-ghost row-action" onClick={() => { setHistoryClassId(row.assetClass?.id ?? null); setHistoryFilters({ from: "", to: "" }); }}>
+                            <Button type="button" variant="ghost" size="xs" className="row-action" onClick={() => { setHistoryClassId(row.assetClass?.id ?? null); setHistoryFilters({ from: "", to: "" }); }}>
                               <Icon d="M3 12a9 9 0 109-9M3 3v6h6M12 7v5l3 2" size={13} />
                               <span className="ra-label">History</span>
-                            </button>
+                            </Button>
                           ) : null}
                           {canManage && row.categoryId ? (
-                            <button type="button" className="btn btn-xs btn-ghost row-action" onClick={() => openRateModal(row.categoryId)}>
+                            <Button type="button" variant="ghost" size="xs" className="row-action" onClick={() => openRateModal(row.categoryId)}>
                               <Icon d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" size={13} />
                               <span className="ra-label">{row.assetClass ? "Update rate" : "Set rate"}</span>
-                            </button>
+                            </Button>
                           ) : null}
                         </div>
                       </div>
@@ -1078,14 +1080,14 @@ export default function DepreciationPage() {
                           </td>
                           <td className="col-actions">
                             {row.assetClass ? (
-                              <button type="button" className="btn btn-xs btn-ghost row-action" onClick={() => { setHistoryClassId(row.assetClass?.id ?? null); setHistoryFilters({ from: "", to: "" }); }}>
+                              <Button type="button" variant="ghost" size="xs" className="row-action" onClick={() => { setHistoryClassId(row.assetClass?.id ?? null); setHistoryFilters({ from: "", to: "" }); }}>
                                 History
-                              </button>
+                              </Button>
                             ) : null}
                             {canManage && row.categoryId ? (
-                              <button type="button" className="btn btn-xs row-action" onClick={() => openRateModal(row.categoryId)}>
+                              <Button type="button" variant="outline" size="xs" className="row-action" onClick={() => openRateModal(row.categoryId)}>
                                 {row.assetClass ? "Update rate" : "Set rate"}
-                              </button>
+                              </Button>
                             ) : null}
                           </td>
                         </tr>
@@ -1114,10 +1116,10 @@ export default function DepreciationPage() {
                   <div className="table-count"><span className="mono">{uncapitalized.length}</span><span>records</span></div>
                 </div>
                 {canManage ? (
-                  <button type="button" className="btn btn-sm btn-primary" onClick={() => openCapitalizationModal()} disabled={uncapitalized.length === 0}>
+                  <Button type="button" size="sm" onClick={() => openCapitalizationModal()} disabled={uncapitalized.length === 0}>
                     <Icon d="M12 5v14M5 12h14" size={14} />
                     Capitalize asset
-                  </button>
+                  </Button>
                 ) : null}
               </div>
               <div className="h-scroll">
@@ -1133,9 +1135,9 @@ export default function DepreciationPage() {
                         <td>{row.depreciation_setup_name ? `${row.depreciation_setup_name} / ${row.depreciation_rate ? `${row.depreciation_rate}%` : "No rate"}` : "Not configured"}</td>
                         <td className="col-actions">
                           {canManage ? (
-                            <button type="button" className="btn btn-xs row-action" onClick={() => openCapitalizationModal(row)}>
+                            <Button type="button" variant="outline" size="xs" className="row-action" onClick={() => openCapitalizationModal(row)}>
                               Capitalize
-                            </button>
+                            </Button>
                           ) : null}
                         </td>
                       </tr>
@@ -1163,10 +1165,10 @@ export default function DepreciationPage() {
                   <div className="table-count"><span className="mono">{adjustments.length}</span><span>records</span></div>
                 </div>
                 {canManage ? (
-                  <button type="button" className="btn btn-sm btn-primary" onClick={() => openAdjustmentModal()} disabled={assets.length === 0}>
+                  <Button type="button" size="sm" onClick={() => openAdjustmentModal()} disabled={assets.length === 0}>
                     <Icon d="M12 5v14M5 12h14" size={14} />
                     Add adjustment
-                  </button>
+                  </Button>
                 ) : null}
               </div>
               <div className="h-scroll">
@@ -1210,7 +1212,7 @@ export default function DepreciationPage() {
                   Showing {previewRowsToShow.length} of {previewRows.length} pending entr{previewRows.length === 1 ? "y" : "ies"}.
                 </div>
                 <div className="modal-foot-actions">
-                  <button type="button" className="btn btn-md" onClick={closePreviewModal}>Close</button>
+                  <Button type="button" variant="outline" size="md" onClick={closePreviewModal}>Close</Button>
                 </div>
               </>
             )}
@@ -1257,10 +1259,10 @@ export default function DepreciationPage() {
                   Previous active rates close automatically one day before the new effective-from date.
                 </div>
                 <div className="modal-foot-actions">
-                  <button type="button" className="btn btn-md" onClick={() => setRateModalOpen(false)} disabled={busy === "create-rate"}>Cancel</button>
-                  <button type="button" className="btn btn-md btn-primary" onClick={createRate} disabled={busy === "create-rate" || !rateForm.category || !rateForm.rate || !rateForm.effective_from}>
+                  <Button type="button" variant="outline" size="md" onClick={() => setRateModalOpen(false)} disabled={busy === "create-rate"}>Cancel</Button>
+                  <Button type="button" size="md" onClick={createRate} disabled={busy === "create-rate" || !rateForm.category || !rateForm.rate || !rateForm.effective_from}>
                     {busy === "create-rate" ? "Saving..." : "Save rate"}
-                  </button>
+                  </Button>
                 </div>
               </>
             )}
@@ -1292,7 +1294,7 @@ export default function DepreciationPage() {
                 <input value={rateForm.source_reference} onChange={event => setRateForm(prev => ({ ...prev, source_reference: event.target.value }))} placeholder="FBR reference" />
               </Field>
               <div style={{ alignSelf: "end", display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {canViewCategories ? <Link href="/categories" className="btn btn-sm btn-ghost">Open categories</Link> : null}
+                {canViewCategories ? <Button asChild variant="ghost" size="sm"><Link href="/categories" >Open categories</Link></Button> : null}
               </div>
             </div>
             <div className="stage-form-helper">
@@ -1311,7 +1313,7 @@ export default function DepreciationPage() {
               <>
                 <div className="modal-foot-meta mono">{historyRates.length} version{historyRates.length === 1 ? "" : "s"} shown</div>
                 <div className="modal-foot-actions">
-                  <button type="button" className="btn btn-md" onClick={() => setHistoryClassId(null)}>Close</button>
+                  <Button type="button" variant="outline" size="md" onClick={() => setHistoryClassId(null)}>Close</Button>
                 </div>
               </>
             )}
@@ -1324,9 +1326,9 @@ export default function DepreciationPage() {
                 <input type="date" value={historyFilters.to} onChange={event => setHistoryFilters(prev => ({ ...prev, to: event.target.value }))} />
               </Field>
               <div style={{ alignSelf: "end" }}>
-                <button type="button" className="btn btn-sm btn-ghost" onClick={() => setHistoryFilters({ from: "", to: "" })}>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setHistoryFilters({ from: "", to: "" })}>
                   Clear filters
-                </button>
+                </Button>
               </div>
             </div>
             <div className="h-scroll">
@@ -1359,10 +1361,10 @@ export default function DepreciationPage() {
                   Category and depreciation setup are read from the selected asset.
                 </div>
                 <div className="modal-foot-actions">
-                  <button type="button" className="btn btn-md" onClick={() => setCapitalizationModalOpen(false)} disabled={busy === "capitalize"}>Cancel</button>
-                  <button type="button" className="btn btn-md btn-primary" onClick={createCapitalization} disabled={busy === "capitalize" || !capitalizationForm.rowKey || !capitalizationForm.original_cost || !capitalizationForm.capitalization_date}>
+                  <Button type="button" variant="outline" size="md" onClick={() => setCapitalizationModalOpen(false)} disabled={busy === "capitalize"}>Cancel</Button>
+                  <Button type="button" size="md" onClick={createCapitalization} disabled={busy === "capitalize" || !capitalizationForm.rowKey || !capitalizationForm.original_cost || !capitalizationForm.capitalization_date}>
                     {busy === "capitalize" ? "Saving..." : "Capitalize"}
-                  </button>
+                  </Button>
                 </div>
               </>
             )}
@@ -1424,10 +1426,10 @@ export default function DepreciationPage() {
                   Adjustments affect future opening WDV; posted depreciation entries are not rewritten.
                 </div>
                 <div className="modal-foot-actions">
-                  <button type="button" className="btn btn-md" onClick={() => setAdjustmentModalOpen(false)} disabled={busy === "adjust"}>Cancel</button>
-                  <button type="button" className="btn btn-md btn-primary" onClick={createAdjustment} disabled={busy === "adjust" || !adjustmentForm.asset || !adjustmentForm.amount || !adjustmentForm.effective_date || !adjustmentForm.reason.trim()}>
+                  <Button type="button" variant="outline" size="md" onClick={() => setAdjustmentModalOpen(false)} disabled={busy === "adjust"}>Cancel</Button>
+                  <Button type="button" size="md" onClick={createAdjustment} disabled={busy === "adjust" || !adjustmentForm.asset || !adjustmentForm.amount || !adjustmentForm.effective_date || !adjustmentForm.reason.trim()}>
                     {busy === "adjust" ? "Saving..." : "Add adjustment"}
-                  </button>
+                  </Button>
                 </div>
               </>
             )}

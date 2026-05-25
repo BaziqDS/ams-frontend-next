@@ -16,6 +16,8 @@ import {
 } from "@/lib/rolePermissionDependencies";
 import { relTime } from "@/lib/userUiShared";
 import { useCapabilities, type CapabilityLevel, type ModuleDependencies } from "@/contexts/CapabilitiesContext";
+import { Button } from "@/components/ui/button";
+
 
 export type { ModuleDependencies };
 
@@ -262,16 +264,16 @@ function RoleActions({
   return (
     <div className="row-actions">
       {canEdit && (
-        <button type="button" className="btn btn-xs btn-ghost row-action" onClick={onEdit} title="Edit role" disabled={disabled}>
+        <Button type="button" variant="ghost" size="xs" className="row-action" onClick={onEdit} title="Edit role" disabled={disabled}>
           <Ic d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" size={13} />
           <span className="ra-label">Edit</span>
-        </button>
+        </Button>
       )}
       {canDelete && (
-        <button type="button" className="btn btn-xs btn-danger-ghost row-action" onClick={onDelete} title="Delete role" disabled={disabled}>
+        <Button type="button" variant="outline" size="xs" className="btn-danger-ghost row-action" onClick={onDelete} title="Delete role" disabled={disabled}>
           <Ic d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12h6l1-12" size={13} />
           <span className="ra-label">Delete</span>
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -596,8 +598,8 @@ function RoleModal({
                 : <span className="foot-ok">{readyNote}</span>}
           </div>
           <div className="modal-foot-actions">
-            <button type="button" className="btn btn-md" onClick={onClose}>Cancel</button>
-            <button type="button" className="btn btn-md btn-primary" onClick={submit} disabled={!canSave}>{submitting ? "Saving…" : mode === "edit" ? "Save changes" : "Create role"}</button>
+            <Button type="button" variant="outline" size="md" onClick={onClose}>Cancel</Button>
+            <Button type="button" size="md" onClick={submit} disabled={!canSave}>{submitting ? "Saving…" : mode === "edit" ? "Save changes" : "Create role"}</Button>
           </div>
         </footer>
       </div>
@@ -756,15 +758,15 @@ export default function RolesPage() {
                 <Ic d={<><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></>} size={14} />
               </button>
             </div>
-            <button type="button" className="btn btn-sm" onClick={handleExport}>
+            <Button type="button" variant="outline" size="sm" onClick={handleExport}>
               <Ic d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" size={13} />
               Export
-            </button>
+            </Button>
               {canAddRole && (
-                <button type="button" className="btn btn-sm btn-primary" onClick={() => setModalOpen(true)}>
+                <Button type="button" size="sm" onClick={() => setModalOpen(true)}>
                   <Ic d="M12 5v14M5 12h14" size={14} />
                   Add Role
-                </button>
+                </Button>
               )}
           </div>
         </div>

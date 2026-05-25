@@ -3,6 +3,12 @@
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import {
+  Alert as SharedAlert,
+  AlertActions,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/Alert";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { Topbar } from "@/components/Topbar";
 import { apiFetch, type Page } from "@/lib/api";
@@ -16,6 +22,8 @@ import {
   type CorrectionMode,
 } from "@/lib/stockEntryCorrectionRules";
 import { getStockEntryDisplayDirection } from "@/lib/stockEntryFormRules";
+import { Button } from "@/components/ui/button";
+
 
 type EntryType = "RECEIPT" | "ISSUE" | "RETURN";
 type EntryStatus = "DRAFT" | "PENDING_ACK" | "COMPLETED" | "REJECTED" | "CANCELLED";
@@ -271,6 +279,26 @@ function hasImplicitInspectionSource(entry: StockEntryRecord) {
   );
 }
 
+function inspectionCertificateContext(entry: StockEntryRecord, related: RelatedEntries) {
+  const candidates = [
+    entry,
+    related.reference,
+    related.linkedReceipt,
+    ...related.children,
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate?.inspection_certificate != null) {
+      return {
+        id: candidate.inspection_certificate,
+        number: candidate.inspection_certificate_number || `Inspection #${candidate.inspection_certificate}`,
+      };
+    }
+  }
+
+  return null;
+}
+
 function acknowledgementMeta(entry: StockEntryRecord, related: RelatedEntries) {
   if (hasImplicitInspectionSource(entry)) {
     return {
@@ -364,11 +392,12 @@ function StatusPill({ status }: { status: EntryStatus }) {
   );
 }
 
-function Alert({ children }: { children: ReactNode }) {
+function Alert({ children, title }: { children: ReactNode; title?: string }) {
   return (
-    <div style={{ padding: "12px 16px", background: "var(--danger-weak)", border: "1px solid color-mix(in oklch, var(--danger) 30%, transparent)", borderRadius: "var(--radius)", color: "var(--danger)", fontSize: 13, marginBottom: 16 }}>
-      {children}
-    </div>
+    <SharedAlert variant="destructive">
+      {title ? <AlertTitle>{title}</AlertTitle> : null}
+      <AlertDescription>{children}</AlertDescription>
+    </SharedAlert>
   );
 }
 
@@ -681,29 +710,73 @@ function StockStats({ entry, related }: { entry: StockEntryRecord; related: Rela
   const ackRefs = uniqueRefs(receiverItems.map(item => item.ack_stock_register_name ? item.ack_stock_register_name : null));
   const registerCount = new Set([...sourceRefs, ...ackRefs]).size;
 
+  const acknowledgedDisplay = stats.accepted == null ? "—" : String(stats.accepted);
+  const ackBadge = stats.pending > 0
+    ? { tone: "warning" as const, label: `${stats.pending} pending` }
+    : stats.accepted != null
+      ? { tone: "ok" as const, label: "Complete" }
+      : { tone: "neutral" as const, label: "Awaiting" };
+
+  const metrics = [
+    {
+      label: "Line items",
+      value: String(stats.lines),
+      hint: stats.instances ? `${stats.instances} tracked instances` : "Quantity tracked",
+      badge: stats.lines > 0
+        ? { tone: "neutral" as const, label: `${stats.lines} line${stats.lines === 1 ? "" : "s"}` }
+        : undefined,
+    },
+    {
+      label: quantityLabel(entry),
+      value: String(stats.sent),
+      hint: `Original ${formatLabel(entry.entry_type).toLowerCase()} quantity`,
+      badge: { tone: "neutral" as const, label: formatLabel(entry.entry_type) },
+    },
+    {
+      label: "Acknowledged",
+      value: acknowledgedDisplay,
+      hint: stats.pending > 0 ? `${stats.pending} still pending` : "Receiver side recorded",
+      badge: ackBadge,
+    },
+    {
+      label: "Register refs",
+      value: String(registerCount || "—"),
+      hint: "Source + acknowledgement books",
+      badge: registerCount > 0
+        ? { tone: "neutral" as const, label: `${registerCount} book${registerCount === 1 ? "" : "s"}` }
+        : undefined,
+    },
+  ];
+
   return (
-    <div className="stat-strip" style={{ marginBottom: 16 }}>
-      <div className="stat stat-accent">
-        <div className="stat-label">Line Items</div>
-        <div className="stat-value">{stats.lines}</div>
-        <div className="stat-sub">{stats.instances ? `${stats.instances} tracked instances` : "quantity tracked"}</div>
+    <section className="stock-analytics-card" aria-label="Stock movement summary">
+      <div className="stock-analytics-head">
+        <div className="eyebrow">Movement summary</div>
+        <h3 className="stock-analytics-title">{formatLabel(entry.entry_type)} overview</h3>
+        <p className="stock-analytics-sub">Quantities, receiver progress, and register coverage for this voucher.</p>
       </div>
-      <div className="stat">
-        <div className="stat-label">{quantityLabel(entry)}</div>
-        <div className="stat-value">{stats.sent}</div>
-        <div className="stat-sub">Original {formatLabel(entry.entry_type).toLowerCase()} quantity</div>
+      <div className="stock-analytics-metrics">
+        {metrics.map((metric, index) => (
+          <div className="stock-analytics-metric" key={metric.label}>
+            <div className="stock-analytics-metric-body">
+              <div className="stock-analytics-metric-label">{metric.label}</div>
+              <div className="stock-analytics-metric-row">
+                <span className="stock-analytics-metric-value">{metric.value}</span>
+                {metric.badge ? (
+                  <span className={`stock-analytics-badge is-${metric.badge.tone}`}>
+                    {metric.badge.label}
+                  </span>
+                ) : null}
+              </div>
+              <div className="stock-analytics-metric-hint">{metric.hint}</div>
+            </div>
+            {index < metrics.length - 1 ? (
+              <span className="stock-analytics-separator" aria-hidden="true" />
+            ) : null}
+          </div>
+        ))}
       </div>
-      <div className="stat">
-        <div className="stat-label">Acknowledged</div>
-        <div className="stat-value">{stats.accepted ?? "-"}</div>
-        <div className="stat-sub">{stats.pending > 0 ? `${stats.pending} pending` : "receiver side recorded"}</div>
-      </div>
-      <div className="stat">
-        <div className="stat-label">Register Refs</div>
-        <div className="stat-value">{registerCount || "-"}</div>
-        <div className="stat-sub">source and acknowledgement books</div>
-      </div>
-    </div>
+    </section>
   );
 }
 
@@ -761,7 +834,7 @@ function StockVoucherHead({ entry, related }: { entry: StockEntryRecord; related
     <div className="page-head-detail stock-voucher-head">
       <div className="page-title-group">
         <div className="eyebrow">Stock Entry · {formatLabel(entry.entry_type)} voucher</div>
-        <h1 className="display">{voucherTitle(entry)}</h1>
+        <h1>{voucherTitle(entry)}</h1>
         <div className="page-sub">
           {summary.sourceLabel} <strong>{source}</strong> to <strong>{target}</strong>.
           {" "}{summary.stripNote}
@@ -778,6 +851,14 @@ function StockVoucherHead({ entry, related }: { entry: StockEntryRecord; related
             <span>Register {register}</span>
           </span>
         </div>
+      </div>
+      <div className="page-head-actions">
+        <Button asChild variant="outline" size="sm" className="page-head-back">
+          <Link href="/stock-entries">
+            <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
+            Back to Stock Entries
+          </Link>
+        </Button>
       </div>
     </div>
   );
@@ -797,18 +878,19 @@ function AcknowledgementNotice({ entry, related, onAcknowledge }: { entry: Stock
     : "Capture the receiving register and accepted quantities to close this receipt.";
 
   return (
-    <div className="notice notice-warn">
-      <div className="notice-icon"><Ic d={<><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /><path d="M12 9v4M12 17h.01" /></>} size={18} /></div>
-      <div className="notice-body">
-        <div className="notice-title">{title}</div>
-        <div className="notice-text">{text} <strong>{actionText}</strong></div>
-      </div>
+    <SharedAlert variant="warning" className="stock-ack-alert">
+      <AlertTitle>{title}</AlertTitle>
+      <AlertDescription>
+        {text} <strong>{actionText}</strong>
+      </AlertDescription>
       {!isIssue && entry.can_acknowledge ? (
-        <div className="notice-actions">
-          <button className="btn btn-xs" type="button" onClick={onAcknowledge}>Acknowledge</button>
-        </div>
+        <AlertActions>
+          <Button size="xs" type="button" onClick={onAcknowledge}>
+            Acknowledge
+          </Button>
+        </AlertActions>
       ) : null}
-    </div>
+    </SharedAlert>
   );
 }
 
@@ -974,9 +1056,9 @@ function ItemsIssuedTable({ entry, related, instances }: { entry: StockEntryReco
                       <div className="register-ref mono-small">{registerRef}</div>
                     </td>
                     <td className="details-cell">
-                      <button type="button" className="btn btn-xs" onClick={() => setSelectedItemId(item.id)}>
+                      <Button type="button" variant="outline" size="xs" onClick={() => setSelectedItemId(item.id)}>
                         {detailLabel}
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 );
@@ -1236,7 +1318,8 @@ function LineItemDetailModal({
   onClose: () => void;
 }) {
   const instanceMap = useMemo(() => new Map(instances.map(instance => [instance.id, instance])), [instances]);
-  const inspectionHref = entry.inspection_certificate ? `/inspections/${entry.inspection_certificate}` : null;
+  const inspection = inspectionCertificateContext(entry, related);
+  const inspectionHref = inspection ? `/inspections/${inspection.id}` : null;
   const itemInstances = effectiveInstances(entry, item, related);
 
   return (
@@ -1272,9 +1355,9 @@ function LineItemDetailModal({
               <div className="kv">
                 <div className="kv-label">Inspection Certificate</div>
                 <div className="kv-value">
-                  {inspectionHref && entry.inspection_certificate_number ? (
+                  {inspectionHref && inspection ? (
                     <Link href={inspectionHref} className="link-inline">
-                      {entry.inspection_certificate_number}
+                      {inspection.number}
                     </Link>
                   ) : (
                     "-"
@@ -1428,7 +1511,7 @@ function AckForm({ entry, related, registers, instances, onDone, onCancel }: { e
   return (
     <div className="stock-ack-form">
       <div className="stock-ack-form-inner">
-        {error && <Alert>{error}</Alert>}
+        {error && <Alert title="Couldn't acknowledge the entry">{error}</Alert>}
         {entry.items.map(item => {
           const row = values[item.id];
           const returning = item.quantity - row.quantity;
@@ -1501,13 +1584,13 @@ function AckForm({ entry, related, registers, instances, onDone, onCancel }: { e
         })}
         <div className="stock-ack-actions">
           {onCancel && (
-            <button type="button" className="btn" disabled={busy} onClick={onCancel}>
+            <Button type="button" variant="outline" disabled={busy} onClick={onCancel}>
               Cancel
-            </button>
+            </Button>
           )}
-          <button type="button" className="btn btn-primary" disabled={!canSubmit || busy} onClick={submit}>
+          <Button type="button"  disabled={!canSubmit || busy} onClick={submit}>
             {busy ? "Acknowledging..." : "Submit Acknowledgement"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -1577,81 +1660,82 @@ function CorrectionActionsPanel({
   if (!hasActions) return null;
 
   return (
-    <Panel eyebrow="Controls" title="Entry correction actions">
-      <div style={{ display: "grid", gap: 12 }}>
-        {activeCorrection ? (
-          <div className="notice notice-warn">
-            <div className="notice-body">
-              <div className="notice-title">Correction {formatLabel(activeCorrection.status)}</div>
-              <div className="notice-text">
-                {activeCorrection.message || activeCorrection.reason}
-                {activeCorrection.status === "REQUESTED" && activeCorrection.resolution_type === "REVERSAL" && !isProjectedReceiptCorrection ? " Waiting for the receiving store to approve it from the linked receipt voucher." : ""}
-                {activeCorrection.status === "REQUESTED" && activeCorrection.resolution_type === "ADDITIONAL_MOVEMENT" && isProjectedReceiptCorrection ? " Waiting for the source store to approve and send the additional quantity." : ""}
-                {activeCorrection.status === "REQUESTED" && !isProjectedAdditionalMovement && (activeCorrection.resolution_type !== "REVERSAL" || isProjectedReceiptCorrection) ? " Approval is required before any linked movement is generated." : ""}
-                {activeCorrection.status === "APPROVED" && activeCorrection.resolution_type === "REVERSAL" && !isProjectedReceiptCorrection ? " The receiving store can apply it from the linked receipt voucher." : ""}
-                {activeCorrection.status === "APPROVED" && isProjectedAdditionalMovement ? " The source store can now apply it to generate the additional issue." : ""}
-                {activeCorrection.status === "APPROVED" && !isProjectedAdditionalMovement && (activeCorrection.resolution_type !== "REVERSAL" || isProjectedReceiptCorrection) ? " Apply it to generate the linked movement records." : ""}
-              </div>
-            </div>
-            {correctionCanBeActedOnHere && activeCorrection.status === "REQUESTED" ? (
-              <div className="notice-actions">
-                <button type="button" className="btn btn-xs btn-primary" onClick={onApproveCorrection} disabled={correctionActionBusy !== null}>
-                  {correctionActionBusy === "approve" ? "Approving..." : "Approve"}
-                </button>
-                <button type="button" className="btn btn-xs btn-ghost" onClick={onRejectCorrection} disabled={correctionActionBusy !== null}>
-                  {correctionActionBusy === "reject" ? "Rejecting..." : "Reject"}
-                </button>
-              </div>
-            ) : null}
-            {correctionCanBeActedOnHere && activeCorrection.status === "APPROVED" ? (
-              <div className="notice-actions">
-                <button type="button" className="btn btn-xs btn-primary" onClick={onApplyCorrection} disabled={correctionActionBusy !== null}>
-                  {correctionActionBusy === "apply" ? "Applying..." : "Apply Correction"}
-                </button>
-                <button type="button" className="btn btn-xs btn-ghost" onClick={onRejectCorrection} disabled={correctionActionBusy !== null}>
-                  {correctionActionBusy === "reject" ? "Rejecting..." : "Reject"}
-                </button>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+    <section className="stock-action-bar" aria-label="Entry correction actions">
+      <div className="stock-action-bar-row">
+        <span className="stock-action-bar-label">Entry actions</span>
+        <div className="stock-action-bar-buttons">
           {entry.can_cancel ? (
-            <button type="button" className="btn btn-sm" onClick={onCancelEntry}>
+            <Button type="button" variant="outline" size="xs" onClick={onCancelEntry}>
               Cancel Entry
-            </button>
+            </Button>
           ) : null}
           {entry.can_correct ? (
-            <button type="button" className="btn btn-sm btn-primary" onClick={onResolveDifference}>
+            <Button type="button" size="xs" onClick={onResolveDifference}>
               {differenceCopy.actionLabel}
-            </button>
+            </Button>
           ) : null}
           {entry.can_request_reversal ? (
-            <button type="button" className="btn btn-sm" onClick={onRequestReversal}>
+            <Button type="button" variant="outline" size="xs" onClick={onRequestReversal}>
               {reversalCopy.actionLabel}
-            </button>
+            </Button>
           ) : null}
           {canCreateReplacement ? (
-            <Link className="btn btn-sm" href={`/stock-entries?replacement_for=${entry.id}`}>
-              Create Replacement Entry
-            </Link>
+            <Button asChild variant="outline" size="xs"><Link  href={`/stock-entries?replacement_for=${entry.id}`}>
+              Create Replacement
+            </Link></Button>
           ) : null}
         </div>
+      </div>
 
-        {entry.generated_correction_entries?.length ? (
-          <div style={{ display: "grid", gap: 6 }}>
-            <div className="eyebrow">Generated Records</div>
+      {activeCorrection ? (
+        <SharedAlert variant="warning" className="stock-correction-alert">
+          <AlertTitle>Correction {formatLabel(activeCorrection.status)}</AlertTitle>
+          <AlertDescription>
+            {activeCorrection.message || activeCorrection.reason}
+            {activeCorrection.status === "REQUESTED" && activeCorrection.resolution_type === "REVERSAL" && !isProjectedReceiptCorrection ? " Waiting for the receiving store to approve it from the linked receipt voucher." : ""}
+            {activeCorrection.status === "REQUESTED" && activeCorrection.resolution_type === "ADDITIONAL_MOVEMENT" && isProjectedReceiptCorrection ? " Waiting for the source store to approve and send the additional quantity." : ""}
+            {activeCorrection.status === "REQUESTED" && !isProjectedAdditionalMovement && (activeCorrection.resolution_type !== "REVERSAL" || isProjectedReceiptCorrection) ? " Approval is required before any linked movement is generated." : ""}
+            {activeCorrection.status === "APPROVED" && activeCorrection.resolution_type === "REVERSAL" && !isProjectedReceiptCorrection ? " The receiving store can apply it from the linked receipt voucher." : ""}
+            {activeCorrection.status === "APPROVED" && isProjectedAdditionalMovement ? " The source store can now apply it to generate the additional issue." : ""}
+            {activeCorrection.status === "APPROVED" && !isProjectedAdditionalMovement && (activeCorrection.resolution_type !== "REVERSAL" || isProjectedReceiptCorrection) ? " Apply it to generate the linked movement records." : ""}
+          </AlertDescription>
+          {correctionCanBeActedOnHere && activeCorrection.status === "REQUESTED" ? (
+            <AlertActions>
+              <Button type="button" size="xs" onClick={onApproveCorrection} disabled={correctionActionBusy !== null}>
+                {correctionActionBusy === "approve" ? "Approving..." : "Approve"}
+              </Button>
+              <Button type="button" variant="ghost" size="xs" onClick={onRejectCorrection} disabled={correctionActionBusy !== null}>
+                {correctionActionBusy === "reject" ? "Rejecting..." : "Reject"}
+              </Button>
+            </AlertActions>
+          ) : null}
+          {correctionCanBeActedOnHere && activeCorrection.status === "APPROVED" ? (
+            <AlertActions>
+              <Button type="button" size="xs" onClick={onApplyCorrection} disabled={correctionActionBusy !== null}>
+                {correctionActionBusy === "apply" ? "Applying..." : "Apply Correction"}
+              </Button>
+              <Button type="button" variant="ghost" size="xs" onClick={onRejectCorrection} disabled={correctionActionBusy !== null}>
+                {correctionActionBusy === "reject" ? "Rejecting..." : "Reject"}
+              </Button>
+            </AlertActions>
+          ) : null}
+        </SharedAlert>
+      ) : null}
+
+      {entry.generated_correction_entries?.length ? (
+        <div className="stock-action-generated">
+          <span className="eyebrow">Generated records</span>
+          <div className="stock-action-generated-list">
             {entry.generated_correction_entries.map(generated => (
-              <Link key={generated.id} href={`/stock-entries/${generated.id}`} className="chip" style={{ justifyContent: "space-between", textDecoration: "none" }}>
+              <Link key={generated.id} href={`/stock-entries/${generated.id}`} className="chip" style={{ textDecoration: "none" }}>
                 <span>{generated.entry_number}</span>
-                <span>{formatLabel(generated.reference_purpose ?? generated.entry_type)}</span>
+                <span className="chip-sub">{formatLabel(generated.reference_purpose ?? generated.entry_type)}</span>
               </Link>
             ))}
           </div>
-        ) : null}
-      </div>
-    </Panel>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -1794,7 +1878,7 @@ function CorrectionModal({ entry, related, instances, onDone, onClose }: { entry
         </div>
         <div className="modal-body">
           <div className="stock-correction-form">
-            {error && <Alert>{error}</Alert>}
+            {error && <Alert title="Couldn't submit the request">{error}</Alert>}
             <div className="notice notice-warn stock-correction-risk">
               <div className="notice-body">
                 <div className="notice-title">{copy.disclaimerTitle}</div>
@@ -1909,10 +1993,10 @@ function CorrectionModal({ entry, related, instances, onDone, onClose }: { entry
         </div>
         <div className="modal-foot">
           <div className="modal-foot-actions">
-            <button type="button" className="btn" disabled={busy} onClick={onClose}>Close</button>
-            <button type="button" className="btn btn-primary" disabled={(preview ? !canSubmit : !canPreview) || busy} onClick={handlePrimaryAction}>
+            <Button type="button" variant="outline" disabled={busy} onClick={onClose}>Close</Button>
+            <Button type="button"  disabled={(preview ? !canSubmit : !canPreview) || busy} onClick={handlePrimaryAction}>
               {busy ? (preview ? "Submitting..." : "Checking...") : primaryLabel}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -1971,7 +2055,7 @@ function FullReversalModal({ entry, onDone, onClose }: { entry: StockEntryRecord
         </div>
         <div className="modal-body">
           <div className="stock-correction-form">
-            {error && <Alert>{error}</Alert>}
+            {error && <Alert title="Couldn't submit the request">{error}</Alert>}
             <div className="notice notice-warn stock-correction-risk">
               <div className="notice-body">
                 <div className="notice-title">{copy.disclaimerTitle}</div>
@@ -2031,10 +2115,10 @@ function FullReversalModal({ entry, onDone, onClose }: { entry: StockEntryRecord
         </div>
         <div className="modal-foot">
           <div className="modal-foot-actions">
-            <button type="button" className="btn" disabled={busy} onClick={onClose}>Close</button>
-            <button type="button" className="btn btn-primary" disabled={Boolean(validationMessage) || busy} onClick={submit}>
+            <Button type="button" variant="outline" disabled={busy} onClick={onClose}>Close</Button>
+            <Button type="button"  disabled={Boolean(validationMessage) || busy} onClick={submit}>
               {busy ? "Submitting..." : copy.submitLabel}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -2195,7 +2279,7 @@ export default function StockEntryDetailPage() {
     <div>
       <Topbar breadcrumb={["Operations", "Stock Entries", entry?.entry_number ?? "Detail"]} />
       <div className="page">
-        {error && <Alert>{error}</Alert>}
+        {error && <Alert title="Couldn't load this stock entry">{error}</Alert>}
         {actionNotice ? (
           <div className="notice notice-info">
             <div className="notice-body">
@@ -2203,7 +2287,7 @@ export default function StockEntryDetailPage() {
               <div className="notice-text">{actionNotice}</div>
             </div>
             <div className="notice-actions">
-              <button type="button" className="btn btn-xs btn-ghost" onClick={() => setActionNotice(null)}>Dismiss</button>
+              <Button type="button" variant="ghost" size="xs" onClick={() => setActionNotice(null)}>Dismiss</Button>
             </div>
           </div>
         ) : null}
@@ -2212,10 +2296,6 @@ export default function StockEntryDetailPage() {
           <div className="table-card" style={{ padding: 32, color: "var(--muted)", textAlign: "center" }}>Loading stock entry...</div>
         ) : entry ? (
           <>
-            <Link className="page-back stock-page-back-inline" href="/stock-entries">
-              <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
-              Back to Stock Entries
-            </Link>
             <StockVoucherHead entry={entry} related={related} />
             <CorrectionActionsPanel
               entry={entry}
@@ -2238,13 +2318,13 @@ export default function StockEntryDetailPage() {
             <RoutingPanel entry={entry} related={related} />
             <ItemsIssuedTable entry={entry} related={related} instances={instances} />
 
-            <div className="detail-grid">
+            <div className="detail-grid stock-entry-detail-grid">
               <div className="detail-main">
-                <WorkflowHistoryCard entry={entry} related={related} />
-              </div>
-              <aside className="detail-aside">
                 <StatusAsideCard entry={entry} related={related} />
                 <RelatedRecordsCard entry={entry} related={related} />
+              </div>
+              <aside className="detail-aside stock-entry-workflow-aside">
+                <WorkflowHistoryCard entry={entry} related={related} />
               </aside>
             </div>
             {ackModalOpen && entry.can_acknowledge && entry.status === "PENDING_ACK" && (

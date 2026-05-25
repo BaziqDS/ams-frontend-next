@@ -52,6 +52,8 @@ import {
 } from "@/lib/itemUi";
 import { relTime } from "@/lib/userUiShared";
 import workspaceStyles from "./ItemWorkspace.module.css";
+import { Button } from "@/components/ui/button";
+
 
 export const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden="true" focusable="false">
@@ -197,6 +199,11 @@ export function workspaceTrackingTone(trackingType: string | null | undefined) {
   if (trackingType === "INDIVIDUAL") return "individual";
   if (trackingType === "QUANTITY") return "quantity";
   return "perishable";
+}
+
+export function trackingChipClass(trackingType: string | null | undefined) {
+  if (!trackingType) return "chip";
+  return `chip chip-tracking chip-tracking-${workspaceTrackingTone(trackingType)}`;
 }
 
 export function workspaceLastUpdate(item: Pick<ItemRecord, "updated_at" | "created_at">) {
@@ -466,9 +473,9 @@ export function Alert({ children, onDismiss, action }: { children: ReactNode; on
       <div style={{ display: "flex", gap: 8 }}>
         {action}
         {onDismiss && (
-          <button type="button" className="btn btn-xs btn-ghost" onClick={onDismiss}>
+          <Button type="button" variant="ghost" size="xs" onClick={onDismiss}>
             Dismiss
-          </button>
+          </Button>
         )}
       </div>
     </div>
@@ -937,8 +944,8 @@ export function ItemModal({
               : <span className="foot-ok">Item record ready</span>}
           </div>
           <div className="modal-foot-actions">
-            <button type="button" className="btn btn-md" onClick={onClose}>Cancel</button>
-            <button type="button" className="btn btn-md btn-primary" onClick={() => { void submitManually("submit"); }} disabled={!canSave}>{submitting ? "Saving..." : isEdit ? "Save changes" : "Create item"}</button>
+            <Button type="button" variant="outline" size="md" onClick={onClose}>Cancel</Button>
+            <Button type="button" size="md" onClick={() => { void submitManually("submit"); }} disabled={!canSave}>{submitting ? "Saving..." : isEdit ? "Save changes" : "Create item"}</Button>
           </div>
         </footer>
       </div>
@@ -1002,16 +1009,16 @@ function ItemActions({
 
   return (
     <div className="row-action-more" ref={ref}>
-      <button
+      <Button
         type="button"
-        className="btn btn-xs btn-ghost"
+        variant="ghost" size="xs"
         title="Actions"
         onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
         disabled={pageBusy}
         style={{ padding: "0 6px", letterSpacing: "0.06em", fontSize: 15, lineHeight: 1 }}
       >
         ⋮
-      </button>
+      </Button>
       {open && (
         <div
           ref={menuRef}
@@ -1084,7 +1091,7 @@ function ItemCard({
       <div className="user-card-section">
         <div className="eyebrow">Tracking</div>
         <div className="group-cell">
-          <span className="chip">{formatTrackingTypeLabel(item.tracking_type, { compact: true })}</span>
+          <span className={trackingChipClass(item.tracking_type)}>{formatTrackingTypeLabel(item.tracking_type, { compact: true })}</span>
         </div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 12 }}>
@@ -1105,18 +1112,18 @@ function ItemCard({
           <div className="user-card-last mono">{formatItemDate(item.updated_at, "Unknown")}</div>
         </div>
         <div className="row-actions">
-          <button type="button" className="btn btn-xs btn-ghost row-action icon-only" onClick={event => { event.stopPropagation(); onOpen(); }} title="Open distribution" disabled={pageBusy}>
+          <Button type="button" variant="ghost" size="xs" className="row-action icon-only" onClick={event => { event.stopPropagation(); onOpen(); }} title="Open distribution" disabled={pageBusy}>
             <Ic d="M9 18l6-6-6-6" size={13} />
-          </button>
+          </Button>
           {canEdit && (
-            <button type="button" className="btn btn-xs btn-ghost row-action icon-only" onClick={event => { event.stopPropagation(); onEdit(); }} title="Edit item" disabled={pageBusy}>
+            <Button type="button" variant="ghost" size="xs" className="row-action icon-only" onClick={event => { event.stopPropagation(); onEdit(); }} title="Edit item" disabled={pageBusy}>
               <Ic d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" size={13} />
-            </button>
+            </Button>
           )}
           {canDelete && (
-            <button type="button" className="btn btn-xs btn-danger-ghost row-action icon-only" onClick={event => { event.stopPropagation(); onDelete(); }} title={deleteBusy ? "Deleting item" : "Delete item"} disabled={pageBusy}>
+            <Button type="button" variant="outline" size="xs" className="btn-danger-ghost row-action icon-only" onClick={event => { event.stopPropagation(); onDelete(); }} title={deleteBusy ? "Deleting item" : "Delete item"} disabled={pageBusy}>
               <Ic d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12h6l1-12" size={13} />
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -1483,7 +1490,7 @@ export function ItemListView() {
         {fetchError && (
           <Alert
             onDismiss={() => setFetchError(null)}
-            action={<button type="button" className="btn btn-xs" onClick={() => loadItems()}>Retry</button>}
+            action={<Button type="button" variant="outline" size="xs" onClick={() => loadItems()}>Retry</Button>}
           >
             {fetchError}
           </Alert>
@@ -1497,10 +1504,10 @@ export function ItemListView() {
             <div className="page-sub">Browse inventory item definitions and open a full detail workspace from any row.</div>
           </div>
           <div className="page-head-actions">
-            <button type="button" className="btn btn-sm btn-ghost">
+            <Button type="button" variant="ghost" size="sm">
               <Ic d={<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M17 8l-5-5-5 5M12 3v12" /></>} size={14} />
               Import
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -1527,9 +1534,9 @@ export function ItemListView() {
               <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-1)", marginTop: 4 }}>{alertFocusConfig.title}</div>
               <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: 4, maxWidth: 820 }}>{alertFocusConfig.message}</div>
             </div>
-            <button type="button" className="btn btn-xs btn-ghost" onClick={clearAlertFocus}>
+            <Button type="button" variant="ghost" size="xs" onClick={clearAlertFocus}>
               Clear
-            </button>
+            </Button>
           </div>
         ) : null}
 
@@ -1595,7 +1602,7 @@ export function ItemListView() {
                   onChange={handleScopeChange}
                   placeholder="All visible locations"
                   searchPlaceholder="Search locations or stores..."
-                  minWidth={260}
+                  minWidth={220}
                 />
               </div>
             ) : null}
@@ -1603,10 +1610,10 @@ export function ItemListView() {
           <div className="filter-bar-right">
             <DensityToggle density={density} setDensity={setDensity} />
             {canManageItems ? (
-              <button type="button" className="btn btn-primary btn-sm" onClick={openCreateModal} disabled={pageBusy}>
+              <Button type="button" size="sm" onClick={openCreateModal} disabled={pageBusy}>
                 <Ic d="M12 5v14M5 12h14" size={14} />
                 New item
-              </button>
+              </Button>
             ) : null}
           </div>
         </div>
@@ -1729,7 +1736,7 @@ function ItemListTableRow({
           </div>
         </div>
       </td>
-      <td className={workspaceStyles.itemsListTrackingCell}><span className="chip">{formatTrackingTypeLabel(item.tracking_type, { compact: true })}</span></td>
+      <td className={workspaceStyles.itemsListTrackingCell}><span className={trackingChipClass(item.tracking_type)}>{formatTrackingTypeLabel(item.tracking_type, { compact: true })}</span></td>
       <td className={`mono ${workspaceStyles.itemsListNumberCell}`}>{formatQuantity(item.total_quantity)} {item.acct_unit ?? "unit"}</td>
       <td className={`mono ${workspaceStyles.itemsListNumberCell}`}>{formatQuantity(item.available_quantity)}</td>
       <td className={`mono ${workspaceStyles.itemsListNumberCell}`}>{formatQuantity(item.in_transit_quantity)}</td>
@@ -1986,9 +1993,9 @@ function WorkspaceItemRow({
         {rowBadges.length ? <span className={workspaceStyles.itemRowFlags}>{rowBadges}</span> : null}
         <span className={workspaceStyles.itemRowActions}>
           {canEdit ? (
-            <button
+            <Button
               type="button"
-              className="btn btn-xs btn-ghost row-action icon-only"
+              variant="ghost" size="xs" className="row-action icon-only"
               onClick={event => {
                 event.stopPropagation();
                 onEdit();
@@ -1997,12 +2004,12 @@ function WorkspaceItemRow({
               disabled={pageBusy}
             >
               <Ic d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" size={13} />
-            </button>
+            </Button>
           ) : null}
           {canDelete ? (
-            <button
+            <Button
               type="button"
-              className="btn btn-xs btn-danger-ghost row-action icon-only"
+              variant="outline" size="xs" className="btn-danger-ghost row-action icon-only"
               onClick={event => {
                 event.stopPropagation();
                 onDelete();
@@ -2011,7 +2018,7 @@ function WorkspaceItemRow({
               disabled={pageBusy}
             >
               <Ic d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12h6l1-12" size={13} />
-            </button>
+            </Button>
           ) : null}
         </span>
       </span>
@@ -2395,7 +2402,7 @@ function WorkspaceSelectedItemPane({
   return (
     <div className={workspaceStyles.detailStack}>
       {fetchError ? (
-        <Alert onDismiss={() => setFetchError(null)} action={<button type="button" className="btn btn-xs" onClick={() => load()}>Retry</button>}>
+        <Alert onDismiss={() => setFetchError(null)} action={<Button type="button" variant="outline" size="xs" onClick={() => load()}>Retry</Button>}>
           {fetchError}
         </Alert>
       ) : null}
@@ -2431,24 +2438,24 @@ function WorkspaceSelectedItemPane({
               </div>
             </div>
             <div className={workspaceStyles.detailHeaderActions}>
-              <button type="button" className="btn btn-sm btn-ghost" onClick={() => onSelectTab("instances")}>
+              <Button type="button" variant="ghost" size="sm" onClick={() => onSelectTab("instances")}>
                 <Ic d={<><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><path d="M14 14h3v3M21 14v7M14 21h3" /></>} size={14} />
                 QR labels
-              </button>
-              <button type="button" className="btn btn-sm btn-ghost" onClick={() => window.print()}>
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => window.print()}>
                 <Ic d={<><path d="M6 9V2h12v7" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 14h12v8H6z" /></>} size={14} />
                 Print card
-              </button>
+              </Button>
               {canManageItems ? (
-                <button type="button" className="btn btn-sm" onClick={() => onEditItem(item)}>
+                <Button type="button" variant="outline" size="sm" onClick={() => onEditItem(item)}>
                   <Ic d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.1 2.1 0 113 3L12 15l-4 1 1-4 9.5-9.5Z" size={14} />
                   Edit item
-                </button>
+                </Button>
               ) : null}
-              <button type="button" className="btn btn-primary btn-sm" onClick={() => router.push(`/stock-entries?item=${itemId}`)}>
+              <Button type="button" size="sm" onClick={() => router.push(`/stock-entries?item=${itemId}`)}>
                 <Ic d="M5 12h14M12 5l7 7-7 7" size={14} />
                 New entry
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -2551,9 +2558,9 @@ function WorkspaceSelectedItemPane({
                 </div>
               </div>
               <div className="filter-bar-right">
-                <button type="button" className="btn btn-xs btn-ghost" onClick={() => setSelectedScopeTokens(defaultScopeTokens)}>
+                <Button type="button" variant="ghost" size="xs" onClick={() => setSelectedScopeTokens(defaultScopeTokens)}>
                   Reset
-                </button>
+                </Button>
               </div>
             </div>
           ) : null}
@@ -2976,19 +2983,19 @@ function WorkspaceDistributionTab({
 
               <div className={workspaceStyles.slidePanelActions}>
                 {canShowInstances(item.tracking_type) && panel.locationId ? (
-                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => onSelectTab("instances")}>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => onSelectTab("instances")}>
                     Instances here
-                  </button>
+                  </Button>
                 ) : null}
                 {canShowBatches(item.tracking_type, item.category_type) && panel.locationId ? (
-                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => onSelectTab("batches")}>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => onSelectTab("batches")}>
                     {isFixedAssetLotItem(item) ? "Asset lots here" : "Batches here"}
-                  </button>
+                  </Button>
                 ) : null}
                 {panel.locationId ? (
-                  <button type="button" className="btn btn-sm btn-ghost" onClick={onClearSelectedLocation}>
+                  <Button type="button" variant="ghost" size="sm" onClick={onClearSelectedLocation}>
                     Clear location filter
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             </div>
@@ -3136,16 +3143,16 @@ export function WorkspaceInstancesTab({
   return (
     <div className={workspaceStyles.tabStack}>
       {fetchError ? (
-        <Alert onDismiss={() => setFetchError(null)} action={<button type="button" className="btn btn-xs" onClick={() => load()}>Retry</button>}>
+        <Alert onDismiss={() => setFetchError(null)} action={<Button type="button" variant="outline" size="xs" onClick={() => load()}>Retry</Button>}>
           {fetchError}
         </Alert>
       ) : null}
       {selectedLocationId ? (
         <div className={workspaceStyles.scopeNotice}>
           <span>Filtered to the location selected in Distribution.</span>
-          <button type="button" className="btn btn-xs btn-ghost" onClick={onClearSelectedLocation}>
+          <Button type="button" variant="ghost" size="xs" onClick={onClearSelectedLocation}>
             All item instances
-          </button>
+          </Button>
         </div>
       ) : null}
       <div className={workspaceStyles.tabToolbar}>
@@ -3274,16 +3281,16 @@ export function WorkspaceBatchesTab({
   return (
     <div className={workspaceStyles.tabStack}>
       {fetchError ? (
-        <Alert onDismiss={() => setFetchError(null)} action={<button type="button" className="btn btn-xs" onClick={() => load()}>Retry</button>}>
+        <Alert onDismiss={() => setFetchError(null)} action={<Button type="button" variant="outline" size="xs" onClick={() => load()}>Retry</Button>}>
           {fetchError}
         </Alert>
       ) : null}
       {selectedLocationId ? (
         <div className={workspaceStyles.scopeNotice}>
           <span>Filtered to the location selected in Distribution.</span>
-          <button type="button" className="btn btn-xs btn-ghost" onClick={onClearSelectedLocation}>
+          <Button type="button" variant="ghost" size="xs" onClick={onClearSelectedLocation}>
             All item {pluralBatchLabel.toLowerCase()}
-          </button>
+          </Button>
         </div>
       ) : null}
       <div className={workspaceStyles.tabToolbar}>
@@ -3376,21 +3383,21 @@ function ItemPageActions({ item }: { item: ItemRecord | null }) {
   if (!item) return null;
   return (
     <>
-      <Link className="btn btn-sm" href="/items">
+      <Button asChild variant="outline" size="sm"><Link  href="/items">
         <Ic d="M15 18l-6-6 6-6" size={14} />
         Items
-      </Link>
+      </Link></Button>
       {canShowInstances(item.tracking_type) && (
-        <Link className="btn btn-sm btn-ghost" href={`/items/${item.id}/instances`}>
+        <Button asChild variant="ghost" size="sm"><Link  href={`/items/${item.id}/instances`}>
           <Ic d="M8 7V3m8 4V3M4 11h16M6 5h12a2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V7a2 2 0 012-2z" size={14} />
           Instances
-        </Link>
+        </Link></Button>
       )}
       {canShowBatches(item.tracking_type, item.category_type) && (
-        <Link className="btn btn-sm btn-ghost" href={`/items/${item.id}/batches`}>
+        <Button asChild variant="ghost" size="sm"><Link  href={`/items/${item.id}/batches`}>
           <Ic d="M20 7l-8 4-8-4m8 4v10m8-14l-8-4-8 4 8 4 8-4z" size={14} />
           {batchLabelForItem(item)}
-        </Link>
+        </Link></Button>
       )}
     </>
   );
@@ -3480,7 +3487,7 @@ export function ItemDistributionView({ itemId }: { itemId: string }) {
       <Topbar breadcrumb={["Inventory", "Items", item?.name ?? "Distribution"]} />
       <div className="page">
         {fetchError && (
-          <Alert onDismiss={() => setFetchError(null)} action={<button type="button" className="btn btn-xs" onClick={() => load()}>Retry</button>}>
+          <Alert onDismiss={() => setFetchError(null)} action={<Button type="button" variant="outline" size="xs" onClick={() => load()}>Retry</Button>}>
             {fetchError}
           </Alert>
         )}
@@ -3579,10 +3586,10 @@ export function ItemDistributionView({ itemId }: { itemId: string }) {
                       <td><span className="chip">{unit.stores.length} stores</span></td>
                       <td><span className="chip">{unit.allocations.length} targets</span></td>
                       <td className="col-actions">
-                        <Link className="btn btn-xs btn-ghost row-action" href={`/items/${itemId}/distribution/${unit.id}`} onClick={event => event.stopPropagation()}>
+                        <Button asChild variant="ghost" size="xs" className="row-action"><Link  href={`/items/${itemId}/distribution/${unit.id}`} onClick={event => event.stopPropagation()}>
                           <Ic d="M9 18l6-6-6-6" size={13} />
                           <span className="ra-label">Details</span>
-                        </Link>
+                        </Link></Button>
                       </td>
                     </tr>
                   ))}
@@ -3669,12 +3676,12 @@ export function ItemBatchDistributionView({ itemId, batchId }: { itemId: string;
       <Topbar breadcrumb={["Inventory", "Items", item?.name ?? "Item", batchTitle, "Distribution"]} />
       <div className="page">
         {fetchError && (
-          <Alert onDismiss={() => setFetchError(null)} action={<button type="button" className="btn btn-xs" onClick={() => load()}>Retry</button>}>
+          <Alert onDismiss={() => setFetchError(null)} action={<Button type="button" variant="outline" size="xs" onClick={() => load()}>Retry</Button>}>
             {fetchError}
           </Alert>
         )}
         {batchError && (
-          <Alert onDismiss={() => setBatchError(null)} action={<button type="button" className="btn btn-xs" onClick={() => loadBatch()}>Retry</button>}>
+          <Alert onDismiss={() => setBatchError(null)} action={<Button type="button" variant="outline" size="xs" onClick={() => loadBatch()}>Retry</Button>}>
             {batchError}
           </Alert>
         )}
@@ -3688,14 +3695,14 @@ export function ItemBatchDistributionView({ itemId, batchId }: { itemId: string;
             </div>
           </div>
           <div className="page-head-actions">
-            <Link className="btn btn-sm" href={`/items/${itemId}/batches`}>
+            <Button asChild variant="outline" size="sm"><Link  href={`/items/${itemId}/batches`}>
               <Ic d="M15 18l-6-6 6-6" size={14} />
               {batchLabelForItem(item)}
-            </Link>
-            <Link className="btn btn-sm btn-ghost" href={`/items/${itemId}`}>
+            </Link></Button>
+            <Button asChild variant="ghost" size="sm"><Link  href={`/items/${itemId}`}>
               <Ic d="M3 12h18M3 6h18M3 18h18" size={14} />
               Item
-            </Link>
+            </Link></Button>
           </div>
         </div>
 
@@ -3885,7 +3892,7 @@ export function ItemStandaloneDistributionView({ itemId, standaloneId }: { itemI
       <Topbar breadcrumb={["Inventory", "Items", item?.name ?? "Item", unit?.name ?? "Location"]} />
       <div className="page">
         {fetchError && (
-          <Alert onDismiss={() => setFetchError(null)} action={<button type="button" className="btn btn-xs" onClick={() => load()}>Retry</button>}>
+          <Alert onDismiss={() => setFetchError(null)} action={<Button type="button" variant="outline" size="xs" onClick={() => load()}>Retry</Button>}>
             {fetchError}
           </Alert>
         )}
@@ -3904,10 +3911,10 @@ export function ItemStandaloneDistributionView({ itemId, standaloneId }: { itemI
             </div>
           </div>
           <div className="page-head-actions">
-            <Link className="btn btn-sm" href={`/items/${itemId}`}>
+            <Button asChild variant="outline" size="sm"><Link  href={`/items/${itemId}`}>
               <Ic d="M15 18l-6-6 6-6" size={14} />
               Distribution
-            </Link>
+            </Link></Button>
             <ItemPageActions item={item} />
           </div>
         </div>
@@ -4028,16 +4035,16 @@ export function ItemStandaloneDistributionView({ itemId, standaloneId }: { itemI
                       <td className="mono">{row.stockEntryIds.length ? row.stockEntryIds.join(", ") : "-"}</td>
                       <td className="col-actions">
                         {item && row.locationId && canShowInstances(item.tracking_type) && (
-                          <Link className="btn btn-xs btn-ghost row-action" href={`/items/${itemId}/instances?location=${row.locationId}`}>
+                          <Button asChild variant="ghost" size="xs" className="row-action"><Link  href={`/items/${itemId}/instances?location=${row.locationId}`}>
                             <Ic d="M4 7h16M4 12h16M4 17h16" size={13} />
                             <span className="ra-label">Instances</span>
-                          </Link>
+                          </Link></Button>
                         )}
                         {item && row.locationId && canShowBatches(item.tracking_type, item.category_type) && (
-                          <Link className="btn btn-xs btn-ghost row-action" href={`/items/${itemId}/batches?location=${row.locationId}`}>
+                          <Button asChild variant="ghost" size="xs" className="row-action"><Link  href={`/items/${itemId}/batches?location=${row.locationId}`}>
                             <Ic d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" size={13} />
                             <span className="ra-label">{batchLabelForItem(item)}</span>
-                          </Link>
+                          </Link></Button>
                         )}
                       </td>
                     </tr>
@@ -4155,7 +4162,7 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
       <Topbar breadcrumb={["Inventory", "Items", item?.name ?? "Item", "Instances"]} />
       <div className="page">
         {fetchError && (
-          <Alert onDismiss={() => setFetchError(null)} action={<button type="button" className="btn btn-xs" onClick={() => load()}>Retry</button>}>
+          <Alert onDismiss={() => setFetchError(null)} action={<Button type="button" variant="outline" size="xs" onClick={() => load()}>Retry</Button>}>
             {fetchError}
           </Alert>
         )}
@@ -4167,10 +4174,10 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
             <div className="page-sub">{item ? `${item.code} / ${formatItemLabel(String(item.tracking_type ?? ""))}` : "Loading tracked item instances."}</div>
           </div>
           <div className="page-head-actions">
-            <Link className="btn btn-sm" href={`/items/${itemId}`}>
+            <Button asChild variant="outline" size="sm"><Link  href={`/items/${itemId}`}>
               <Ic d="M15 18l-6-6 6-6" size={14} />
               Distribution
-            </Link>
+            </Link></Button>
           </div>
         </div>
 
@@ -4345,13 +4352,8 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
     <div>
       <Topbar breadcrumb={["Inventory", "Items", item?.name ?? "Item", "Instances", title]} />
       <div className="page">
-        <Link className="detail-page-back" href={`/items/${itemId}/instances`}>
-          <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
-          Back to Instances
-        </Link>
-
         {fetchError && (
-          <Alert onDismiss={() => setFetchError(null)} action={<button type="button" className="btn btn-xs" onClick={() => load()}>Retry</button>}>
+          <Alert onDismiss={() => setFetchError(null)} action={<Button type="button" variant="outline" size="xs" onClick={() => load()}>Retry</Button>}>
             {fetchError}
           </Alert>
         )}
@@ -4372,10 +4374,14 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
                 </div>
               </div>
               <div className="page-head-actions">
-                <Link className="btn btn-sm" href={`/items/${itemId}`}>
+                <Button asChild variant="outline" size="sm" className="page-head-back"><Link href={`/items/${itemId}/instances`}>
+                  <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
+                  Back to Instances
+                </Link></Button>
+                <Button asChild variant="outline" size="sm"><Link  href={`/items/${itemId}`}>
                   <Ic d="M3 12h18M3 6h18M3 18h18" size={14} />
                   Distribution
-                </Link>
+                </Link></Button>
               </div>
             </div>
 
@@ -4494,7 +4500,7 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
       <Topbar breadcrumb={["Inventory", "Items", item?.name ?? "Item", pluralBatchLabel]} />
       <div className="page">
         {fetchError && (
-          <Alert onDismiss={() => setFetchError(null)} action={<button type="button" className="btn btn-xs" onClick={() => load()}>Retry</button>}>
+          <Alert onDismiss={() => setFetchError(null)} action={<Button type="button" variant="outline" size="xs" onClick={() => load()}>Retry</Button>}>
             {fetchError}
           </Alert>
         )}
@@ -4506,10 +4512,10 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
             <div className="page-sub">{item ? `${item.code} / ${formatItemLabel(String(item.tracking_type ?? ""))}` : "Loading item batch records."}</div>
           </div>
           <div className="page-head-actions">
-            <Link className="btn btn-sm" href={`/items/${itemId}`}>
+            <Button asChild variant="outline" size="sm"><Link  href={`/items/${itemId}`}>
               <Ic d="M15 18l-6-6 6-6" size={14} />
               Distribution
-            </Link>
+            </Link></Button>
           </div>
         </div>
 
@@ -4607,10 +4613,10 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
                       <td>{record.created_by_name ?? "-"}</td>
                       <td>{formatItemDate(record.updated_at)}</td>
                       <td className="col-actions">
-                        <Link className="btn btn-xs btn-ghost row-action" href={`/items/${itemId}/batches/${record.id}/distribution`}>
+                        <Button asChild variant="ghost" size="xs" className="row-action"><Link  href={`/items/${itemId}/batches/${record.id}/distribution`}>
                           <Ic d="M4 7h16M4 12h16M4 17h16" size={13} />
                           <span className="ra-label">Distribution</span>
-                        </Link>
+                        </Link></Button>
                       </td>
                     </tr>
                   ))}

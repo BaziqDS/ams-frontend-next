@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
+import { Button } from "@/components/ui/button";
 import { ApiError, apiFetch } from "@/lib/api";
 import { useCapabilities } from "@/contexts/CapabilitiesContext";
 import { flattenDistributionDetails, formatQuantity, type ItemDistributionUnit } from "@/lib/itemUi";
@@ -108,10 +109,6 @@ export default function InspectionItemDistributionPage() {
       />
 
       <div className="page" id="page-inspection-distribution">
-        <Link className="detail-page-back" href={`/inspections/${params.id}`}>
-          Back to Inspection
-        </Link>
-
         {error ? (
           <div className="detail-alert">
             <strong>Unable to load distribution</strong>
@@ -134,6 +131,11 @@ export default function InspectionItemDistributionPage() {
                   <span className="doc-no">{trackingBatch}</span>
                   <span className="chip">Quantity Tracking</span>
                 </div>
+              </div>
+              <div className="page-head-actions">
+                <Button asChild variant="outline" size="sm" className="page-head-back">
+                  <Link href={`/inspections/${params.id}`}>Back to Inspection</Link>
+                </Button>
               </div>
             </div>
 
