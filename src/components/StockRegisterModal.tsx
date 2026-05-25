@@ -143,6 +143,11 @@ export function StockRegisterModal({ open, mode, register, stores, storesLoading
   }, [open, register]);
 
   useEffect(() => {
+    if (!open || isEditMode || storesLoading || storesError || stores.length !== 1) return;
+    setForm((prev) => (prev.store ? prev : { ...prev, store: String(stores[0].id) }));
+  }, [isEditMode, open, stores, storesError, storesLoading]);
+
+  useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();

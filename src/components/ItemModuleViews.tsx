@@ -161,6 +161,12 @@ export type WorkspaceLocationPanelState = {
   allocations: ItemDistributionAllocation[];
 };
 
+type WorkspacePanelHolderFilter = "all" | "store" | "location" | "person";
+
+export type WorkspacePanelHolderRow =
+  | { id: string; kind: "store"; label: string; meta: string; quantity: number; store: ItemDistributionStore; allocation?: never }
+  | { id: string; kind: "location" | "person"; label: string; meta: string; quantity: number; allocation: ItemDistributionAllocation; store?: never };
+
 export function workspaceTrackingIcon(trackingType: string | null | undefined) {
   if (trackingType === "INDIVIDUAL") {
     return <Ic d={<><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="M3.3 7 12 12l8.7-5M12 22V12" /></>} size={14} />;
@@ -245,7 +251,7 @@ export function buildStorePanelState(item: ItemRecord, unit: ItemDistributionUni
     allocatedQuantity: store.allocatedTotal,
     inTransitQuantity: store.inTransitQuantity,
     stores: [],
-    allocations: unit.allocations.filter(allocation => allocation.sourceStoreId === store.id),
+    allocations: unit.allocations.filter(allocation => isAllocationFromStore(allocation, store)),
   };
 }
 
@@ -253,17 +259,46 @@ export function buildAllocationPanelState(item: ItemRecord, unit: ItemDistributi
   return {
     key: `allocation-${allocation.id}`,
     unitId: unit.id,
-    eyebrow: allocation.targetType === "PERSON" ? "Allocated to person" : "Allocated to location",
+    eyebrow: allocation.targetType === "PERSON" ? "Allocated to employee" : "Allocated to location",
     title: allocation.targetName,
     subtitle: `${allocation.sourceStoreName} · ${formatQuantity(allocation.quantity)} ${item.acct_unit ?? "unit"} of ${item.name}`,
     locationId: allocation.locationId != null ? String(allocation.locationId) : null,
     quantity: allocation.quantity,
-    availableQuantity: null,
-    allocatedQuantity: allocation.quantity,
+    availableQuantity: allocation.quantity,
+    allocatedQuantity: null,
     inTransitQuantity: null,
     stores: [],
     allocations: [],
   };
+}
+
+function isAllocationFromStore(allocation: ItemDistributionAllocation, store: ItemDistributionStore) {
+  return allocation.sourceStoreId === store.locationId || allocation.sourceStoreId === store.id;
+}
+
+function findStoreForAllocation(unit: ItemDistributionUnit, allocation: ItemDistributionAllocation) {
+  return unit.stores.find(store => isAllocationFromStore(allocation, store)) ?? null;
+}
+
+export function buildWorkspacePanelHolderRows(panel: WorkspaceLocationPanelState, acctUnit = "unit"): WorkspacePanelHolderRow[] {
+  return [
+    ...panel.stores.map(store => ({
+      id: `store-${store.id}`,
+      kind: "store" as const,
+      label: store.locationName,
+      meta: `${store.batchNumber ? `Batch ${store.batchNumber} · ` : ""}${formatQuantity(store.quantity)} ${acctUnit}`,
+      quantity: store.availableQuantity,
+      store,
+    })),
+    ...panel.allocations.map(allocation => ({
+      id: `allocation-${allocation.id}`,
+      kind: allocation.targetType === "PERSON" ? "person" as const : "location" as const,
+      label: allocation.targetName,
+      meta: `${allocation.sourceStoreName} · ${formatItemDate(allocation.allocatedAt, "Unknown")}`,
+      quantity: allocation.quantity,
+      allocation,
+    })),
+  ];
 }
 
 export function buildCategoryPath(categoryId: number | string | null | undefined, categories: CategoryRecord[], fallback?: string | null) {
@@ -2088,6 +2123,7 @@ function WorkspaceLocatePalette({
         });
       });
       unit.allocations.forEach(allocation => {
+        const sourceStore = findStoreForAllocation(unit, allocation);
         if (allocation.targetType === "PERSON") {
           out.push({
             kind: "person",
@@ -2095,7 +2131,7 @@ function WorkspaceLocatePalette({
             name: allocation.targetName,
             tag: allocation.batchNumber ? `Batch ${allocation.batchNumber}` : `${formatQuantity(allocation.quantity)} ${acctUnit}`,
             path: `${unit.name} › ${allocation.sourceStoreName}`,
-            jump: { unitId: unit.id, storeId: allocation.sourceStoreId },
+            jump: { unitId: unit.id, storeId: sourceStore?.id },
           });
         }
       });
@@ -2141,7 +2177,7 @@ function WorkspaceLocatePalette({
             autoFocus
             value={query}
             onChange={event => setQuery(event.target.value)}
-            placeholder={`Find a location, store row or person within ${itemShortName}…`}
+            placeholder={`Find a location, store row or employee within ${itemShortName}…`}
             onKeyDown={event => {
               if (event.key === "Escape") onClose();
               if (event.key === "Enter" && filtered.length) {
@@ -2203,7 +2239,7 @@ function WorkspaceLocatePalette({
               )}
               {grouped.persons.length > 0 && (
                 <>
-                  <div className={workspaceStyles.locateSectionH}>Allocated to persons · {grouped.persons.length}</div>
+                  <div className={workspaceStyles.locateSectionH}>Allocated to employees · {grouped.persons.length}</div>
                   {grouped.persons.slice(0, 10).map(row => (
                     <button
                       key={row.key}
@@ -2632,6 +2668,7 @@ function WorkspaceDistributionTab({
 }) {
   const [openNodes, setOpenNodes] = useState<Set<string>>(() => new Set());
   const [panel, setPanel] = useState<WorkspaceLocationPanelState | null>(null);
+  const [panelHolderFilter, setPanelHolderFilter] = useState<WorkspacePanelHolderFilter>("all");
 
   const filteredUnits = units;
 
@@ -2667,6 +2704,14 @@ function WorkspaceDistributionTab({
     () => panel ? units.find(unit => unit.id === panel.unitId) ?? null : null,
     [panel, units],
   );
+  const panelHolderRows = useMemo(
+    () => panel ? buildWorkspacePanelHolderRows(panel, item.acct_unit ?? "unit") : [],
+    [item.acct_unit, panel],
+  );
+  const filteredPanelHolderRows = useMemo(
+    () => panelHolderRows.filter(row => panelHolderFilter === "all" || row.kind === panelHolderFilter),
+    [panelHolderFilter, panelHolderRows],
+  );
 
   const toggleNode = useCallback((key: string) => {
     setOpenNodes(current => {
@@ -2679,6 +2724,7 @@ function WorkspaceDistributionTab({
 
   const inspectPanel = useCallback((nextPanel: WorkspaceLocationPanelState) => {
     setPanel(nextPanel);
+    setPanelHolderFilter("all");
     if (nextPanel.locationId) {
       onSelectLocation(nextPanel.locationId);
     }
@@ -2698,7 +2744,7 @@ function WorkspaceDistributionTab({
       >
         <Ic d={<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>} size={14} />
         <span style={{ flex: 1, fontSize: 13, color: "var(--muted)" }}>
-          Locate within {item.name.split("—")[0].trim()} — search by department, store row, or person…
+          Locate within {item.name.split("—")[0].trim()} — search by department, store row, or employee…
         </span>
         <span className={workspaceStyles.locateBarKbd}>⌘K</span>
       </button>
@@ -2759,7 +2805,7 @@ function WorkspaceDistributionTab({
                     {unit.stores.map(store => {
                       const storeKey = `store-${store.id}`;
                       const storeOpen = openNodes.has(storeKey);
-                      const storeAllocations = unit.allocations.filter(allocation => allocation.sourceStoreId === store.id);
+                      const storeAllocations = unit.allocations.filter(allocation => isAllocationFromStore(allocation, store));
                       storeAllocations.forEach(allocation => linkedAllocationIds.add(allocation.id));
 
                       return (
@@ -2810,7 +2856,7 @@ function WorkspaceDistributionTab({
                                   className={workspaceStyles.leafRow}
                                   onClick={() => inspectPanel(buildAllocationPanelState(item, unit, allocation))}
                                 >
-                                  <span className={workspaceStyles.leafTag}>{allocation.targetType === "PERSON" ? "PERSON" : "LOCATION"}</span>
+                                  <span className={workspaceStyles.leafTag}>{allocation.targetType === "PERSON" ? "EMPLOYEE" : "NON-STORE"}</span>
                                   <span className={workspaceStyles.leafMid}>
                                     <span className={workspaceStyles.leafName}>{allocation.targetName}</span>
                                     <span className={workspaceStyles.leafStatus}>allocated</span>
@@ -2837,7 +2883,7 @@ function WorkspaceDistributionTab({
                             className={workspaceStyles.leafRow}
                             onClick={() => inspectPanel(buildAllocationPanelState(item, unit, allocation))}
                           >
-                            <span className={workspaceStyles.leafTag}>{allocation.targetType === "PERSON" ? "PERSON" : "LOCATION"}</span>
+                            <span className={workspaceStyles.leafTag}>{allocation.targetType === "PERSON" ? "EMPLOYEE" : "NON-STORE"}</span>
                             <span className={workspaceStyles.leafMid}>
                               <span className={workspaceStyles.leafName}>{allocation.targetName}</span>
                               <span className={workspaceStyles.leafStatus}>allocated</span>
@@ -2882,52 +2928,48 @@ function WorkspaceDistributionTab({
                 <WorkspaceMetric label="In transit" value={panel.inTransitQuantity == null ? "—" : <>{formatQuantity(panel.inTransitQuantity)}<span className={workspaceStyles.metricUnit}>{item.acct_unit ?? "unit"}</span></>} />
               </div>
 
-              {panel.stores.length ? (
+              {panelHolderRows.length ? (
                 <div className={workspaceStyles.panelSection}>
-                  <div className={workspaceStyles.panelSectionLabel}>Store rows · {panel.stores.length}</div>
-                  <div className={workspaceStyles.panelList}>
-                    {panel.stores.map(store => (
+                  <div className={workspaceStyles.panelSectionLabel}>Inventory holders · {filteredPanelHolderRows.length} of {panelHolderRows.length}</div>
+                  <div className="chip-filter" style={{ marginBottom: 10 }}>
+                    {[
+                      { k: "all", label: "All" },
+                      { k: "store", label: "Stores" },
+                      { k: "location", label: "Non-store" },
+                      { k: "person", label: "Employees" },
+                    ].map(option => (
                       <button
-                        key={store.id}
+                        key={option.k}
                         type="button"
-                        className={workspaceStyles.panelRow}
-                        onClick={() => {
-                          if (panelUnit) inspectPanel(buildStorePanelState(item, panelUnit, store));
-                        }}
+                        className={"chip-filter-btn" + (panelHolderFilter === option.k ? " active" : "")}
+                        onClick={() => setPanelHolderFilter(option.k as WorkspacePanelHolderFilter)}
                       >
-                        <span className={workspaceStyles.panelRowIcon}>{workspaceLocationIcon("store")}</span>
-                        <span className={workspaceStyles.panelRowText}>
-                          <span className={workspaceStyles.panelRowTitle}>{store.locationName}</span>
-                          <span className={workspaceStyles.panelRowMeta}>{store.batchNumber ? `Batch ${store.batchNumber} · ` : ""}{formatQuantity(store.quantity)} {item.acct_unit ?? "unit"}</span>
-                        </span>
-                        <span className={workspaceStyles.panelRowValue}>{formatQuantity(store.availableQuantity)}</span>
+                        {option.label}
                       </button>
                     ))}
                   </div>
-                </div>
-              ) : null}
-
-              {panel.allocations.length ? (
-                <div className={workspaceStyles.panelSection}>
-                  <div className={workspaceStyles.panelSectionLabel}>Allocations · {panel.allocations.length}</div>
                   <div className={workspaceStyles.panelList}>
-                    {panel.allocations.map(allocation => (
+                    {filteredPanelHolderRows.length ? filteredPanelHolderRows.map(row => (
                       <button
-                        key={allocation.id}
+                        key={row.id}
                         type="button"
                         className={workspaceStyles.panelRow}
                         onClick={() => {
-                          if (panelUnit) inspectPanel(buildAllocationPanelState(item, panelUnit, allocation));
+                          if (!panelUnit) return;
+                          if (row.kind === "store") inspectPanel(buildStorePanelState(item, panelUnit, row.store));
+                          else inspectPanel(buildAllocationPanelState(item, panelUnit, row.allocation));
                         }}
                       >
-                        <span className={workspaceStyles.panelRowIcon}>{workspaceLocationIcon(allocation.targetType === "PERSON" ? "person" : "location")}</span>
+                        <span className={workspaceStyles.panelRowIcon}>{workspaceLocationIcon(row.kind)}</span>
                         <span className={workspaceStyles.panelRowText}>
-                          <span className={workspaceStyles.panelRowTitle}>{allocation.targetName}</span>
-                          <span className={workspaceStyles.panelRowMeta}>{allocation.sourceStoreName} · {formatItemDate(allocation.allocatedAt, "Unknown")}</span>
+                          <span className={workspaceStyles.panelRowTitle}>{row.label}</span>
+                          <span className={workspaceStyles.panelRowMeta}>{row.meta}</span>
                         </span>
-                        <span className={workspaceStyles.panelRowValue}>{formatQuantity(allocation.quantity)}</span>
+                        <span className={workspaceStyles.panelRowValue}>{formatQuantity(row.quantity)}</span>
                       </button>
-                    ))}
+                    )) : (
+                      <div className={workspaceStyles.listEmpty}>No holders match this filter.</div>
+                    )}
                   </div>
                 </div>
               ) : null}
@@ -3465,7 +3507,7 @@ export function ItemDistributionView({ itemId }: { itemId: string }) {
           <div className="filter-bar-left">
             <div className="search-input">
               <Ic d={<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>} size={14} />
-              <input placeholder="Search standalone, store, person, or sub-location..." value={search} onChange={e => setSearch(e.target.value)} />
+              <input placeholder="Search standalone, store, employee, or non-store location..." value={search} onChange={e => setSearch(e.target.value)} />
               {search && <button type="button" className="clear-search" onClick={() => setSearch("")}>x</button>}
             </div>
             <div className="chip-filter-group">
@@ -3688,7 +3730,7 @@ export function ItemBatchDistributionView({ itemId, batchId }: { itemId: string;
           <div className="filter-bar-left">
             <div className="search-input">
               <Ic d={<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>} size={14} />
-              <input placeholder="Search standalone, store, person, or sub-location..." value={search} onChange={e => setSearch(e.target.value)} />
+              <input placeholder="Search standalone, store, employee, or non-store location..." value={search} onChange={e => setSearch(e.target.value)} />
               {search && <button type="button" className="clear-search" onClick={() => setSearch("")}>x</button>}
             </div>
             <div className="chip-filter-group">
@@ -3793,7 +3835,7 @@ export function ItemBatchDistributionView({ itemId, batchId }: { itemId: string;
 
 function detailKindLabel(kind: ItemDistributionDetailRow["kind"]) {
   if (kind === "store") return "Store location";
-  if (kind === "person") return "Person";
+  if (kind === "person") return "Employee";
   return "Non-store location";
 }
 
@@ -3858,7 +3900,7 @@ export function ItemStandaloneDistributionView({ itemId, standaloneId }: { itemI
             <div className="eyebrow">Standalone detail</div>
             <h1>{unit?.name ?? "Location distribution"}</h1>
             <div className="page-sub">
-              {item && unit ? `${item.name} / ${item.code} / ${unit.code}` : "Loading store, non-store, and person distribution."}
+              {item && unit ? `${item.name} / ${item.code} / ${unit.code}` : "Loading store, non-store, and employee distribution."}
             </div>
           </div>
           <div className="page-head-actions">
@@ -3901,7 +3943,7 @@ export function ItemStandaloneDistributionView({ itemId, standaloneId }: { itemI
           <div className="filter-bar-left">
             <div className="search-input">
               <Ic d={<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>} size={14} />
-              <input placeholder="Search store, lab, person, batch, or stock entry..." value={search} onChange={e => setSearch(e.target.value)} />
+              <input placeholder="Search store, lab, employee, batch, or stock entry..." value={search} onChange={e => setSearch(e.target.value)} />
               {search && <button type="button" className="clear-search" onClick={() => setSearch("")}>x</button>}
             </div>
             <div className="filter-select-group">
@@ -3916,7 +3958,7 @@ export function ItemStandaloneDistributionView({ itemId, standaloneId }: { itemI
                     { value: "all", label: "All rows" },
                     { value: "store", label: "Stores" },
                     { value: "location", label: "Non-store locations" },
-                    { value: "person", label: "Persons" },
+                    { value: "person", label: "Employees" },
                   ]}
                 />
               </div>
@@ -3930,7 +3972,7 @@ export function ItemStandaloneDistributionView({ itemId, standaloneId }: { itemI
         <div className="table-card">
           <div className="table-card-head">
             <div className="table-card-head-left">
-              <div className="eyebrow">Store, sub-location, and person distribution</div>
+              <div className="eyebrow">Store, non-store, and employee distribution</div>
               <div className="table-count">
                 <span className="mono">{filteredDetails.length}</span>
                 <span>of</span>

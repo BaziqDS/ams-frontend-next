@@ -86,8 +86,8 @@ describe("item UI helpers", () => {
   it("flattens store and allocation rows for standalone detail pages", () => {
     expect(flattenDistributionDetails(units[0])).toEqual([
       expect.objectContaining({ kind: "store", name: "CSIT Main Store", quantity: 3 }),
-      expect.objectContaining({ kind: "person", name: "Dr. A. Khan", quantity: 2 }),
-      expect.objectContaining({ kind: "location", name: "CIS Lab B", quantity: 2, locationId: 102 }),
+      expect.objectContaining({ kind: "person", name: "Dr. A. Khan", quantity: 2, availableQuantity: 2, allocatedQuantity: null }),
+      expect.objectContaining({ kind: "location", name: "CIS Lab B", quantity: 2, availableQuantity: 2, allocatedQuantity: null, locationId: 102 }),
     ]);
   });
 

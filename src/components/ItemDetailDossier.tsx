@@ -78,6 +78,7 @@ type TransactionTone = "positive" | "negative" | "neutral";
 export interface DistributionPanelRow {
   id: string;
   name: string;
+  kind?: "unit" | "store" | "location" | "person";
   allocated: number;
   available: number;
   inTransit: number;
@@ -612,11 +613,13 @@ function ItemOverviewLayout({
     () => recentEntries.map(entry => buildStockEntryRow(entry, item.id, acctUnit)),
     [acctUnit, item.id, recentEntries],
   );
+  const visibleUnits = units.slice(0, 4);
+  const stockTone = outFlag ? "danger" : lowFlag ? "warn" : "ok";
 
   return (
-    <div className={styles.overviewPage}>
-      <div className={styles.overviewHead}>
-        <div className={styles.overviewTitleSide}>
+    <div className={styles.dossierPage}>
+      <header className={styles.dossierHero}>
+        <div className={styles.dossierHeroMain}>
           <div className={styles.crumbs}>
             <button type="button" onClick={onBack}>Items</button>
             <Ic d="M9 18l6-6-6-6" size={12} />
@@ -624,22 +627,26 @@ function ItemOverviewLayout({
             <Ic d="M9 18l6-6-6-6" size={12} />
             <strong>{item.code}</strong>
           </div>
-          <h1 className={styles.overviewTitle}>{item.name}</h1>
-          <div className={styles.overviewChips}>
-            <span className={styles.codeChip}>{item.code}</span>
+          <div className={styles.heroIdentityLine}>
+            <span className={styles.heroCode}>{item.code}</span>
             <span className={styles.trackChip} data-t={workspaceTrackingTone(item.tracking_type)}>
               <span />
               {trackingLabel}
             </span>
-            <span className={styles.statusChip} data-tone={outFlag ? "danger" : lowFlag ? "warn" : "ok"}>
+            <span className={styles.statusChip} data-tone={stockTone}>
               <span />
               {outFlag ? "Out of stock" : lowFlag ? "Low stock" : item.is_active ? "Active" : "Inactive"}
             </span>
           </div>
+          <h1 className={styles.dossierTitle}>{item.name}</h1>
+          <p className={styles.dossierSummary}>
+            {item.description?.trim() || "No description has been added for this item."}
+          </p>
         </div>
-        <div className={styles.overviewActions}>
+
+        <div className={styles.heroActionRail}>
           {canManageItems ? (
-            <button type="button" className="btn" onClick={onEdit}>
+            <button type="button" className="btn btn-primary" onClick={onEdit}>
               <Ic d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.1 2.1 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5Z" size={14} />
               Edit Item
             </button>
@@ -654,80 +661,61 @@ function ItemOverviewLayout({
             <Ic d="M6 9l6 6 6-6" size={12} />
           </button>
         </div>
-      </div>
+      </header>
 
-      <div className={styles.overviewGrid}>
-        <section className={`${styles.detailPanel} ${styles.infoPanel}`}>
-          <h2>Item Information</h2>
-          <div className={styles.infoSplit}>
-            <div className={styles.infoRows}>
-              <InfoRow label="Category" value={categoryPath ?? item.category_display ?? "Uncategorized"} />
-              <InfoRow label="Category Type" value={formatItemLabel(item.category_type, "-")} />
-              <InfoRow label="Tracking Method" value={formatItemLabel(item.tracking_type, "-")} />
-              <InfoRow label="Description" value={item.description?.trim() || "No description has been added for this item."} />
-              <InfoRow label="Unit of Measure" value={acctUnit} />
-              <InfoRow label="SKU" value={item.code} mono />
-              <InfoRow label="Low Stock Threshold" value={`${formatQuantity(lowStockThreshold)} ${acctUnit}`} />
-              <InfoRow label="Status" value={item.is_active ? "Active" : "Inactive"} />
-              <InfoRow label="Created At" value={formatItemDateTime(item.created_at)} />
-              <InfoRow label="Last Updated" value={lastUpdated} />
-            </div>
-            <div className={styles.powerCard}>
-              <div className={styles.powerTop}>
-                <span className={styles.powerShield}>{units.length}</span>
-                <div>
-                  <span className={styles.powerLabel}>Location Scope</span>
-                  <strong>{units.length === 1 ? "1 location" : `${units.length} locations`}</strong>
-                  <p>Distribution shown here is limited to the current permission scope.</p>
-                </div>
-              </div>
-              <div className={styles.sideDivider} />
-              <span className={styles.powerLabel}>Created By</span>
-              <div className={styles.createdBy}>
-                <span>{initials(item.created_by_name || "Not available")}</span>
-                {item.created_by_name || "Not available"}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className={styles.detailPanel}>
-          <div className={styles.cardTitleRow}>
-            <h2>Stock Overview</h2>
-            <span>As of {lastUpdated}</span>
-          </div>
-          <div className={styles.stockStats}>
-            <StockMetric label="Total Stock" value={totalQuantity} unit={acctUnit} />
-            <StockMetric label="Allocated" value={allocatedQuantity} unit={acctUnit} />
-            <StockMetric label="Available" value={availableQuantity} unit={acctUnit} tone="success" />
-          </div>
+      <section className={styles.stockCommand}>
+        <div className={styles.stockCommandLead}>
+          <span>Available stock</span>
+          <strong>{formatQuantity(availableQuantity)} <em>{acctUnit}</em></strong>
+          <small>{availablePct}% of total inventory</small>
+        </div>
+        <StockMetric label="Total" value={totalQuantity} unit={acctUnit} />
+        <StockMetric label="Allocated" value={allocatedQuantity} unit={acctUnit} />
+        <StockMetric label="In Transit" value={inTransitQuantity} unit={acctUnit} />
+        <div className={styles.stockCommandStatus}>
+          <span className={styles.statusChip} data-tone={stockTone}>
+            <span />
+            {outFlag ? "Empty" : lowFlag ? "Attention" : "Healthy"}
+          </span>
           <div className={styles.stockBar}>
             <span style={{ width: `${Math.min(100, allocatedPct)}%` }} />
           </div>
-          <div className={styles.stockBarLabels}>
-            <strong>{allocatedPct}% allocated</strong>
-            <strong>{availablePct}% available</strong>
-          </div>
-          <div className={styles.stockStatusRow}>
-            <span>Stock Status</span>
-            <span className={styles.statusChip} data-tone={outFlag ? "danger" : lowFlag ? "warn" : "ok"}>
-              <span />
-              {outFlag ? "Empty" : lowFlag ? "Attention" : "Healthy"}
-            </span>
-          </div>
-          <div className={styles.reorderGrid}>
-            <div>
-              <span>Reorder Level</span>
-              <strong>{formatQuantity(lowStockThreshold)} <em>{acctUnit}</em></strong>
-            </div>
-            <div>
-              <span>In Transit</span>
-              <strong>{formatQuantity(inTransitQuantity)} <em>{acctUnit}</em></strong>
-            </div>
-          </div>
-        </section>
+          <small>{allocatedPct}% allocated · reorder at {formatQuantity(lowStockThreshold)} {acctUnit}</small>
+        </div>
+      </section>
 
-        <section className={`${styles.detailPanel} ${styles.transactionsPanel}`}>
+      <div className={styles.dossierGrid}>
+        <main className={styles.dossierMain}>
+          <section className={styles.detailPanel}>
+            <div className={styles.cardTitleRow}>
+              <h2>Distribution Snapshot</h2>
+              <button type="button" className={styles.panelTextButton} onClick={() => setDistributionOpen(true)}>
+                Open full ledger
+              </button>
+            </div>
+            {visibleUnits.length ? (
+              <div className={styles.unitPreviewList}>
+                {visibleUnits.map(unit => {
+                  const unitTotal = toNumber(unit.totalQuantity);
+                  const width = maxPercent(unitTotal, totalQuantity);
+                  return (
+                    <button key={unit.id} type="button" className={styles.unitPreviewRow} onClick={onLocate}>
+                      <span className={styles.unitPreviewMain}>
+                        <strong>{unit.name}</strong>
+                        <small>{unit.code || "No location code"} · {unit.stores.length} store rows</small>
+                      </span>
+                      <span className={styles.unitPreviewBar}><span style={{ width: `${width}%` }} /></span>
+                      <span className={styles.unitPreviewQty}>{formatQuantity(unitTotal)} {acctUnit}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className={styles.transactionEmpty}>No distribution is visible in your current permission scope.</div>
+            )}
+          </section>
+
+          <section className={`${styles.detailPanel} ${styles.transactionsPanel}`}>
           <h2>Recent Transactions</h2>
           <table className={styles.transactionTable}>
             <thead>
@@ -767,11 +755,37 @@ function ItemOverviewLayout({
             View all transactions
             <Ic d="M5 12h14M12 5l7 7-7 7" size={14} />
           </button>
-        </section>
+          </section>
+        </main>
 
-        <aside className={styles.sideStack}>
+        <aside className={styles.dossierAside}>
           <section className={styles.detailPanel}>
-            <h2>Quick Actions</h2>
+            <h2>Record Details</h2>
+            <div className={styles.recordList}>
+              <InfoRow label="Category" value={categoryPath ?? item.category_display ?? "Uncategorized"} />
+              <InfoRow label="Category Type" value={formatItemLabel(item.category_type, "-")} />
+              <InfoRow label="Tracking Method" value={formatItemLabel(item.tracking_type, "-")} />
+              <InfoRow label="Unit of Measure" value={acctUnit} />
+              <InfoRow label="SKU" value={item.code} mono />
+              <InfoRow label="Status" value={item.is_active ? "Active" : "Inactive"} />
+              <InfoRow label="Created At" value={formatItemDateTime(item.created_at)} />
+              <InfoRow label="Last Updated" value={lastUpdated} />
+            </div>
+          </section>
+
+          <section className={styles.detailPanel}>
+            <h2>Scope & Actions</h2>
+            <div className={styles.scopeSummary}>
+              <span className={styles.powerShield}>{units.length}</span>
+              <div>
+                <strong>{units.length === 1 ? "1 location" : `${units.length} locations`}</strong>
+                <p>Distribution shown here is limited to the current permission scope.</p>
+              </div>
+            </div>
+            <div className={styles.createdBy}>
+              <span>{initials(item.created_by_name || "Not available")}</span>
+              {item.created_by_name || "Not available"}
+            </div>
             <div className={styles.quickGrid}>
               {showInstances ? (
                 <button type="button" onClick={onShowInstances}><Ic d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6" size={16} />View instances</button>
@@ -791,6 +805,11 @@ function ItemOverviewLayout({
       />
     </div>
   );
+}
+
+function maxPercent(value: number, max: number) {
+  if (max <= 0) return 0;
+  return Math.max(3, Math.min(100, Math.round((value / max) * 100)));
 }
 
 function InfoRow({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
@@ -825,6 +844,7 @@ function DistributionDrawer({
   onClose: () => void;
 }) {
   const [selectedUnitId, setSelectedUnitId] = useState<number | null>(null);
+  const [subFilter, setSubFilter] = useState<"all" | "store" | "location" | "person">("all");
 
   useEffect(() => {
     if (!open) return;
@@ -846,6 +866,10 @@ function DistributionDrawer({
   const standaloneRows = useMemo(() => buildStandaloneDistributionRows(units), [units]);
   const selectedUnit = units.find(unit => unit.id === selectedUnitId) ?? units[0] ?? null;
   const subRows = useMemo(() => (selectedUnit ? buildSubDistributionRows(selectedUnit) : []), [selectedUnit]);
+  const filteredSubRows = useMemo(
+    () => subRows.filter(row => subFilter === "all" || row.kind === subFilter),
+    [subFilter, subRows],
+  );
 
   if (!open) return null;
 
@@ -876,8 +900,28 @@ function DistributionDrawer({
             title="Sub Locations"
             titleSuffix={selectedUnit ? `(Under ${selectedUnit.name})` : undefined}
             columnLabel="Sub Location"
-            rows={subRows}
-            emptyLabel={selectedUnit ? "No sub-location stock rows are recorded under this location." : "No location is selected."}
+            rows={filteredSubRows}
+            emptyLabel={selectedUnit ? "No holders match this filter." : "No location is selected."}
+            controls={(
+              <div className={styles.distributionFilter}>
+                {[
+                  { k: "all", label: "All" },
+                  { k: "store", label: "Stores" },
+                  { k: "location", label: "Non-store" },
+                  { k: "person", label: "Employees" },
+                ].map(option => (
+                  <button
+                    key={option.k}
+                    type="button"
+                    className={styles.distributionFilterButton}
+                    data-active={subFilter === option.k ? "true" : "false"}
+                    onClick={() => setSubFilter(option.k as "all" | "store" | "location" | "person")}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            )}
           />
         </div>
 
@@ -900,6 +944,7 @@ function DistributionDrawerSection({
   selectedId,
   onSelect,
   emptyLabel = "No distribution rows are available.",
+  controls,
 }: {
   title: string;
   titleSuffix?: string;
@@ -908,13 +953,17 @@ function DistributionDrawerSection({
   selectedId?: string | null;
   onSelect?: (row: DistributionPanelRow) => void;
   emptyLabel?: string;
+  controls?: ReactNode;
 }) {
   return (
     <section className={styles.distributionSectionPanel}>
-      <h3>
-        {title}
-        {titleSuffix ? <span> {titleSuffix}</span> : null}
-      </h3>
+      <div className={styles.distributionSectionTop}>
+        <h3>
+          {title}
+          {titleSuffix ? <span> {titleSuffix}</span> : null}
+        </h3>
+        {controls}
+      </div>
       <div className={styles.distributionHeaderRow}>
         <span>{columnLabel}</span>
         <span>Allocated</span>
@@ -950,6 +999,10 @@ function DistributionDrawerRow({
   const allocatedPct = distributionPercent(row.allocated, row.total);
   const availablePct = distributionPercent(row.available, row.total);
   const inTransitPct = distributionPercent(row.inTransit, row.total);
+  const isPassiveTarget = row.kind === "person" || row.kind === "location";
+  const allocatedDisplay = isPassiveTarget ? "-" : formatQuantity(row.allocated);
+  const availableDisplay = isPassiveTarget ? formatQuantity(row.total) : formatQuantity(row.available);
+  const inTransitDisplay = isPassiveTarget ? "-" : formatQuantity(row.inTransit);
   const rowBody = (
     <>
       <div className={styles.distributionMainLine}>
@@ -957,20 +1010,24 @@ function DistributionDrawerRow({
           {row.name}
           {row.badge ? <em>{row.badge}</em> : null}
         </span>
-        <strong>{formatQuantity(row.allocated)}</strong>
-        <strong>{formatQuantity(row.available)}</strong>
-        <strong>{formatQuantity(row.inTransit)}</strong>
+        <strong>{allocatedDisplay}</strong>
+        <strong>{availableDisplay}</strong>
+        <strong>{inTransitDisplay}</strong>
         <strong>{formatQuantity(row.total)}</strong>
       </div>
-      <div className={styles.distributionProgress} aria-hidden="true">
-        <span style={{ width: `${allocatedPct}%` }} />
-        <span style={{ width: `${inTransitPct}%` }} />
-      </div>
-      <div className={styles.distributionPercents}>
-        <span>{allocatedPct}% allocated</span>
-        <span>{availablePct}% available</span>
-        <span>{inTransitPct}% in transit</span>
-      </div>
+      {!isPassiveTarget ? (
+        <>
+          <div className={styles.distributionProgress} aria-hidden="true">
+            <span style={{ width: `${allocatedPct}%` }} />
+            <span style={{ width: `${inTransitPct}%` }} />
+          </div>
+          <div className={styles.distributionPercents}>
+            <span>{allocatedPct}% allocated</span>
+            <span>{availablePct}% available</span>
+            <span>{inTransitPct}% in transit</span>
+          </div>
+        </>
+      ) : null}
     </>
   );
 
@@ -1060,6 +1117,7 @@ export function buildStandaloneDistributionRows(units: ItemDistributionUnit[]): 
     return {
       id: `unit-${unit.id}`,
       name: unit.name,
+      kind: "unit",
       allocated,
       available,
       inTransit,
@@ -1070,26 +1128,26 @@ export function buildStandaloneDistributionRows(units: ItemDistributionUnit[]): 
 
 export function buildSubDistributionRows(unit: ItemDistributionUnit): DistributionPanelRow[] {
   const storeRows = aggregateStoreDistributionRows(unit);
-  if (storeRows.length) return storeRows;
-
   const allocationGroups = new Map<string, DistributionPanelRow>();
   unit.allocations.forEach(allocation => {
     const key = `${allocation.targetType}-${allocation.targetName}`;
+    const kind = allocation.targetType === "PERSON" ? "person" : "location";
     const current = allocationGroups.get(key) ?? {
       id: `allocation-${key}`,
       name: allocation.targetName,
+      kind,
       allocated: 0,
       available: 0,
       inTransit: 0,
       total: 0,
-      badge: formatItemLabel(allocation.targetType, "Allocated"),
+      badge: kind === "person" ? "Employee" : "Non-store",
     };
     const quantity = toNumber(allocation.quantity);
     current.allocated += quantity;
     current.total += quantity;
     allocationGroups.set(key, current);
   });
-  return Array.from(allocationGroups.values());
+  return [...storeRows, ...Array.from(allocationGroups.values())];
 }
 
 function aggregateStoreDistributionRows(unit: ItemDistributionUnit): DistributionPanelRow[] {
@@ -1098,6 +1156,7 @@ function aggregateStoreDistributionRows(unit: ItemDistributionUnit): Distributio
     const current = groups.get(store.locationId) ?? {
       id: `store-${store.locationId}`,
       name: store.locationName,
+      kind: "store",
       allocated: 0,
       available: 0,
       inTransit: 0,
@@ -1745,7 +1804,7 @@ function LocatePalette({
             autoFocus
             value={query}
             onChange={event => setQuery(event.target.value)}
-            placeholder={`Find a location, store row or person within ${itemShortName}…`}
+            placeholder={`Find a location, store row or employee within ${itemShortName}…`}
             onKeyDown={event => {
               if (event.key === "Escape") onClose();
               if (event.key === "Enter" && filtered.length) {
@@ -1796,7 +1855,7 @@ function LocatePalette({
               )}
               {grouped.persons.length > 0 && (
                 <>
-                  <div className={styles.locateSection}>Allocated to persons · {grouped.persons.length}</div>
+                  <div className={styles.locateSection}>Allocated to employees · {grouped.persons.length}</div>
                   {grouped.persons.slice(0, 10).map(row => (
                     <button key={row.key} type="button" className={styles.locateRow} onClick={() => onJump(row.jump)}>
                       <span className={styles.locateRowIcon}>

@@ -54,7 +54,7 @@ describe("stock entry copilot form helpers", () => {
     expect(result.ignored).toEqual([]);
   });
 
-  it("documents store, person, and non-store issue targets plus register and instance options", () => {
+  it("documents store, employee, and non-store issue targets plus register and instance options", () => {
     const context = buildStockEntryCopilotReferenceContext({
       formId: "stock-entry-create",
       active: true,

@@ -287,7 +287,7 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
         if (!hay.includes(q)) return false;
       }
 
-      if (typeFilter !== "all" && category.category_type !== typeFilter) return false;
+      if (typeFilter !== "all" && (category.resolved_category_type ?? category.category_type) !== typeFilter) return false;
       if (statusFilter === "active" && !category.is_active) return false;
       if (statusFilter === "inactive" && category.is_active) return false;
       return true;
@@ -298,6 +298,7 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
     const values = new Set<string>();
     categories.forEach(category => {
       if (category.category_type) values.add(category.category_type);
+      if (category.resolved_category_type) values.add(category.resolved_category_type);
     });
     return Array.from(values).sort();
   }, [categories]);

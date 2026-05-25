@@ -44,7 +44,7 @@ function formatDate(value: string | null | undefined) {
 
 function detailKindLabel(kind: "store" | "person" | "location") {
   if (kind === "store") return "Store";
-  if (kind === "person") return "Person";
+  if (kind === "person") return "Employee";
   return "Location";
 }
 

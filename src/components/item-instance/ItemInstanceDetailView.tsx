@@ -10,6 +10,7 @@ import {
   buildInstanceStatusLabel,
   getPrimaryInstanceIdentifier,
 } from "@/lib/itemInstanceDetailUi";
+import { getStockEntryDisplayDirection } from "@/lib/stockEntryFormRules";
 import { formatItemDate, formatItemLabel, toNumber, type DepreciationSummary, type ItemRecord } from "@/lib/itemUi";
 import {
   formatMaintenanceLabel,
@@ -514,16 +515,19 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
                           </tr>
                         </thead>
                         <tbody>
-                          {relatedEntries.map(entry => (
-                            <tr key={entry.id}>
-                              <td><Link className={styles.inlineLink} href={`/stock-entries/${entry.id}`}>{entry.entry_number}</Link></td>
-                              <td>{formatItemLabel(entry.entry_type)}</td>
-                              <td>{entry.from_location_name ?? "-"}</td>
-                              <td>{entry.to_location_name ?? entry.issued_to_name ?? "-"}</td>
-                              <td>{formatDateTime(entry.entry_date || entry.created_at)}</td>
-                              <td><span className={statusPillClass(entry.status)}>{formatItemLabel(entry.status)}</span></td>
-                            </tr>
-                          ))}
+                          {relatedEntries.map(entry => {
+                            const direction = getStockEntryDisplayDirection(entry);
+                            return (
+                              <tr key={entry.id}>
+                                <td><Link className={styles.inlineLink} href={`/stock-entries/${entry.id}`}>{entry.entry_number}</Link></td>
+                                <td>{formatItemLabel(entry.entry_type)}</td>
+                                <td>{direction.source}</td>
+                                <td>{direction.target}</td>
+                                <td>{formatDateTime(entry.entry_date || entry.created_at)}</td>
+                                <td><span className={statusPillClass(entry.status)}>{formatItemLabel(entry.status)}</span></td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>

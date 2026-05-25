@@ -572,7 +572,14 @@ export default function InspectionsPage() {
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
+    const selectedLocationSet = new Set(selectedLocationIds.map((id) => Number(id)));
     return inspections.filter((inspection) => {
+      if (
+        selectedLocationSet.size > 0 &&
+        !selectedLocationSet.has(Number(inspection.department))
+      ) {
+        return false;
+      }
       if (stageFilter !== "all" && inspection.stage !== stageFilter)
         return false;
       if (!query) return true;
@@ -580,7 +587,7 @@ export default function InspectionsPage() {
         `${inspection.contract_no} ${inspection.indent_no} ${inspection.contractor_name} ${inspection.department_name}`.toLowerCase();
       return haystack.includes(query);
     });
-  }, [inspections, search, stageFilter]);
+  }, [inspections, search, selectedLocationIds, stageFilter]);
 
   const {
     page,
@@ -592,6 +599,7 @@ export default function InspectionsPage() {
   } = useClientPagination(filtered, INSPECTIONS_PAGE_SIZE, [
     search,
     stageFilter,
+    selectedLocationIds.join("|"),
   ]);
 
   const inspectionListControls = useCopilotListControls({

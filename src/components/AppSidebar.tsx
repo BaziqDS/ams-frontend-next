@@ -22,7 +22,7 @@ type NavGroup = {
   items: NavItem[];
 };
 
-const IMPLEMENTED_ROUTES = new Set(["/dashboard", "/users", "/roles", "/locations", "/categories", "/items", "/stock-entries", "/stock-registers", "/inspections", "/maintenance", "/depreciation"]);
+const IMPLEMENTED_ROUTES = new Set(["/dashboard", "/users", "/employees", "/roles", "/locations", "/categories", "/items", "/stock-entries", "/stock-registers", "/reports", "/inspections", "/maintenance", "/depreciation"]);
 
 const NavIcon = ({ d, size = 18 }: { d: React.ReactNode | string; size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden="true" focusable="false">
@@ -66,6 +66,7 @@ const NAV_ITEMS: NavGroup[] = [
       { key: "inspections", label: "Inspections", href: "/inspections", module: "inspections", icon: <><path d="M9 11l3 3 7-7"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></> },
       { key: "maintenance", label: "Maintenance", href: "/maintenance", module: "maintenance", icon: <><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.1-3.1a5 5 0 01-6.6 6.6l-6 6a2.1 2.1 0 01-3-3l6-6a5 5 0 016.6-6.6z"/><path d="M4 20l4-4"/></> },
       { key: "stock-registers", label: "Stock Registers", href: "/stock-registers", module: "stock-registers", icon: <><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></> },
+      { key: "reports", label: "Reports", href: "/reports", module: "reports", icon: <><path d="M4 19h16"/><path d="M7 16V9M12 16V5M17 16v-4"/><path d="M5 5h14"/></> },
       { key: "depreciation", label: "Depreciation", href: "/depreciation", module: "depreciation", icon: <><path d="M4 19h16"/><path d="M7 16V8M12 16V5M17 16v-3"/><path d="M5 8l5-5 4 4 5-5"/></> },
     ],
   },
@@ -73,6 +74,7 @@ const NAV_ITEMS: NavGroup[] = [
     group: "Administration",
     items: [
       { key: "users", label: "User Management", href: "/users", module: "users", icon: <><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="7" r="2.6"/><path d="M21 19c0-2.7-1.8-5-4.5-5"/></> },
+      { key: "employees", label: "Employees", href: "/employees", module: "employees", icon: <><path d="M20 21a8 8 0 10-16 0"/><circle cx="12" cy="7" r="4"/><path d="M16 11l2 2 4-4"/></> },
       { key: "roles", label: "Roles", href: "/roles", module: "roles", icon: <><rect x="4" y="5" width="16" height="14" rx="3"/><path d="M8 9h8M8 13h5"/></> },
       { key: "audit", label: "Audit Log", href: "/audit", module: "audit", icon: <><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></> },
     ],
