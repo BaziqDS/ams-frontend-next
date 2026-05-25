@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { DropdownPortal } from "@/components/DropdownPortal";
 
 export interface MultiSelectFilterOption {
   id: string;
@@ -32,6 +33,7 @@ export function MultiSelectFilter({
   minWidth?: number;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -39,7 +41,8 @@ export function MultiSelectFilter({
 
   useEffect(() => {
     const onPointerDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) {
         setOpen(false);
         setQuery("");
       }
@@ -116,7 +119,8 @@ export function MultiSelectFilter({
         </button>
       </div>
       {open ? (
-        <div className="assignment-menu">
+        <DropdownPortal anchorRef={rootRef} className="assignment-menu" minWidth={minWidth}>
+        <div ref={menuRef}>
           <div className="assignment-list">
             {filteredOptions.length ? filteredOptions.map(option => {
               const checked = selected.has(option.id);
@@ -137,6 +141,7 @@ export function MultiSelectFilter({
             )}
           </div>
         </div>
+        </DropdownPortal>
       ) : null}
     </div>
   );

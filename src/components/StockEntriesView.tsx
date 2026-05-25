@@ -11,6 +11,7 @@ import { getAllocatableTargetLocations, getAllocatableTargetPersons, getAllocate
 import { getIssueAvailableQuantity, getIssueBatchOptions, getIssueInstanceOptions, getIssueItemOptions, getReturnBatchOptions, getReturnInstanceOptions, getReturnItemOptions, getReturnQuantityLimit, type StockEntryItemInstance, type StockEntryStockRecord, type StockEntryReturnTarget } from "@/lib/stockEntryItemRules";
 import { buildStockEntryPayload, getStockEntryDisplayDirection, getStockEntryRegisterStoreId, getStockEntrySourceRegisterOptions, validateStockEntryForm, type CreatableStockEntryType, type StockEntryFormItem, type StockEntryFormState } from "@/lib/stockEntryFormRules";
 import { applyStockEntryCopilotValuePatch, buildStockEntryCopilotReferenceContext, searchStockEntryCopilotOptions } from "@/lib/stockEntryCopilotForm";
+import { getStockEntryAcknowledgeTarget, getStockEntryMovementRows, getStockEntryMovementStatus, getStockEntryMovementUpdatedEntry } from "@/lib/stockEntryMovementRows";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCopilotAction } from "@/hooks/useCopilotAction";
@@ -24,7 +25,7 @@ import { consumePendingOpen, SAME_PAGE_OPEN_EVENT } from "@/lib/copilotPendingAc
 
 type Density = "compact" | "balanced" | "comfortable";
 type EntryType = "RECEIPT" | "ISSUE" | "RETURN";
-type EntryStatus = "DRAFT" | "PENDING_ACK" | "COMPLETED" | "REJECTED" | "CANCELLED";
+type EntryStatus = "DRAFT" | "PENDING_ACK" | "COMPLETED" | "REJECTED" | "CANCELLED" | "VOIDED";
 type CorrectionStatus = "REQUESTED" | "APPROVED" | "APPLIED" | "REJECTED" | "BLOCKED";
 
 const STOCK_ENTRIES_PAGE_SIZE = 12;
@@ -96,11 +97,15 @@ interface StockEntryRecord {
   remarks: string | null;
   purpose: string | null;
   items: StockEntryItemRecord[];
+  reference_entry?: number | null;
+  reference_purpose?: string | null;
   cancellation_reason?: string | null;
   cancelled_by_name?: string | null;
   cancelled_at?: string | null;
   created_by_name?: string | null;
   created_at: string;
+  updated_at?: string | null;
+  last_updated_by_name?: string | null;
   can_acknowledge?: boolean;
   can_delete?: boolean;
   delete_blockers?: string[];
@@ -143,6 +148,33 @@ function normalizeList<T>(data: Page<T> | T[]): T[] {
   return Array.isArray(data) ? data : data.results;
 }
 
+function nextPagePath(next: string | null) {
+  if (!next) return null;
+  try {
+    const url = new URL(next);
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return next;
+  }
+}
+
+async function fetchAllPages<T>(initialPath: string) {
+  const results: T[] = [];
+  let path: string | null = initialPath;
+
+  while (path) {
+    const data = await apiFetch<Page<T> | T[]>(path);
+    if (Array.isArray(data)) {
+      results.push(...data);
+      break;
+    }
+    results.push(...data.results);
+    path = nextPagePath(data.next);
+  }
+
+  return results;
+}
+
 function formatLabel(value: string | null | undefined, fallback = "—") {
   if (!value) return fallback;
   return value.replace(/[_-]+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
@@ -155,7 +187,7 @@ function formatDate(value: string | null | undefined) {
 
 function entryTone(status: EntryStatus) {
   if (status === "COMPLETED") return "pill-success";
-  if (status === "CANCELLED" || status === "REJECTED") return "pill-neutral";
+  if (status === "CANCELLED" || status === "VOIDED" || status === "REJECTED") return "pill-danger";
   return "pill-warning";
 }
 
@@ -166,15 +198,6 @@ function StatusPill({ status }: { status: EntryStatus }) {
       {formatLabel(status)}
     </span>
   );
-}
-
-function stockEntryMatchesStoreScope(entry: StockEntryRecord, storeScope: string) {
-  if (storeScope === "all") return true;
-  const selectedStoreId = Number(storeScope);
-  if (!Number.isFinite(selectedStoreId)) return false;
-
-  if (entry.entry_type === "ISSUE") return Number(entry.from_location) === selectedStoreId;
-  return Number(entry.to_location) === selectedStoreId;
 }
 
 function CorrectionPill({ entry }: { entry: StockEntryRecord }) {
@@ -1353,14 +1376,15 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
   );
 }
 
-function RowActions({ entry, canEdit, canDelete, pageBusy, deleteBusy, ackBusy, onEdit, onDelete, onAcknowledge }: { entry: StockEntryRecord; canEdit: boolean; canDelete: boolean; pageBusy: boolean; deleteBusy: boolean; ackBusy: boolean; onEdit: () => void; onDelete: () => void; onAcknowledge: () => void }) {
-  const showAcknowledge = Boolean(entry.can_acknowledge) && entry.status === "PENDING_ACK";
+function RowActions({ entry, acknowledgeEntry, canEdit, canDelete, pageBusy, deleteBusy, ackBusy, onEdit, onDelete, onAcknowledge }: { entry: StockEntryRecord; acknowledgeEntry?: StockEntryRecord | null; canEdit: boolean; canDelete: boolean; pageBusy: boolean; deleteBusy: boolean; ackBusy: boolean; onEdit: () => void; onDelete: () => void; onAcknowledge: (entry: StockEntryRecord) => void }) {
+  const ackTarget = getStockEntryAcknowledgeTarget(entry, acknowledgeEntry ?? null);
+  const showAcknowledge = Boolean(ackTarget.can_acknowledge) && ackTarget.status === "PENDING_ACK";
   const showEdit = canEdit && entry.status === "DRAFT";
   const showDelete = canDelete && entry.can_delete !== false && entry.status === "DRAFT";
   if (!showAcknowledge && !showEdit && !showDelete) return <span className="muted-note mono">No actions</span>;
   return (
     <div className="row-actions">
-      {showAcknowledge && <button type="button" className="btn btn-xs btn-primary row-action ack-action" onClick={event => { event.stopPropagation(); onAcknowledge(); }} disabled={pageBusy}><Ic d="M20 6L9 17l-5-5" size={13} /><span className="ra-label">{ackBusy ? "Acknowledging…" : "Acknowledge"}</span></button>}
+      {showAcknowledge && <button type="button" className="btn btn-xs btn-primary row-action ack-action" onClick={event => { event.stopPropagation(); onAcknowledge(ackTarget); }} disabled={pageBusy}><Ic d="M20 6L9 17l-5-5" size={13} /><span className="ra-label">{ackBusy ? "Acknowledging…" : "Acknowledge"}</span></button>}
       {showEdit && <button type="button" className="btn btn-xs btn-ghost row-action" onClick={event => { event.stopPropagation(); onEdit(); }} disabled={pageBusy}><Ic d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" size={13} /><span className="ra-label">Edit</span></button>}
       {showDelete && <button type="button" className="btn btn-xs btn-danger-ghost row-action" onClick={event => { event.stopPropagation(); onDelete(); }} disabled={pageBusy}><Ic d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 12h6l1-12" size={13} /><span className="ra-label">{deleteBusy ? "Deleting…" : "Delete"}</span></button>}
     </div>
@@ -1383,13 +1407,9 @@ export function StockEntriesView() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
-  const [typeFilter, setTypeFilter] = useState(() => {
-    const typeParam = searchParams.get("type");
-    return typeParam && ["ISSUE", "RECEIPT", "RETURN"].includes(typeParam) ? typeParam : "all";
-  });
   const [statusFilter, setStatusFilter] = useState(() => {
     const statusParam = searchParams.get("status");
-    return statusParam && ["DRAFT", "PENDING_ACK", "COMPLETED", "CANCELLED"].includes(statusParam) ? statusParam : "all";
+    return statusParam && ["DRAFT", "PENDING_ACK", "COMPLETED", "CANCELLED", "VOIDED"].includes(statusParam) ? statusParam : "all";
   });
   const [storeScope, setStoreScope] = useState(() => searchParams.get("store") ?? "all");
   const [density, setDensity] = useState<Density>("balanced");
@@ -1451,8 +1471,8 @@ export function StockEntriesView() {
     try {
       const params = new URLSearchParams({ page_size: "500" });
       if (storeScope !== "all") params.set("store", storeScope);
-      const data = await apiFetch<Page<StockEntryRecord> | StockEntryRecord[]>(`/api/inventory/stock-entries/?${params.toString()}`);
-      setEntries(normalizeList(data));
+      const data = await fetchAllPages<StockEntryRecord>(`/api/inventory/stock-entries/?${params.toString()}`);
+      setEntries(data);
       return true;
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : "Failed to load stock entries");
@@ -1482,15 +1502,8 @@ export function StockEntriesView() {
   }, [canView, capsLoading, loadEntries, loadScopeStores, router]);
 
   useEffect(() => {
-    const typeParam = searchParams.get("type");
-    if (typeParam && ["ISSUE", "RECEIPT", "RETURN"].includes(typeParam)) {
-      setTypeFilter(typeParam);
-    } else {
-      setTypeFilter("all");
-    }
-
     const statusParam = searchParams.get("status");
-    if (statusParam && ["DRAFT", "PENDING_ACK", "COMPLETED", "CANCELLED"].includes(statusParam)) {
+    if (statusParam && ["DRAFT", "PENDING_ACK", "COMPLETED", "CANCELLED", "VOIDED"].includes(statusParam)) {
       setStatusFilter(statusParam);
     } else {
       setStatusFilter("all");
@@ -1511,19 +1524,28 @@ export function StockEntriesView() {
     router.replace("/stock-entries");
   }, [canManage, entries, isLoading, loadRefs, router, searchParams]);
 
+  const movementEntries = useMemo(() => getStockEntryMovementRows(entries), [entries]);
+
   const filteredEntries = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return entries.filter(entry => {
+    return movementEntries.filter(({ entry, receipt }) => {
       if (q) {
-        const hay = [entry.entry_number, entry.from_location_name ?? "", entry.to_location_name ?? "", entry.issued_to_name ?? "", entry.purpose ?? "", entry.remarks ?? "", ...entry.items.map(item => item.item_name ?? "")].join(" ").toLowerCase();
+        const hay = [
+          entry.entry_number,
+          receipt?.entry_number ?? "",
+          entry.from_location_name ?? "",
+          entry.to_location_name ?? "",
+          entry.issued_to_name ?? "",
+          entry.purpose ?? "",
+          entry.remarks ?? "",
+          ...entry.items.map(item => item.item_name ?? ""),
+        ].join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
       }
-      if (typeFilter !== "all" && entry.entry_type !== typeFilter) return false;
-      if (statusFilter !== "all" && entry.status !== statusFilter) return false;
-      if (!stockEntryMatchesStoreScope(entry, storeScope)) return false;
+      if (statusFilter !== "all" && getStockEntryMovementStatus(entry, receipt) !== statusFilter) return false;
       return true;
     });
-  }, [entries, search, statusFilter, storeScope, typeFilter]);
+  }, [movementEntries, search, statusFilter]);
 
   const {
     page,
@@ -1532,7 +1554,7 @@ export function StockEntriesView() {
     pageStart,
     pageEnd,
     setPage,
-  } = useClientPagination(filteredEntries, STOCK_ENTRIES_PAGE_SIZE, [search, typeFilter, statusFilter, storeScope]);
+  } = useClientPagination(filteredEntries, STOCK_ENTRIES_PAGE_SIZE, [search, statusFilter, storeScope]);
 
   const stockEntryListControls = useCopilotListControls({
     entity: "stock_entry",
@@ -1546,19 +1568,6 @@ export function StockEntriesView() {
         setValue: value => setSearch(String(value ?? "")),
       },
       {
-        name: "type",
-        type: "enum",
-        defaultValue: "all",
-        label: "Type",
-        options: [
-          { value: "all", label: "All types" },
-          { value: "ISSUE", label: "Transfer / Allocation" },
-          { value: "RECEIPT", label: "Receipt" },
-          { value: "RETURN", label: "Return" },
-        ],
-        setValue: value => setTypeFilter(String(value ?? "all")),
-      },
-      {
         name: "status",
         type: "enum",
         defaultValue: "all",
@@ -1569,6 +1578,7 @@ export function StockEntriesView() {
           { value: "PENDING_ACK", label: "Pending Ack" },
           { value: "COMPLETED", label: "Completed" },
           { value: "CANCELLED", label: "Cancelled" },
+          { value: "VOIDED", label: "Voided" },
         ],
         setValue: value => setStatusFilter(String(value ?? "all")),
       },
@@ -1587,7 +1597,7 @@ export function StockEntriesView() {
     page,
     totalPages,
     setPage,
-    visibleRows: pagedEntries.map((entry, index) => ({
+    visibleRows: pagedEntries.map(({ entry }, index) => ({
       row_number: index + 1,
       id: entry.id,
       detail_route: `/stock-entries/${entry.id}`,
@@ -1615,19 +1625,20 @@ export function StockEntriesView() {
   const stockEntriesListReadable = useMemo(() => buildCopilotListContext({
     route: "/stock-entries",
     entity: "stock_entry",
-    total: entries.length,
+    total: movementEntries.length,
     filteredTotal: filteredEntries.length,
     filters: {
       search: search || null,
-      type: typeFilter,
       status: statusFilter,
       store: storeScope,
     },
     pagination: { page, pageSize: STOCK_ENTRIES_PAGE_SIZE, totalPages },
-    rows: pagedEntries.map(entry => ({
+    rows: pagedEntries.map(({ entry, receipt, actionEntry }) => ({
       id: entry.id,
       entry_number: entry.entry_number,
-      entry_type: entry.entry_type,
+      hidden_receipt_id: receipt?.id ?? null,
+      hidden_receipt_number: receipt?.entry_number ?? null,
+      movement_type: entry.entry_type === "ISSUE" && receipt ? "TRANSFER" : entry.entry_type,
       entry_date: entry.entry_date,
       from_location: entry.from_location,
       from_location_name: entry.from_location_name ?? null,
@@ -1635,7 +1646,7 @@ export function StockEntriesView() {
       to_location_name: entry.to_location_name ?? null,
       issued_to: entry.issued_to,
       issued_to_name: entry.issued_to_name ?? null,
-      status: entry.status,
+      status: getStockEntryMovementStatus(entry, receipt),
       purpose: entry.purpose ?? null,
       item_count: entry.items.length,
       items: entry.items.slice(0, 5).map(item => ({
@@ -1651,7 +1662,7 @@ export function StockEntriesView() {
         open_detail: true,
         edit: canManage && entry.status === "DRAFT",
         delete: canDelete && entry.can_delete !== false && entry.status === "DRAFT",
-        acknowledge: Boolean(entry.can_acknowledge) && entry.status === "PENDING_ACK",
+        acknowledge: Boolean(actionEntry.can_acknowledge) && actionEntry.status === "PENDING_ACK",
       },
     })),
     actions: {
@@ -1671,9 +1682,9 @@ export function StockEntriesView() {
     canDelete,
     canManage,
     capsLoading,
-    entries.length,
     filteredEntries.length,
     isLoading,
+    movementEntries.length,
     page,
     pagedEntries,
     refsLoading,
@@ -1683,7 +1694,6 @@ export function StockEntriesView() {
     storeScope,
     stockEntryListControls,
     totalPages,
-    typeFilter,
   ]);
 
   useCopilotReadable({
@@ -1798,23 +1808,6 @@ export function StockEntriesView() {
               {search && <button type="button" className="clear-search" onClick={() => setSearch("")}>×</button>}
             </div>
             <div className="filter-select-group">
-              <div className="chip-filter-label">Type</div>
-              <div className="filter-select-wrap">
-                <ThemedSelect
-                  value={typeFilter}
-                  onChange={setTypeFilter}
-                  size="compact"
-                  ariaLabel="Filter stock entries by type"
-                  options={[
-                    { value: "all", label: "All types" },
-                    { value: "ISSUE", label: "Transfer / Allocation" },
-                    { value: "RECEIPT", label: "Receipt" },
-                    { value: "RETURN", label: "Return" },
-                  ]}
-                />
-              </div>
-            </div>
-            <div className="filter-select-group">
               <div className="chip-filter-label">Status</div>
               <div className="filter-select-wrap">
                 <ThemedSelect
@@ -1828,6 +1821,7 @@ export function StockEntriesView() {
                     { value: "PENDING_ACK", label: "Pending Ack" },
                     { value: "COMPLETED", label: "Completed" },
                     { value: "CANCELLED", label: "Cancelled" },
+                    { value: "VOIDED", label: "Voided" },
                   ]}
                 />
               </div>
@@ -1869,30 +1863,33 @@ export function StockEntriesView() {
             <div className="table-card-head">
               <div className="table-card-head-left">
                 <div className="eyebrow">Stock movement ledger</div>
-                <div className="table-count"><span className="mono">{filteredEntries.length}</span><span>of</span><span className="mono">{entries.length}</span><span>entries</span></div>
+                <div className="table-count"><span className="mono">{filteredEntries.length}</span><span>of</span><span className="mono">{movementEntries.length}</span><span>entries</span></div>
               </div>
             </div>
             {isLoading ? <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", borderTop: "1px solid var(--hairline)" }}>Loading stock entries…</div> : (
               <div className="h-scroll">
                 <table className="data-table">
-                  <thead><tr><th>Entry</th><th>Type</th><th>Source</th><th>Destination</th><th>Items</th><th>Status</th><th>Created</th></tr></thead>
+                  <thead><tr><th>Entry</th><th>Source</th><th>Destination</th><th>Items</th><th>Status</th><th>Created</th><th>Updated</th></tr></thead>
                   <tbody>
-                    {filteredEntries.length === 0 ? <tr><td colSpan={7}><div style={{ padding: "32px 12px", textAlign: "center", color: "var(--text-2)", fontSize: 13 }}>No stock entries match the current filters.</div></td></tr> : pagedEntries.map(entry => (
-                      <tr key={entry.id} onClick={() => router.push(`/stock-entries/${entry.id}`)} style={{ cursor: "pointer" }}>
-                        <td><div className="user-cell"><div><div className="user-name">{entry.entry_number}</div><div className="user-username mono">{formatDate(entry.entry_date)}</div></div></div></td>
-                        <td><span className="chip">{formatLabel(entry.entry_type)}</span></td>
-                        <td>{entrySource(entry)}</td>
-                        <td>{entryTarget(entry)}</td>
-                        <td><div className="group-cell">{entry.items.slice(0, 2).map(item => <span key={`${entry.id}-${item.id ?? item.item}`} className="chip">{item.item_name ?? `Item ${item.item}`} × {item.quantity}</span>)}{entry.items.length > 2 && <span className="muted-note mono">+{entry.items.length - 2} more</span>}</div></td>
-                        <td>
-                          <div className="group-cell">
-                            <StatusPill status={entry.status} />
-                            <CorrectionPill entry={entry} />
-                          </div>
-                        </td>
-                        <td><div className="login-cell"><div>{relTime(entry.created_at)}</div><div className="login-cell-sub mono">{entry.created_by_name ?? "Unknown"}</div></div></td>
-                      </tr>
-                    ))}
+                    {filteredEntries.length === 0 ? <tr><td colSpan={7}><div style={{ padding: "32px 12px", textAlign: "center", color: "var(--text-2)", fontSize: 13 }}>No stock entries match the current filters.</div></td></tr> : pagedEntries.map(row => {
+                      const updatedEntry = getStockEntryMovementUpdatedEntry(row.entry, row.receipt);
+                      return (
+                        <tr key={row.entry.id} onClick={() => router.push(`/stock-entries/${row.entry.id}`)} style={{ cursor: "pointer" }}>
+                          <td><div className="user-cell"><div><div className="user-name">{row.entry.entry_number}</div><div className="user-username mono">{formatDate(row.entry.entry_date)}</div></div></div></td>
+                          <td>{entrySource(row.entry)}</td>
+                          <td>{entryTarget(row.entry)}</td>
+                          <td><div className="group-cell">{row.entry.items.slice(0, 2).map(item => <span key={`${row.entry.id}-${item.id ?? item.item}`} className="chip">{item.item_name ?? `Item ${item.item}`} × {item.quantity}</span>)}{row.entry.items.length > 2 && <span className="muted-note mono">+{row.entry.items.length - 2} more</span>}</div></td>
+                          <td>
+                            <div className="group-cell">
+                              <StatusPill status={getStockEntryMovementStatus(row.entry, row.receipt) as EntryStatus} />
+                              <CorrectionPill entry={row.entry} />
+                            </div>
+                          </td>
+                          <td><div className="login-cell"><div>{relTime(row.entry.created_at)}</div><div className="login-cell-sub mono">{row.entry.created_by_name ?? "Unknown"}</div></div></td>
+                          <td><div className="login-cell"><div>{relTime(updatedEntry.updated_at ?? updatedEntry.created_at)}</div><div className="login-cell-sub mono">{updatedEntry.last_updated_by_name ?? updatedEntry.created_by_name ?? "Unknown"}</div></div></td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1907,19 +1904,19 @@ export function StockEntriesView() {
           </div>
         ) : filteredEntries.length > 0 ? (
           <div className="users-grid">
-            {pagedEntries.map(entry => (
-              <div className="user-card" key={entry.id} onClick={() => router.push(`/stock-entries/${entry.id}`)} style={{ cursor: "pointer" }}>
+            {pagedEntries.map(row => (
+              <div className="user-card" key={row.entry.id} onClick={() => router.push(`/stock-entries/${row.entry.id}`)} style={{ cursor: "pointer" }}>
                 <div className="user-card-head">
                   <div className="group-cell" style={{ justifyContent: "flex-end" }}>
-                    <StatusPill status={entry.status} />
-                    <CorrectionPill entry={entry} />
+                    <StatusPill status={getStockEntryMovementStatus(row.entry, row.receipt) as EntryStatus} />
+                    <CorrectionPill entry={row.entry} />
                   </div>
                 </div>
-                <div className="user-card-name">{entry.entry_number}</div>
-                <div className="user-card-meta mono">{formatDate(entry.entry_date)}</div>
-                <div className="user-card-section"><div className="eyebrow">Movement</div><div style={{ fontSize: 13, color: "var(--text-1)" }}>{entrySource(entry)} → {entryTarget(entry)}</div></div>
-                <div className="user-card-section"><div className="eyebrow">Line Items</div><div className="group-cell">{entry.items.slice(0, 3).map(item => <span key={`${entry.id}-card-${item.id ?? item.item}`} className="chip">{item.item_name ?? `Item ${item.item}`} × {item.quantity}</span>)}</div></div>
-                <div className="user-card-foot"><div><div className="eyebrow">Created</div><div className="user-card-last mono">{relTime(entry.created_at)}</div></div><RowActions entry={entry} canEdit={canManage} canDelete={canDelete} pageBusy={pageBusy} deleteBusy={deleteBusyId === entry.id} ackBusy={ackBusyId === entry.id} onEdit={() => openEditModal(entry)} onDelete={() => handleDelete(entry)} onAcknowledge={() => handleAcknowledge(entry)} /></div>
+                <div className="user-card-name">{row.entry.entry_number}</div>
+                <div className="user-card-meta mono">{formatDate(row.entry.entry_date)}</div>
+                <div className="user-card-section"><div className="eyebrow">Movement</div><div style={{ fontSize: 13, color: "var(--text-1)" }}>{entrySource(row.entry)} → {entryTarget(row.entry)}</div></div>
+                <div className="user-card-section"><div className="eyebrow">Line Items</div><div className="group-cell">{row.entry.items.slice(0, 3).map(item => <span key={`${row.entry.id}-card-${item.id ?? item.item}`} className="chip">{item.item_name ?? `Item ${item.item}`} × {item.quantity}</span>)}</div></div>
+                <div className="user-card-foot"><div><div className="eyebrow">Updated</div><div className="user-card-last mono">{relTime(getStockEntryMovementUpdatedEntry(row.entry, row.receipt).updated_at ?? row.entry.created_at)}</div></div><RowActions entry={row.entry} acknowledgeEntry={row.receipt} canEdit={canManage} canDelete={canDelete} pageBusy={pageBusy} deleteBusy={deleteBusyId === row.entry.id} ackBusy={ackBusyId === row.actionEntry.id} onEdit={() => openEditModal(row.entry)} onDelete={() => handleDelete(row.entry)} onAcknowledge={handleAcknowledge} /></div>
               </div>
             ))}
           </div>

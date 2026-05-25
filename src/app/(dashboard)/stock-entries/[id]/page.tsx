@@ -7,6 +7,7 @@ import { ThemedSelect } from "@/components/ThemedSelect";
 import { Topbar } from "@/components/Topbar";
 import { apiFetch, type Page } from "@/lib/api";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
+import { getStockEntryAcknowledgeTarget } from "@/lib/stockEntryMovementRows";
 import {
   buildFullReversalPayload,
   describeQuantityCorrectionChange,
@@ -832,9 +833,10 @@ function StockVoucherHead({ entry, related }: { entry: StockEntryRecord; related
 
 function AcknowledgementNotice({ entry, related, onAcknowledge }: { entry: StockEntryRecord; related: RelatedEntries; onAcknowledge: () => void }) {
   const stats = acknowledgementTotals(entry, related);
-  if (entry.status !== "PENDING_ACK") return null;
-  const pendingUnits = stats.pending ?? stats.sent;
   const isIssue = entry.entry_type === "ISSUE";
+  const acknowledgeEntry = isIssue ? related.linkedReceipt : entry;
+  if (acknowledgeEntry?.status !== "PENDING_ACK") return null;
+  const pendingUnits = stats.pending ?? stats.sent;
   const title = isIssue ? "Waiting for acknowledgement from receiver" : "Acknowledgement required";
   const text = isIssue
     ? `${entryTarget(entry)} has not acknowledged this movement yet. ${pendingUnits} unit${pendingUnits === 1 ? "" : "s"} remain pending on the receiving side.`
@@ -850,7 +852,7 @@ function AcknowledgementNotice({ entry, related, onAcknowledge }: { entry: Stock
         <div className="notice-title">{title}</div>
         <div className="notice-text">{text} <strong>{actionText}</strong></div>
       </div>
-      {!isIssue && entry.can_acknowledge ? (
+      {acknowledgeEntry?.can_acknowledge ? (
         <div className="notice-actions">
           <button className="btn btn-xs" type="button" onClick={onAcknowledge}>Acknowledge</button>
         </div>
@@ -2271,6 +2273,18 @@ export default function StockEntryDetailPage() {
     return { reference, children, linkedReceipt, generatedReturns };
   }, [allEntries, entry]);
 
+  const acknowledgementEntry = entry ? getStockEntryAcknowledgeTarget(entry, entry.entry_type === "ISSUE" ? related.linkedReceipt : null) : null;
+  const acknowledgementRelated = useMemo<RelatedEntries>(() => {
+    if (!entry || !acknowledgementEntry || acknowledgementEntry.id === entry.id) return related;
+    const children = allEntries.filter(candidate => candidate.reference_entry === acknowledgementEntry.id && candidate.id !== acknowledgementEntry.id);
+    return {
+      reference: entry,
+      children,
+      linkedReceipt: null,
+      generatedReturns: children.filter(candidate => candidate.entry_type === "RETURN"),
+    };
+  }, [acknowledgementEntry, allEntries, entry, related]);
+
   return (
     <div>
       <Topbar breadcrumb={["Operations", "Stock Entries", entry?.entry_number ?? "Detail"]} />
@@ -2327,8 +2341,8 @@ export default function StockEntryDetailPage() {
                 <RelatedRecordsCard entry={entry} related={related} />
               </aside>
             </div>
-            {ackModalOpen && entry.can_acknowledge && entry.status === "PENDING_ACK" && (
-              <AckModal entry={entry} related={related} registers={registers} instances={instances} onDone={load} onClose={() => setAckModalOpen(false)} />
+            {ackModalOpen && acknowledgementEntry?.can_acknowledge && acknowledgementEntry.status === "PENDING_ACK" && (
+              <AckModal entry={acknowledgementEntry} related={acknowledgementRelated} registers={registers} instances={instances} onDone={load} onClose={() => setAckModalOpen(false)} />
             )}
             {correctionModalOpen && correctionMode === "difference" && entry.can_correct && (
               <CorrectionModal entry={entry} related={related} instances={instances} onDone={handleCorrectionDone} onClose={() => setCorrectionModalOpen(false)} />
