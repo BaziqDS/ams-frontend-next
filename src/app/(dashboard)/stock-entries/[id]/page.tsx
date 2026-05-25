@@ -3,16 +3,11 @@
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import {
-  Alert as SharedAlert,
-  AlertActions,
-  AlertDescription,
-  AlertTitle,
-} from "@/components/Alert";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { Topbar } from "@/components/Topbar";
 import { apiFetch, type Page } from "@/lib/api";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
+import { getStockEntryAcknowledgeTarget } from "@/lib/stockEntryMovementRows";
 import {
   buildFullReversalPayload,
   describeQuantityCorrectionChange,
@@ -22,8 +17,6 @@ import {
   type CorrectionMode,
 } from "@/lib/stockEntryCorrectionRules";
 import { getStockEntryDisplayDirection } from "@/lib/stockEntryFormRules";
-import { Button } from "@/components/ui/button";
-
 
 type EntryType = "RECEIPT" | "ISSUE" | "RETURN";
 type EntryStatus = "DRAFT" | "PENDING_ACK" | "COMPLETED" | "REJECTED" | "CANCELLED";
@@ -57,6 +50,10 @@ interface StockEntryItemRecord {
   item_name?: string | null;
   batch: number | null;
   batch_number?: string | null;
+  source_inspection?: number | null;
+  source_inspection_number?: string | null;
+  source_inspection_item?: number | null;
+  source_inspection_department?: string | null;
   quantity: number;
   instances: number[];
   stock_register: number | null;
@@ -169,6 +166,13 @@ type LineResolution = {
   mirror: StockEntryItemRecord | null;
 };
 
+type LineItemGroup = {
+  key: string;
+  itemId: number;
+  itemName: string;
+  lines: StockEntryItemRecord[];
+};
+
 const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden="true" focusable="false">
     {typeof d === "string" ? <path d={d} /> : d}
@@ -279,26 +283,6 @@ function hasImplicitInspectionSource(entry: StockEntryRecord) {
   );
 }
 
-function inspectionCertificateContext(entry: StockEntryRecord, related: RelatedEntries) {
-  const candidates = [
-    entry,
-    related.reference,
-    related.linkedReceipt,
-    ...related.children,
-  ];
-
-  for (const candidate of candidates) {
-    if (candidate?.inspection_certificate != null) {
-      return {
-        id: candidate.inspection_certificate,
-        number: candidate.inspection_certificate_number || `Inspection #${candidate.inspection_certificate}`,
-      };
-    }
-  }
-
-  return null;
-}
-
 function acknowledgementMeta(entry: StockEntryRecord, related: RelatedEntries) {
   if (hasImplicitInspectionSource(entry)) {
     return {
@@ -392,12 +376,11 @@ function StatusPill({ status }: { status: EntryStatus }) {
   );
 }
 
-function Alert({ children, title }: { children: ReactNode; title?: string }) {
+function Alert({ children }: { children: ReactNode }) {
   return (
-    <SharedAlert variant="destructive">
-      {title ? <AlertTitle>{title}</AlertTitle> : null}
-      <AlertDescription>{children}</AlertDescription>
-    </SharedAlert>
+    <div style={{ padding: "12px 16px", background: "var(--danger-weak)", border: "1px solid color-mix(in oklch, var(--danger) 30%, transparent)", borderRadius: "var(--radius)", color: "var(--danger)", fontSize: 13, marginBottom: 16 }}>
+      {children}
+    </div>
   );
 }
 
@@ -497,6 +480,42 @@ function lineRegisterRef(entry: StockEntryRecord, item: StockEntryItemRecord, li
 
 function trackingLabel(entry: StockEntryRecord, item: StockEntryItemRecord, related: RelatedEntries) {
   return effectiveInstances(entry, item, related).length > 0 ? "Individual" : "Quantity";
+}
+
+function groupLineItems(items: StockEntryItemRecord[]): LineItemGroup[] {
+  const groups = new Map<string, LineItemGroup>();
+  items.forEach(item => {
+    const key = String(item.item);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.lines.push(item);
+      return;
+    }
+    groups.set(key, {
+      key,
+      itemId: item.item,
+      itemName: item.item_name ?? `Item ${item.item}`,
+      lines: [item],
+    });
+  });
+  return Array.from(groups.values());
+}
+
+function groupTotals(entry: StockEntryRecord, group: LineItemGroup, related: RelatedEntries) {
+  return group.lines.reduce((acc, item) => {
+    const line = resolveLine(entry, item, related);
+    acc.quantity += item.quantity;
+    if (line.accepted != null) acc.accepted += line.accepted;
+    else acc.hasPending = true;
+    if (line.returned != null) acc.returned += line.returned;
+    else acc.hasPending = true;
+    acc.instances += effectiveInstances(entry, item, related).length;
+    return acc;
+  }, { quantity: 0, accepted: 0, returned: 0, instances: 0, hasPending: false });
+}
+
+function uniqueLineValues(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value && value.trim()))));
 }
 
 function selectableCorrectionInstances(entry: StockEntryRecord, item: StockEntryItemRecord, related: RelatedEntries, allInstances: StockEntryItemInstance[], delta: number) {
@@ -710,73 +729,29 @@ function StockStats({ entry, related }: { entry: StockEntryRecord; related: Rela
   const ackRefs = uniqueRefs(receiverItems.map(item => item.ack_stock_register_name ? item.ack_stock_register_name : null));
   const registerCount = new Set([...sourceRefs, ...ackRefs]).size;
 
-  const acknowledgedDisplay = stats.accepted == null ? "—" : String(stats.accepted);
-  const ackBadge = stats.pending > 0
-    ? { tone: "warning" as const, label: `${stats.pending} pending` }
-    : stats.accepted != null
-      ? { tone: "ok" as const, label: "Complete" }
-      : { tone: "neutral" as const, label: "Awaiting" };
-
-  const metrics = [
-    {
-      label: "Line items",
-      value: String(stats.lines),
-      hint: stats.instances ? `${stats.instances} tracked instances` : "Quantity tracked",
-      badge: stats.lines > 0
-        ? { tone: "neutral" as const, label: `${stats.lines} line${stats.lines === 1 ? "" : "s"}` }
-        : undefined,
-    },
-    {
-      label: quantityLabel(entry),
-      value: String(stats.sent),
-      hint: `Original ${formatLabel(entry.entry_type).toLowerCase()} quantity`,
-      badge: { tone: "neutral" as const, label: formatLabel(entry.entry_type) },
-    },
-    {
-      label: "Acknowledged",
-      value: acknowledgedDisplay,
-      hint: stats.pending > 0 ? `${stats.pending} still pending` : "Receiver side recorded",
-      badge: ackBadge,
-    },
-    {
-      label: "Register refs",
-      value: String(registerCount || "—"),
-      hint: "Source + acknowledgement books",
-      badge: registerCount > 0
-        ? { tone: "neutral" as const, label: `${registerCount} book${registerCount === 1 ? "" : "s"}` }
-        : undefined,
-    },
-  ];
-
   return (
-    <section className="stock-analytics-card" aria-label="Stock movement summary">
-      <div className="stock-analytics-head">
-        <div className="eyebrow">Movement summary</div>
-        <h3 className="stock-analytics-title">{formatLabel(entry.entry_type)} overview</h3>
-        <p className="stock-analytics-sub">Quantities, receiver progress, and register coverage for this voucher.</p>
+    <div className="stat-strip" style={{ marginBottom: 16 }}>
+      <div className="stat stat-accent">
+        <div className="stat-label">Line Items</div>
+        <div className="stat-value">{stats.lines}</div>
+        <div className="stat-sub">{stats.instances ? `${stats.instances} tracked instances` : "quantity tracked"}</div>
       </div>
-      <div className="stock-analytics-metrics">
-        {metrics.map((metric, index) => (
-          <div className="stock-analytics-metric" key={metric.label}>
-            <div className="stock-analytics-metric-body">
-              <div className="stock-analytics-metric-label">{metric.label}</div>
-              <div className="stock-analytics-metric-row">
-                <span className="stock-analytics-metric-value">{metric.value}</span>
-                {metric.badge ? (
-                  <span className={`stock-analytics-badge is-${metric.badge.tone}`}>
-                    {metric.badge.label}
-                  </span>
-                ) : null}
-              </div>
-              <div className="stock-analytics-metric-hint">{metric.hint}</div>
-            </div>
-            {index < metrics.length - 1 ? (
-              <span className="stock-analytics-separator" aria-hidden="true" />
-            ) : null}
-          </div>
-        ))}
+      <div className="stat">
+        <div className="stat-label">{quantityLabel(entry)}</div>
+        <div className="stat-value">{stats.sent}</div>
+        <div className="stat-sub">Original {formatLabel(entry.entry_type).toLowerCase()} quantity</div>
       </div>
-    </section>
+      <div className="stat">
+        <div className="stat-label">Acknowledged</div>
+        <div className="stat-value">{stats.accepted ?? "-"}</div>
+        <div className="stat-sub">{stats.pending > 0 ? `${stats.pending} pending` : "receiver side recorded"}</div>
+      </div>
+      <div className="stat">
+        <div className="stat-label">Register Refs</div>
+        <div className="stat-value">{registerCount || "-"}</div>
+        <div className="stat-sub">source and acknowledgement books</div>
+      </div>
+    </div>
   );
 }
 
@@ -834,7 +809,7 @@ function StockVoucherHead({ entry, related }: { entry: StockEntryRecord; related
     <div className="page-head-detail stock-voucher-head">
       <div className="page-title-group">
         <div className="eyebrow">Stock Entry · {formatLabel(entry.entry_type)} voucher</div>
-        <h1>{voucherTitle(entry)}</h1>
+        <h1 className="display">{voucherTitle(entry)}</h1>
         <div className="page-sub">
           {summary.sourceLabel} <strong>{source}</strong> to <strong>{target}</strong>.
           {" "}{summary.stripNote}
@@ -852,23 +827,16 @@ function StockVoucherHead({ entry, related }: { entry: StockEntryRecord; related
           </span>
         </div>
       </div>
-      <div className="page-head-actions">
-        <Button asChild variant="outline" size="sm" className="page-head-back">
-          <Link href="/stock-entries">
-            <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
-            Back to Stock Entries
-          </Link>
-        </Button>
-      </div>
     </div>
   );
 }
 
 function AcknowledgementNotice({ entry, related, onAcknowledge }: { entry: StockEntryRecord; related: RelatedEntries; onAcknowledge: () => void }) {
   const stats = acknowledgementTotals(entry, related);
-  if (entry.status !== "PENDING_ACK") return null;
-  const pendingUnits = stats.pending ?? stats.sent;
   const isIssue = entry.entry_type === "ISSUE";
+  const acknowledgeEntry = isIssue ? related.linkedReceipt : entry;
+  if (acknowledgeEntry?.status !== "PENDING_ACK") return null;
+  const pendingUnits = stats.pending ?? stats.sent;
   const title = isIssue ? "Waiting for acknowledgement from receiver" : "Acknowledgement required";
   const text = isIssue
     ? `${entryTarget(entry)} has not acknowledged this movement yet. ${pendingUnits} unit${pendingUnits === 1 ? "" : "s"} remain pending on the receiving side.`
@@ -878,19 +846,18 @@ function AcknowledgementNotice({ entry, related, onAcknowledge }: { entry: Stock
     : "Capture the receiving register and accepted quantities to close this receipt.";
 
   return (
-    <SharedAlert variant="warning" className="stock-ack-alert">
-      <AlertTitle>{title}</AlertTitle>
-      <AlertDescription>
-        {text} <strong>{actionText}</strong>
-      </AlertDescription>
-      {!isIssue && entry.can_acknowledge ? (
-        <AlertActions>
-          <Button size="xs" type="button" onClick={onAcknowledge}>
-            Acknowledge
-          </Button>
-        </AlertActions>
+    <div className="notice notice-warn">
+      <div className="notice-icon"><Ic d={<><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /><path d="M12 9v4M12 17h.01" /></>} size={18} /></div>
+      <div className="notice-body">
+        <div className="notice-title">{title}</div>
+        <div className="notice-text">{text} <strong>{actionText}</strong></div>
+      </div>
+      {acknowledgeEntry?.can_acknowledge ? (
+        <div className="notice-actions">
+          <button className="btn btn-xs" type="button" onClick={onAcknowledge}>Acknowledge</button>
+        </div>
       ) : null}
-    </SharedAlert>
+    </div>
   );
 }
 
@@ -999,16 +966,16 @@ function LineItemCards({ entry, related, instances }: { entry: StockEntryRecord;
 
 function ItemsIssuedTable({ entry, related, instances }: { entry: StockEntryRecord; related: RelatedEntries; instances: StockEntryItemInstance[] }) {
   const registerColumnLabel = "Register";
-  const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
-  const selectedItem = entry.items.find(item => item.id === selectedItemId) ?? null;
-  const selectedLine = selectedItem ? resolveLine(entry, selectedItem, related) : null;
+  const groups = useMemo(() => groupLineItems(entry.items), [entry.items]);
+  const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null);
+  const selectedGroup = groups.find(group => group.key === selectedGroupKey) ?? null;
 
   return (
     <>
       <div className="card">
         <div className="card-head">
           <h3>Line items</h3>
-          <div className="head-meta">{entry.items.length} line item{entry.items.length === 1 ? "" : "s"} · Register coordinates recorded</div>
+          <div className="head-meta">{groups.length} item{groups.length === 1 ? "" : "s"} · {entry.items.length} source line{entry.items.length === 1 ? "" : "s"}</div>
         </div>
         <div className="h-scroll">
           <table className="items-table">
@@ -1026,7 +993,7 @@ function ItemsIssuedTable({ entry, related, instances }: { entry: StockEntryReco
                       title="Shows how many units of this line were returned during acknowledgement."
                       aria-label="Returned quantity help"
                     >
-                      ?
+                      <Ic d="M12 17h.01M12 11v4M21 12a9 9 0 11-18 0 9 9 0 0118 0z" size={12} />
                     </span>
                   </span>
                 </th>
@@ -1035,30 +1002,38 @@ function ItemsIssuedTable({ entry, related, instances }: { entry: StockEntryReco
               </tr>
             </thead>
             <tbody>
-              {entry.items.map((item, index) => {
-                const line = resolveLine(entry, item, related);
-                const returned = line.returned ?? null;
-                const registerRef = lineRegisterRef(entry, item, line);
-                const itemInstances = effectiveInstances(entry, item, related);
-                const detailLabel = itemInstances.length > 0 ? "View instances" : "View batch";
+              {groups.map((group, index) => {
+                const firstLine = group.lines[0];
+                const totals = groupTotals(entry, group, related);
+                const registerRefs = uniqueLineValues(group.lines.map(item => lineRegisterRef(entry, item, resolveLine(entry, item, related))));
+                const sourceRefs = uniqueLineValues(group.lines.map(item => item.source_inspection_number));
+                const lotCount = uniqueLineValues(group.lines.map(item => item.batch_number)).length;
+                const hasInstances = totals.instances > 0;
+                const detailLabel = hasInstances ? "View instances" : "View batch";
 
                 return (
-                  <tr key={item.id}>
+                  <tr key={group.key}>
                     <td className="idx">{String(index + 1).padStart(2, "0")}</td>
                     <td>
-                      <div className="item-main">{item.item_name ?? `Item ${item.item}`}</div>
-                      <div className="item-sub">{item.batch_number ?? "No batch"} · {trackingLabel(entry, item, related)} tracking{itemInstances.length ? ` · ${itemInstances.length} instances` : ""}</div>
+                      <div className="item-main">{group.itemName}</div>
+                      <div className="item-sub">
+                        {hasInstances
+                          ? `${totals.instances} tracked instance${totals.instances === 1 ? "" : "s"}`
+                          : `${lotCount || 1} source lot${lotCount === 1 ? "" : "s"}`}
+                        {sourceRefs.length ? ` · ${sourceRefs.join(", ")}` : ""}
+                        {" · "}{trackingLabel(entry, firstLine, related)} tracking
+                      </div>
                     </td>
-                    <td className="num">{item.quantity}</td>
-                    <td className="num">{line.accepted ?? "-"}</td>
-                    <td className="num">{returned ?? "-"}</td>
+                    <td className="num">{totals.quantity}</td>
+                    <td className="num">{totals.hasPending ? "-" : totals.accepted}</td>
+                    <td className="num">{totals.hasPending ? "-" : totals.returned}</td>
                     <td className="register-cell">
-                      <div className="register-ref mono-small">{registerRef}</div>
+                      <div className="register-ref mono-small">{registerRefs.length > 1 ? `${registerRefs.length} refs` : registerRefs[0] ?? "-"}</div>
                     </td>
                     <td className="details-cell">
-                      <Button type="button" variant="outline" size="xs" onClick={() => setSelectedItemId(item.id)}>
+                      <button type="button" className="btn btn-xs" onClick={() => setSelectedGroupKey(group.key)}>
                         {detailLabel}
-                      </Button>
+                      </button>
                     </td>
                   </tr>
                 );
@@ -1067,14 +1042,13 @@ function ItemsIssuedTable({ entry, related, instances }: { entry: StockEntryReco
           </table>
         </div>
       </div>
-      {selectedItem && selectedLine ? (
+      {selectedGroup ? (
         <LineItemDetailModal
           entry={entry}
-          item={selectedItem}
-          line={selectedLine}
+          group={selectedGroup}
           related={related}
           instances={instances}
-          onClose={() => setSelectedItemId(null)}
+          onClose={() => setSelectedGroupKey(null)}
         />
       ) : null}
     </>
@@ -1263,24 +1237,22 @@ function LineDetails({ entry, item, line, related, instanceMap }: { entry: Stock
 
   if (itemInstances.length > 0) {
     return (
-      <div style={{ display: "grid", gap: 10 }}>
+      <div className="stock-line-instance-section">
         <div className="eyebrow">Transferred instances</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+        <div className="stock-line-instance-rows">
           {itemInstances.map(instanceId => {
             const instance = instanceMap.get(instanceId);
             const accepted = acceptedIds.size ? acceptedIds.has(instanceId) : returned === 0 && entry.status === "COMPLETED";
             const detailHref = `/items/${instance?.item ?? item.item}/instances/${instanceId}`;
             return (
               <Link key={instanceId} href={detailHref} className="line-instance-link">
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-                  <strong>{instance?.serial_number ?? `Instance ${instanceId}`}</strong>
+                <div className="line-instance-main">
+                  <strong>{instanceIdentifier(instance, instanceId)}</strong>
                   <span className={`pill ${accepted ? "pill-success" : returned ? "pill-warning" : "pill-neutral"}`}>
                     {accepted ? "Accepted" : returned ? "Returned" : formatLabel(instance?.status)}
                   </span>
                 </div>
-                <div className="login-cell-sub mono" style={{ marginTop: 6 }}>{instance?.qr_code ?? `#${instanceId}`}</div>
-                <div className="login-cell-sub" style={{ marginTop: 4 }}>{instance?.location_name ?? instance?.full_location_path ?? "Location pending sync"}</div>
-                <div className="login-cell-sub line-instance-link-note">Open instance detail</div>
+                <div className="line-instance-meta">{instance?.location_name ?? instance?.full_location_path ?? "Location pending sync"}</div>
               </Link>
             );
           })}
@@ -1304,72 +1276,99 @@ function LineDetails({ entry, item, line, related, instanceMap }: { entry: Stock
 
 function LineItemDetailModal({
   entry,
-  item,
-  line,
+  group,
   related,
   instances,
   onClose,
 }: {
   entry: StockEntryRecord;
-  item: StockEntryItemRecord;
-  line: LineResolution;
+  group: LineItemGroup;
   related: RelatedEntries;
   instances: StockEntryItemInstance[];
   onClose: () => void;
 }) {
   const instanceMap = useMemo(() => new Map(instances.map(instance => [instance.id, instance])), [instances]);
-  const inspection = inspectionCertificateContext(entry, related);
-  const inspectionHref = inspection ? `/inspections/${inspection.id}` : null;
-  const itemInstances = effectiveInstances(entry, item, related);
+  const totals = groupTotals(entry, group, related);
+  const itemInstances = group.lines.flatMap(item => effectiveInstances(entry, item, related));
+  const hasInstances = itemInstances.length > 0;
+  const sourceLots = group.lines.map(item => ({
+    item,
+    line: resolveLine(entry, item, related),
+    inspectionHref: item.source_inspection ? `/inspections/${item.source_inspection}` : null,
+  }));
+  const sourceDistributions = Array.from(sourceLots.reduce((map, { item, inspectionHref }) => {
+    const key = item.source_inspection ? `inspection-${item.source_inspection}` : `unlinked-${item.id}`;
+    const existing = map.get(key);
+    if (existing) {
+      existing.quantity += item.quantity;
+    } else {
+      map.set(key, {
+        key,
+        href: inspectionHref,
+        number: item.source_inspection_number ?? null,
+        department: item.source_inspection_department ?? null,
+        quantity: item.quantity,
+      });
+    }
+    return map;
+  }, new Map<string, { key: string; href: string | null; number: string | null; department: string | null; quantity: number }>()).values());
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
       <div className="modal modal-lg stock-line-modal" role="dialog" aria-modal="true" aria-labelledby="stock-line-detail-title" onMouseDown={event => event.stopPropagation()}>
         <div className="modal-head">
           <div>
-            <div className="eyebrow">Line item detail</div>
-            <h2 id="stock-line-detail-title">{item.item_name ?? `Item ${item.item}`}</h2>
+            <div className="eyebrow">{hasInstances ? "View instances" : "View batch"}</div>
+            <h2 id="stock-line-detail-title">{group.itemName}</h2>
             <div className="login-cell-sub">
-              {itemInstances.length > 0 ? `${itemInstances.length} transferred instance${itemInstances.length === 1 ? "" : "s"}` : "Batch transfer detail"}
+              {hasInstances
+                ? `${itemInstances.length} transferred instance${itemInstances.length === 1 ? "" : "s"}`
+                : `${totals.quantity} total quantity from ${sourceDistributions.length} inspection source${sourceDistributions.length === 1 ? "" : "s"}`}
             </div>
           </div>
           <button type="button" className="modal-close" aria-label="Close line item detail modal" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
-          {itemInstances.length > 0 ? (
-            <div className="card-pad" style={{ display: "grid", gap: 14 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
-                <div className="kv"><div className="kv-label">Qty</div><div className="kv-value mono">{item.quantity}</div></div>
-                <div className="kv"><div className="kv-label">Accepted</div><div className="kv-value mono">{line.accepted ?? "-"}</div></div>
-                <div className="kv"><div className="kv-label">Returned</div><div className="kv-value mono">{line.returned ?? "-"}</div></div>
-                <div className="kv"><div className="kv-label">Register</div><div className="kv-value mono">{lineRegisterRef(entry, item, line)}</div></div>
-              </div>
-              <LineDetails entry={entry} item={item} line={line} related={related} instanceMap={instanceMap} />
+          <div className="stock-line-trace">
+            <div className="stock-line-summary-grid">
+              <div className="kv"><div className="kv-label">Total quantity</div><div className="kv-value mono">{totals.quantity}</div></div>
+              <div className="kv"><div className="kv-label">{hasInstances ? "Instances" : "Inspection sources"}</div><div className="kv-value mono">{hasInstances ? itemInstances.length : sourceDistributions.length}</div></div>
             </div>
-          ) : (
-            <div className="card-pad" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
-              <div className="kv">
-                <div className="kv-label">Batch Number</div>
-                <div className="kv-value mono">{item.batch_number ?? "No batch"}</div>
+
+            {hasInstances ? (
+              <div className="stock-line-instance-list">
+                {sourceLots.map(({ item, line }) => (
+                  <LineDetails key={item.id} entry={entry} item={item} line={line} related={related} instanceMap={instanceMap} />
+                ))}
               </div>
-              <div className="kv">
-                <div className="kv-label">Inspection Certificate</div>
-                <div className="kv-value">
-                  {inspectionHref && inspection ? (
-                    <Link href={inspectionHref} className="link-inline">
-                      {inspection.number}
-                    </Link>
-                  ) : (
-                    "-"
-                  )}
-                </div>
+            ) : (
+              <div className="h-scroll">
+                <table className="stock-line-source-table">
+                  <thead>
+                    <tr>
+                      <th>Source inspection</th>
+                      <th className="num">Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sourceDistributions.map(source => (
+                      <tr key={source.key}>
+                        <td>
+                          {source.href && source.number ? (
+                            <Link href={source.href} className="link-inline">{source.number}</Link>
+                          ) : (
+                            <span className="muted-note">Not linked</span>
+                          )}
+                          {source.department ? <div className="login-cell-sub">{source.department}</div> : null}
+                        </td>
+                        <td className="num">{source.quantity}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <div className="kv">
-                <div className="kv-label">Quantity</div>
-                <div className="kv-value mono">{item.quantity}</div>
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -1511,7 +1510,7 @@ function AckForm({ entry, related, registers, instances, onDone, onCancel }: { e
   return (
     <div className="stock-ack-form">
       <div className="stock-ack-form-inner">
-        {error && <Alert title="Couldn't acknowledge the entry">{error}</Alert>}
+        {error && <Alert>{error}</Alert>}
         {entry.items.map(item => {
           const row = values[item.id];
           const returning = item.quantity - row.quantity;
@@ -1584,13 +1583,13 @@ function AckForm({ entry, related, registers, instances, onDone, onCancel }: { e
         })}
         <div className="stock-ack-actions">
           {onCancel && (
-            <Button type="button" variant="outline" disabled={busy} onClick={onCancel}>
+            <button type="button" className="btn" disabled={busy} onClick={onCancel}>
               Cancel
-            </Button>
+            </button>
           )}
-          <Button type="button"  disabled={!canSubmit || busy} onClick={submit}>
+          <button type="button" className="btn btn-primary" disabled={!canSubmit || busy} onClick={submit}>
             {busy ? "Acknowledging..." : "Submit Acknowledgement"}
-          </Button>
+          </button>
         </div>
       </div>
     </div>
@@ -1660,82 +1659,81 @@ function CorrectionActionsPanel({
   if (!hasActions) return null;
 
   return (
-    <section className="stock-action-bar" aria-label="Entry correction actions">
-      <div className="stock-action-bar-row">
-        <span className="stock-action-bar-label">Entry actions</span>
-        <div className="stock-action-bar-buttons">
+    <Panel eyebrow="Controls" title="Entry correction actions">
+      <div style={{ display: "grid", gap: 12 }}>
+        {activeCorrection ? (
+          <div className="notice notice-warn">
+            <div className="notice-body">
+              <div className="notice-title">Correction {formatLabel(activeCorrection.status)}</div>
+              <div className="notice-text">
+                {activeCorrection.message || activeCorrection.reason}
+                {activeCorrection.status === "REQUESTED" && activeCorrection.resolution_type === "REVERSAL" && !isProjectedReceiptCorrection ? " Waiting for the receiving store to approve it from the linked receipt voucher." : ""}
+                {activeCorrection.status === "REQUESTED" && activeCorrection.resolution_type === "ADDITIONAL_MOVEMENT" && isProjectedReceiptCorrection ? " Waiting for the source store to approve and send the additional quantity." : ""}
+                {activeCorrection.status === "REQUESTED" && !isProjectedAdditionalMovement && (activeCorrection.resolution_type !== "REVERSAL" || isProjectedReceiptCorrection) ? " Approval is required before any linked movement is generated." : ""}
+                {activeCorrection.status === "APPROVED" && activeCorrection.resolution_type === "REVERSAL" && !isProjectedReceiptCorrection ? " The receiving store can apply it from the linked receipt voucher." : ""}
+                {activeCorrection.status === "APPROVED" && isProjectedAdditionalMovement ? " The source store can now apply it to generate the additional issue." : ""}
+                {activeCorrection.status === "APPROVED" && !isProjectedAdditionalMovement && (activeCorrection.resolution_type !== "REVERSAL" || isProjectedReceiptCorrection) ? " Apply it to generate the linked movement records." : ""}
+              </div>
+            </div>
+            {correctionCanBeActedOnHere && activeCorrection.status === "REQUESTED" ? (
+              <div className="notice-actions">
+                <button type="button" className="btn btn-xs btn-primary" onClick={onApproveCorrection} disabled={correctionActionBusy !== null}>
+                  {correctionActionBusy === "approve" ? "Approving..." : "Approve"}
+                </button>
+                <button type="button" className="btn btn-xs btn-ghost" onClick={onRejectCorrection} disabled={correctionActionBusy !== null}>
+                  {correctionActionBusy === "reject" ? "Rejecting..." : "Reject"}
+                </button>
+              </div>
+            ) : null}
+            {correctionCanBeActedOnHere && activeCorrection.status === "APPROVED" ? (
+              <div className="notice-actions">
+                <button type="button" className="btn btn-xs btn-primary" onClick={onApplyCorrection} disabled={correctionActionBusy !== null}>
+                  {correctionActionBusy === "apply" ? "Applying..." : "Apply Correction"}
+                </button>
+                <button type="button" className="btn btn-xs btn-ghost" onClick={onRejectCorrection} disabled={correctionActionBusy !== null}>
+                  {correctionActionBusy === "reject" ? "Rejecting..." : "Reject"}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {entry.can_cancel ? (
-            <Button type="button" variant="outline" size="xs" onClick={onCancelEntry}>
+            <button type="button" className="btn btn-sm" onClick={onCancelEntry}>
               Cancel Entry
-            </Button>
+            </button>
           ) : null}
           {entry.can_correct ? (
-            <Button type="button" size="xs" onClick={onResolveDifference}>
+            <button type="button" className="btn btn-sm btn-primary" onClick={onResolveDifference}>
               {differenceCopy.actionLabel}
-            </Button>
+            </button>
           ) : null}
           {entry.can_request_reversal ? (
-            <Button type="button" variant="outline" size="xs" onClick={onRequestReversal}>
+            <button type="button" className="btn btn-sm" onClick={onRequestReversal}>
               {reversalCopy.actionLabel}
-            </Button>
+            </button>
           ) : null}
           {canCreateReplacement ? (
-            <Button asChild variant="outline" size="xs"><Link  href={`/stock-entries?replacement_for=${entry.id}`}>
-              Create Replacement
-            </Link></Button>
+            <Link className="btn btn-sm" href={`/stock-entries?replacement_for=${entry.id}`}>
+              Create Replacement Entry
+            </Link>
           ) : null}
         </div>
-      </div>
 
-      {activeCorrection ? (
-        <SharedAlert variant="warning" className="stock-correction-alert">
-          <AlertTitle>Correction {formatLabel(activeCorrection.status)}</AlertTitle>
-          <AlertDescription>
-            {activeCorrection.message || activeCorrection.reason}
-            {activeCorrection.status === "REQUESTED" && activeCorrection.resolution_type === "REVERSAL" && !isProjectedReceiptCorrection ? " Waiting for the receiving store to approve it from the linked receipt voucher." : ""}
-            {activeCorrection.status === "REQUESTED" && activeCorrection.resolution_type === "ADDITIONAL_MOVEMENT" && isProjectedReceiptCorrection ? " Waiting for the source store to approve and send the additional quantity." : ""}
-            {activeCorrection.status === "REQUESTED" && !isProjectedAdditionalMovement && (activeCorrection.resolution_type !== "REVERSAL" || isProjectedReceiptCorrection) ? " Approval is required before any linked movement is generated." : ""}
-            {activeCorrection.status === "APPROVED" && activeCorrection.resolution_type === "REVERSAL" && !isProjectedReceiptCorrection ? " The receiving store can apply it from the linked receipt voucher." : ""}
-            {activeCorrection.status === "APPROVED" && isProjectedAdditionalMovement ? " The source store can now apply it to generate the additional issue." : ""}
-            {activeCorrection.status === "APPROVED" && !isProjectedAdditionalMovement && (activeCorrection.resolution_type !== "REVERSAL" || isProjectedReceiptCorrection) ? " Apply it to generate the linked movement records." : ""}
-          </AlertDescription>
-          {correctionCanBeActedOnHere && activeCorrection.status === "REQUESTED" ? (
-            <AlertActions>
-              <Button type="button" size="xs" onClick={onApproveCorrection} disabled={correctionActionBusy !== null}>
-                {correctionActionBusy === "approve" ? "Approving..." : "Approve"}
-              </Button>
-              <Button type="button" variant="ghost" size="xs" onClick={onRejectCorrection} disabled={correctionActionBusy !== null}>
-                {correctionActionBusy === "reject" ? "Rejecting..." : "Reject"}
-              </Button>
-            </AlertActions>
-          ) : null}
-          {correctionCanBeActedOnHere && activeCorrection.status === "APPROVED" ? (
-            <AlertActions>
-              <Button type="button" size="xs" onClick={onApplyCorrection} disabled={correctionActionBusy !== null}>
-                {correctionActionBusy === "apply" ? "Applying..." : "Apply Correction"}
-              </Button>
-              <Button type="button" variant="ghost" size="xs" onClick={onRejectCorrection} disabled={correctionActionBusy !== null}>
-                {correctionActionBusy === "reject" ? "Rejecting..." : "Reject"}
-              </Button>
-            </AlertActions>
-          ) : null}
-        </SharedAlert>
-      ) : null}
-
-      {entry.generated_correction_entries?.length ? (
-        <div className="stock-action-generated">
-          <span className="eyebrow">Generated records</span>
-          <div className="stock-action-generated-list">
+        {entry.generated_correction_entries?.length ? (
+          <div style={{ display: "grid", gap: 6 }}>
+            <div className="eyebrow">Generated Records</div>
             {entry.generated_correction_entries.map(generated => (
-              <Link key={generated.id} href={`/stock-entries/${generated.id}`} className="chip" style={{ textDecoration: "none" }}>
+              <Link key={generated.id} href={`/stock-entries/${generated.id}`} className="chip" style={{ justifyContent: "space-between", textDecoration: "none" }}>
                 <span>{generated.entry_number}</span>
-                <span className="chip-sub">{formatLabel(generated.reference_purpose ?? generated.entry_type)}</span>
+                <span>{formatLabel(generated.reference_purpose ?? generated.entry_type)}</span>
               </Link>
             ))}
           </div>
-        </div>
-      ) : null}
-    </section>
+        ) : null}
+      </div>
+    </Panel>
   );
 }
 
@@ -1878,7 +1876,7 @@ function CorrectionModal({ entry, related, instances, onDone, onClose }: { entry
         </div>
         <div className="modal-body">
           <div className="stock-correction-form">
-            {error && <Alert title="Couldn't submit the request">{error}</Alert>}
+            {error && <Alert>{error}</Alert>}
             <div className="notice notice-warn stock-correction-risk">
               <div className="notice-body">
                 <div className="notice-title">{copy.disclaimerTitle}</div>
@@ -1993,10 +1991,10 @@ function CorrectionModal({ entry, related, instances, onDone, onClose }: { entry
         </div>
         <div className="modal-foot">
           <div className="modal-foot-actions">
-            <Button type="button" variant="outline" disabled={busy} onClick={onClose}>Close</Button>
-            <Button type="button"  disabled={(preview ? !canSubmit : !canPreview) || busy} onClick={handlePrimaryAction}>
+            <button type="button" className="btn" disabled={busy} onClick={onClose}>Close</button>
+            <button type="button" className="btn btn-primary" disabled={(preview ? !canSubmit : !canPreview) || busy} onClick={handlePrimaryAction}>
               {busy ? (preview ? "Submitting..." : "Checking...") : primaryLabel}
-            </Button>
+            </button>
           </div>
         </div>
       </div>
@@ -2055,7 +2053,7 @@ function FullReversalModal({ entry, onDone, onClose }: { entry: StockEntryRecord
         </div>
         <div className="modal-body">
           <div className="stock-correction-form">
-            {error && <Alert title="Couldn't submit the request">{error}</Alert>}
+            {error && <Alert>{error}</Alert>}
             <div className="notice notice-warn stock-correction-risk">
               <div className="notice-body">
                 <div className="notice-title">{copy.disclaimerTitle}</div>
@@ -2115,10 +2113,10 @@ function FullReversalModal({ entry, onDone, onClose }: { entry: StockEntryRecord
         </div>
         <div className="modal-foot">
           <div className="modal-foot-actions">
-            <Button type="button" variant="outline" disabled={busy} onClick={onClose}>Close</Button>
-            <Button type="button"  disabled={Boolean(validationMessage) || busy} onClick={submit}>
+            <button type="button" className="btn" disabled={busy} onClick={onClose}>Close</button>
+            <button type="button" className="btn btn-primary" disabled={Boolean(validationMessage) || busy} onClick={submit}>
               {busy ? "Submitting..." : copy.submitLabel}
-            </Button>
+            </button>
           </div>
         </div>
       </div>
@@ -2275,11 +2273,23 @@ export default function StockEntryDetailPage() {
     return { reference, children, linkedReceipt, generatedReturns };
   }, [allEntries, entry]);
 
+  const acknowledgementEntry = entry ? getStockEntryAcknowledgeTarget(entry, entry.entry_type === "ISSUE" ? related.linkedReceipt : null) : null;
+  const acknowledgementRelated = useMemo<RelatedEntries>(() => {
+    if (!entry || !acknowledgementEntry || acknowledgementEntry.id === entry.id) return related;
+    const children = allEntries.filter(candidate => candidate.reference_entry === acknowledgementEntry.id && candidate.id !== acknowledgementEntry.id);
+    return {
+      reference: entry,
+      children,
+      linkedReceipt: null,
+      generatedReturns: children.filter(candidate => candidate.entry_type === "RETURN"),
+    };
+  }, [acknowledgementEntry, allEntries, entry, related]);
+
   return (
     <div>
       <Topbar breadcrumb={["Operations", "Stock Entries", entry?.entry_number ?? "Detail"]} />
       <div className="page">
-        {error && <Alert title="Couldn't load this stock entry">{error}</Alert>}
+        {error && <Alert>{error}</Alert>}
         {actionNotice ? (
           <div className="notice notice-info">
             <div className="notice-body">
@@ -2287,7 +2297,7 @@ export default function StockEntryDetailPage() {
               <div className="notice-text">{actionNotice}</div>
             </div>
             <div className="notice-actions">
-              <Button type="button" variant="ghost" size="xs" onClick={() => setActionNotice(null)}>Dismiss</Button>
+              <button type="button" className="btn btn-xs btn-ghost" onClick={() => setActionNotice(null)}>Dismiss</button>
             </div>
           </div>
         ) : null}
@@ -2296,6 +2306,10 @@ export default function StockEntryDetailPage() {
           <div className="table-card" style={{ padding: 32, color: "var(--muted)", textAlign: "center" }}>Loading stock entry...</div>
         ) : entry ? (
           <>
+            <Link className="page-back stock-page-back-inline" href="/stock-entries">
+              <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
+              Back to Stock Entries
+            </Link>
             <StockVoucherHead entry={entry} related={related} />
             <CorrectionActionsPanel
               entry={entry}
@@ -2318,17 +2332,17 @@ export default function StockEntryDetailPage() {
             <RoutingPanel entry={entry} related={related} />
             <ItemsIssuedTable entry={entry} related={related} instances={instances} />
 
-            <div className="detail-grid stock-entry-detail-grid">
+            <div className="detail-grid">
               <div className="detail-main">
+                <WorkflowHistoryCard entry={entry} related={related} />
+              </div>
+              <aside className="detail-aside">
                 <StatusAsideCard entry={entry} related={related} />
                 <RelatedRecordsCard entry={entry} related={related} />
-              </div>
-              <aside className="detail-aside stock-entry-workflow-aside">
-                <WorkflowHistoryCard entry={entry} related={related} />
               </aside>
             </div>
-            {ackModalOpen && entry.can_acknowledge && entry.status === "PENDING_ACK" && (
-              <AckModal entry={entry} related={related} registers={registers} instances={instances} onDone={load} onClose={() => setAckModalOpen(false)} />
+            {ackModalOpen && acknowledgementEntry?.can_acknowledge && acknowledgementEntry.status === "PENDING_ACK" && (
+              <AckModal entry={acknowledgementEntry} related={acknowledgementRelated} registers={registers} instances={instances} onDone={load} onClose={() => setAckModalOpen(false)} />
             )}
             {correctionModalOpen && correctionMode === "difference" && entry.can_correct && (
               <CorrectionModal entry={entry} related={related} instances={instances} onDone={handleCorrectionDone} onClose={() => setCorrectionModalOpen(false)} />

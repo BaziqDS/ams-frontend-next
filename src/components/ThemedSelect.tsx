@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { DropdownPortal } from "@/components/DropdownPortal";
 
 export interface ThemedSelectOption {
   value: string;
@@ -36,6 +37,8 @@ export function ThemedSelect({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const selected = options.find(option => option.value === value) ?? null;
   const normalizedQuery = query.trim().toLowerCase();
@@ -56,12 +59,39 @@ export function ThemedSelect({
     setOpen(false);
   }, [value]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
+      setQuery("");
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        setQuery("");
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
   return (
     <div
+      ref={rootRef}
       className={`assignment-dropdown themed-select ${size === "compact" ? "compact" : ""}${open ? " open" : ""}${disabled ? " disabled" : ""}`}
       onBlur={event => {
         const nextTarget = event.relatedTarget;
-        if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
+        if (
+          !(nextTarget instanceof Node) ||
+          (!event.currentTarget.contains(nextTarget) && !menuRef.current?.contains(nextTarget))
+        ) {
           setOpen(false);
           setQuery("");
         }
@@ -99,7 +129,8 @@ export function ThemedSelect({
       </div>
 
       {open && !disabled ? (
-        <div className="assignment-menu">
+        <DropdownPortal anchorRef={rootRef} className="assignment-menu">
+        <div ref={menuRef}>
           <div className="assignment-list" style={{ maxHeight: 220 }}>
             {filteredOptions.length > 0 ? filteredOptions.map(option => (
               <button
@@ -122,6 +153,7 @@ export function ThemedSelect({
             )}
           </div>
         </div>
+        </DropdownPortal>
       ) : null}
     </div>
   );

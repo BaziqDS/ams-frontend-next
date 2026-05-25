@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { apiFetch, type Page } from "@/lib/api";
 import { ThemedSelect } from "@/components/ThemedSelect";
-import { LOCATION_TYPE_LABELS, locationTypeLabel, type LocationRecord } from "@/lib/userUiShared";
+import { LOCATION_TYPE_LABELS, locationTagCategoryLabel, locationTypeLabel, type LocationRecord, type LocationTagRecord } from "@/lib/userUiShared";
 import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
 import { ensureValueInOptions, normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
 import { focusCopilotFormField } from "@/lib/copilotFocus";
@@ -50,6 +50,81 @@ function Section({ n, title, sub, children }: { n: number; title: string; sub?: 
   );
 }
 
+function LocationTagSelect({
+  value,
+  tags,
+  loading,
+  error,
+  query,
+  onQueryChange,
+  onToggle,
+}: {
+  value: string[];
+  tags: LocationTagRecord[];
+  loading: boolean;
+  error: string | null;
+  query: string;
+  onQueryChange: (value: string) => void;
+  onToggle: (tagId: string) => void;
+}) {
+  const selectedIds = useMemo(() => new Set(value), [value]);
+  const selectedTags = useMemo(
+    () => value.map(id => tags.find(tag => String(tag.id) === id)).filter((tag): tag is LocationTagRecord => Boolean(tag)),
+    [tags, value],
+  );
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredTags = useMemo(() => {
+    const visible = tags.filter(tag => tag.is_active !== false && !selectedIds.has(String(tag.id)));
+    if (!normalizedQuery) return visible.slice(0, 20);
+    return visible
+      .filter(tag => {
+        const label = `${tag.name} ${tag.code ?? ""} ${tag.category_display ?? locationTagCategoryLabel(tag.category)}`.toLowerCase();
+        return label.includes(normalizedQuery);
+      })
+      .slice(0, 20);
+  }, [normalizedQuery, selectedIds, tags]);
+
+  return (
+    <div className="tag-combobox">
+      <div className="tag-combobox-control">
+        <div className="tag-selected-chips">
+          {selectedTags.map(tag => (
+            <span className="chip-removable" key={tag.id}>
+              {tag.category_display ?? locationTagCategoryLabel(tag.category)}: {tag.name}
+              <button type="button" onClick={() => onToggle(String(tag.id))} aria-label={`Remove ${tag.name}`}>×</button>
+            </span>
+          ))}
+          <input
+            value={query}
+            onChange={event => onQueryChange(event.target.value)}
+            placeholder={selectedTags.length > 0 ? "Search tags" : "Search available tags"}
+            disabled={loading || Boolean(error)}
+          />
+        </div>
+      </div>
+      <div className="tag-combobox-menu">
+        <div className="tag-combobox-head">
+          <span>{loading ? "Loading tags..." : error ? "Tags failed to load" : `${tags.length} available`}</span>
+          <span className="mono">{selectedTags.length} selected</span>
+        </div>
+        {error ? <div className="tag-combobox-note error">{error}</div> : null}
+        {!error && filteredTags.map(tag => (
+          <button type="button" className="tag-option" key={tag.id} onClick={() => onToggle(String(tag.id))}>
+            <span>
+              <strong>{tag.name}</strong>
+              <small>{tag.category_display ?? locationTagCategoryLabel(tag.category)}{tag.code ? ` / ${tag.code}` : ""}</small>
+            </span>
+            <Ic d="M12 5v14M5 12h14" size={13} />
+          </button>
+        ))}
+        {!loading && !error && filteredTags.length === 0 ? (
+          <div className="tag-combobox-note">No matching tags.</div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 type LocationFormState = LocationCopilotFormState;
 
 function emptyForm(): LocationFormState {
@@ -58,7 +133,8 @@ function emptyForm(): LocationFormState {
     code: "",
     main_store_name: "",
     parent_location: "",
-    location_type: "DEPARTMENT",
+    tags: [],
+    location_type: "",
     create_main_store: false,
     is_store: false,
     is_active: true,
@@ -77,6 +153,7 @@ function formFromLocation(location: LocationRecord | null): LocationFormState {
     code: location.code ?? "",
     main_store_name: "",
     parent_location: location.parent_location == null ? "" : String(location.parent_location),
+    tags: (location.tags ?? []).map(String),
     location_type: location.location_type === "STORE" ? "OTHER" : location.location_type ?? "DEPARTMENT",
     create_main_store: false,
     is_store: Boolean(location.is_store),
@@ -94,6 +171,7 @@ function toPayload(form: LocationFormState) {
     code: form.code.trim(),
     main_store_name: form.main_store_name.trim(),
     parent_location: form.parent_location ? Number(form.parent_location) : null,
+    tags: form.tags.map(Number),
     location_type: form.create_main_store ? "STORE" : form.location_type,
     create_main_store: form.create_main_store,
     is_store: form.create_main_store ? true : form.is_store,
@@ -138,6 +216,10 @@ export function LocationModal({ open, mode, location, createContext = "default",
   const [parentLocations, setParentLocations] = useState<LocationRecord[]>([]);
   const [parentLoading, setParentLoading] = useState(false);
   const [parentError, setParentError] = useState<string | null>(null);
+  const [locationTags, setLocationTags] = useState<LocationTagRecord[]>([]);
+  const [tagsLoading, setTagsLoading] = useState(false);
+  const [tagsError, setTagsError] = useState<string | null>(null);
+  const [tagQuery, setTagQuery] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -151,27 +233,44 @@ export function LocationModal({ open, mode, location, createContext = "default",
     setSubmitting(false);
     setSubmitError(null);
     setParentLocations([]);
+    setLocationTags([]);
+    setTagQuery("");
     const needsParentOptions = mode === "edit" || createContext === "default";
     setParentLoading(needsParentOptions);
     setParentError(null);
-
-    if (!needsParentOptions) return;
+    setTagsLoading(true);
+    setTagsError(null);
 
     let cancelled = false;
 
-    apiFetch<LocationRecord[] | Page<LocationRecord>>("/api/inventory/locations/?page_size=500")
+    if (needsParentOptions) {
+      apiFetch<LocationRecord[] | Page<LocationRecord>>("/api/inventory/locations/?page_size=500")
+        .then(data => {
+          if (cancelled) return;
+          const records = Array.isArray(data) ? data : data.results;
+          const options = location?.id ? records.filter(item => item.id !== location.id) : records;
+          setParentLocations(options);
+        })
+        .catch(err => {
+          if (cancelled) return;
+          setParentError(err instanceof Error ? err.message : "Failed to load parent locations.");
+        })
+        .finally(() => {
+          if (!cancelled) setParentLoading(false);
+        });
+    }
+
+    apiFetch<LocationTagRecord[] | Page<LocationTagRecord>>("/api/inventory/location-tags/?page_size=500")
       .then(data => {
         if (cancelled) return;
-        const records = Array.isArray(data) ? data : data.results;
-        const options = location?.id ? records.filter(item => item.id !== location.id) : records;
-        setParentLocations(options);
+        setLocationTags(Array.isArray(data) ? data : data.results);
       })
       .catch(err => {
         if (cancelled) return;
-        setParentError(err instanceof Error ? err.message : "Failed to load parent locations.");
+        setTagsError(err instanceof Error ? err.message : "Failed to load tags.");
       })
       .finally(() => {
-        if (!cancelled) setParentLoading(false);
+        if (!cancelled) setTagsLoading(false);
       });
 
     return () => {
@@ -224,13 +323,25 @@ export function LocationModal({ open, mode, location, createContext = "default",
     if (canCreateMissingMainStore) return "This standalone location does not currently have a main store.";
     if (!isEditMode && createContext === "child" && lockedParent) return `Creating sub-location under ${lockedParent.name}.`;
     if (parentError) return `Parent locations failed to load: ${parentError}`;
+    if (tagsError) return `Tags failed to load: ${tagsError}`;
     if (parentLoading) return "Loading parent locations…";
+    if (tagsLoading) return "Loading tags…";
     if (parentLocations.length === 0) return "No parent locations were returned. Root locations can still be saved without a parent.";
     return null;
-  }, [canCreateMissingMainStore, createContext, isEditMode, lockedParent, parentError, parentLoading, parentLocations.length]);
+  }, [canCreateMissingMainStore, createContext, isEditMode, lockedParent, parentError, parentLoading, parentLocations.length, tagsError, tagsLoading]);
 
   const set = useCallback((patch: Partial<LocationFormState>) => {
     setForm(prev => ({ ...prev, ...patch }));
+  }, []);
+
+  const toggleTag = useCallback((tagId: string) => {
+    setForm(prev => ({
+      ...prev,
+      tags: prev.tags.includes(tagId)
+        ? prev.tags.filter(id => id !== tagId)
+        : [...prev.tags, tagId],
+    }));
+    setTagQuery("");
   }, []);
 
   const copilotFields = useMemo<CopilotFormField[]>(() => [
@@ -271,6 +382,13 @@ export function LocationModal({ open, mode, location, createContext = "default",
         lockedParent?.name,
       ),
       description: "Parent Location id. Empty means a root location when the default hierarchy flow allows it.",
+    },
+    {
+      name: "tags",
+      label: "Tags",
+      type: "string",
+      optionSource: "inventory.location_tags",
+      description: "Optional reporting and grouping tags. Tags do not affect hierarchy, filtering, or user permissions.",
     },
     {
       name: "location_type",
@@ -341,7 +459,7 @@ export function LocationModal({ open, mode, location, createContext = "default",
           next.location_type = "STORE";
           next.is_store = true;
         } else if (prev.create_main_store && next.location_type === "STORE") {
-          next.location_type = typeof patch.location_type === "string" ? patch.location_type : "DEPARTMENT";
+          next.location_type = typeof patch.location_type === "string" ? patch.location_type : "";
           next.is_store = typeof patch.is_store === "boolean" ? patch.is_store : false;
         }
       }
@@ -435,7 +553,7 @@ export function LocationModal({ open, mode, location, createContext = "default",
     fields: copilotFields,
     values: form as unknown as Record<string, unknown>,
     errors: Object.fromEntries(Object.entries(errors).filter((entry): entry is [string, string] => Boolean(entry[1]))),
-    canSetValues: !submitting && !parentLoading,
+    canSetValues: !submitting && !parentLoading && !tagsLoading,
     canValidate: true,
     canSubmit: canSave,
     requirements: {
@@ -531,6 +649,19 @@ export function LocationModal({ open, mode, location, createContext = "default",
                       disabled={form.create_main_store}
                     />
                   </Field>
+                  <Field label="Tags" hint="Optional reporting dimensions for distribution and reports." span={2} copilotField="tags">
+                    <LocationTagSelect
+                      value={form.tags}
+                      tags={locationTags}
+                      loading={tagsLoading}
+                      error={tagsError}
+                      query={tagQuery}
+                      onQueryChange={value => {
+                        setTagQuery(value);
+                      }}
+                      onToggle={toggleTag}
+                    />
+                  </Field>
                   {canCreateMissingMainStore && (
                     <Field
                       label="Main store"
@@ -544,7 +675,7 @@ export function LocationModal({ open, mode, location, createContext = "default",
                           checked={form.create_main_store}
                           onChange={event => set({
                             create_main_store: event.target.checked,
-                            location_type: event.target.checked ? "STORE" : "DEPARTMENT",
+                            location_type: event.target.checked ? "STORE" : "",
                             is_store: event.target.checked,
                           })}
                         />

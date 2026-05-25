@@ -5,7 +5,7 @@ import { apiFetch, type Page } from "@/lib/api";
 import { type Location, type User } from "@/lib/userUiShared";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
-
+import { DropdownPortal } from "@/components/DropdownPortal";
 
 // ── Backend API types ─────────────────────────────────────────────────────────
 
@@ -117,6 +117,7 @@ export function LocationScopePicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const byId = useMemo(() => new Map(locations.map(location => [location.id, location])), [locations]);
   const hasRootScope = useMemo(
@@ -196,6 +197,7 @@ export function LocationScopePicker({
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target;
       if (target instanceof Node && rootRef.current?.contains(target)) return;
+      if (target instanceof Node && menuRef.current?.contains(target)) return;
       closeDropdown();
     };
     const onKeyDown = (event: KeyboardEvent) => {
@@ -319,7 +321,8 @@ export function LocationScopePicker({
         </div>
 
         {open && !readOnly && (
-          <div className="assignment-menu">
+          <DropdownPortal anchorRef={rootRef} className="assignment-menu">
+          <div ref={menuRef}>
             <div className="assignment-list">
               {visibleStandaloneRows.length > 0 ? visibleStandaloneRows.map(({ standalone, visibleChildren }) => {
                 const fixedStandalone = standaloneFixed && standaloneLocations[0]?.id === standalone.id;
@@ -364,6 +367,7 @@ export function LocationScopePicker({
               )}
             </div>
           </div>
+          </DropdownPortal>
         )}
       </div>
       <div className="field-hint assignment-help">
