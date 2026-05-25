@@ -35,6 +35,8 @@ export interface LocationRecord {
   code: string;
   parent_location: number | null;
   parent_location_display?: string | null;
+  tags?: number[];
+  tags_display?: LocationTagRecord[];
   location_type: string;
   description: string | null;
   address: string | null;
@@ -53,6 +55,30 @@ export interface LocationRecord {
   updated_at: string;
   can_delete?: boolean;
   delete_blockers?: string[];
+}
+
+export interface LocationTagRecord {
+  id: number;
+  name: string;
+  code: string;
+  category: string;
+  category_display?: string;
+  label?: string;
+  color: string;
+  is_active: boolean;
+}
+
+export const LOCATION_TAG_CATEGORY_LABELS: Record<string, string> = {
+  BUILDING: "Building",
+  DEAN_FACULTY: "Dean Faculty",
+  DEPARTMENT_NATURE: "Department Nature",
+  CAMPUS_ZONE: "Campus Zone",
+  USAGE_TYPE: "Usage Type",
+  OTHER: "Other",
+};
+
+export function locationTagCategoryLabel(category: string) {
+  return LOCATION_TAG_CATEGORY_LABELS[category] ?? category;
 }
 
 export interface StockRegisterRecord {

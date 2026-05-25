@@ -3,6 +3,7 @@ export type LocationCopilotFormState = {
   code: string;
   main_store_name: string;
   parent_location: string;
+  tags: string[];
   location_type: string;
   create_main_store: boolean;
   is_store: boolean;
@@ -52,6 +53,12 @@ export function buildLocationCopilotValuePatch(
 
   if (typeof values.parent_location === "string" || typeof values.parent_location === "number") {
     patch.parent_location = String(values.parent_location);
+  }
+
+  if (Array.isArray(values.tags)) {
+    patch.tags = values.tags
+      .filter((tag): tag is string | number => typeof tag === "string" || typeof tag === "number")
+      .map(String);
   }
 
   BOOLEAN_FIELDS.forEach((field) => {

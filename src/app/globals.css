@@ -3958,6 +3958,100 @@ button:active,
 }
 .loc-selected-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 
+.table-head-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tag-color-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.tag-combobox {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  overflow: visible;
+}
+.tag-combobox-control {
+  min-height: 42px;
+  padding: 6px 8px;
+}
+.tag-selected-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tag-selected-chips input {
+  flex: 1 1 180px;
+  min-width: 140px;
+  height: 26px;
+  border: 0;
+  outline: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: transparent;
+}
+.tag-selected-chips input::placeholder { color: var(--muted-2); }
+.tag-combobox-menu {
+  border-top: 1px solid var(--hairline);
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--surface);
+}
+.tag-combobox-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 6px 8px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.tag-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  padding: 8px 9px;
+  cursor: pointer;
+}
+.tag-option:hover { background: var(--card); }
+.tag-option strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.tag-option small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.tag-combobox-note {
+  padding: 10px 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.tag-combobox-note.error {
+  color: var(--danger);
+}
+
 @media (max-width: 720px) {
   .location-section-intro {
     max-width: none;
@@ -3966,6 +4060,7 @@ button:active,
   .loc-tree {
     max-height: 200px;
   }
+
 }
 
 .chip-removable {
@@ -4324,10 +4419,44 @@ button:active,
 
 /* ---------- Scrollbar inside modal ---------- */
 
-.modal-body::-webkit-scrollbar { width: 6px; }
-.modal-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
-.loc-tree::-webkit-scrollbar { width: 5px; }
-.loc-tree::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+.modal-body,
+.form-section-body,
+.textarea-field,
+.loc-tree {
+  scrollbar-width: auto;
+  scrollbar-color: color-mix(in oklch, var(--border-strong) 72%, #d9c9a7) transparent;
+}
+
+.modal-body::-webkit-scrollbar,
+.form-section-body::-webkit-scrollbar,
+.textarea-field::-webkit-scrollbar,
+.loc-tree::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+.modal-body::-webkit-scrollbar-track,
+.form-section-body::-webkit-scrollbar-track,
+.textarea-field::-webkit-scrollbar-track,
+.loc-tree::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-body::-webkit-scrollbar-thumb,
+.form-section-body::-webkit-scrollbar-thumb,
+.textarea-field::-webkit-scrollbar-thumb,
+.loc-tree::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--border-strong) 72%, #d9c9a7);
+  border-radius: 999px;
+  border: 2px solid var(--surface);
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover,
+.form-section-body::-webkit-scrollbar-thumb:hover,
+.textarea-field::-webkit-scrollbar-thumb:hover,
+.loc-tree::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklch, var(--border-strong) 86%, #d9c9a7);
+}
 
 /* ────────────────────────────────────────────────────────────────
    PILL VARIANTS (info + accent)
@@ -7096,7 +7225,7 @@ button:active,
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
-  cursor: help;
+  cursor: default;
 }
 
 .items-table tbody tr:hover {
@@ -7164,7 +7293,7 @@ button:active,
   margin-inline: auto;
 }
 
-.stock-line-modal { max-width: 860px; }
+.stock-line-modal { max-width: 920px; }
 .link-inline {
   color: var(--primary);
   text-decoration: none;
@@ -7175,26 +7304,102 @@ button:active,
   text-decoration: underline;
 }
 
-.line-instance-link {
-  display: block;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
+.stock-line-trace {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.stock-line-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.stock-line-summary-grid .kv {
   padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.stock-line-source-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.stock-line-source-table th {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--surface);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.stock-line-source-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--hairline);
+  vertical-align: top;
+}
+
+.stock-line-source-table tr:last-child td { border-bottom: 0; }
+.stock-line-source-table .num { text-align: right; font-family: var(--font-mono); }
+
+.stock-line-instance-list,
+.stock-line-instance-section {
+  display: grid;
+  gap: 10px;
+}
+
+.stock-line-instance-rows {
+  display: grid;
+  gap: 6px;
+}
+
+.line-instance-link {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 8px 10px;
   background: var(--surface);
   color: inherit;
   text-decoration: none;
-  transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
 .line-instance-link:hover {
   border-color: color-mix(in oklch, var(--primary) 42%, var(--hairline));
   background: color-mix(in oklch, var(--surface) 88%, var(--primary) 12%);
-  transform: translateY(-1px);
 }
 
-.line-instance-link-note {
-  margin-top: 8px;
-  color: var(--primary);
+.line-instance-main {
+  display: contents;
+}
+
+.line-instance-main strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.line-instance-meta {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.35;
 }
 
 .stock-movement-card {

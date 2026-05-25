@@ -8,7 +8,7 @@ import { ThemedSelect } from "@/components/ThemedSelect";
 import { Topbar } from "@/components/Topbar";
 import { LocationModal } from "@/components/LocationModal";
 import { apiFetch, type Page } from "@/lib/api";
-import { LOCATION_TYPE_LABELS, locationTypeLabel, relTime, type LocationRecord } from "@/lib/userUiShared";
+import { LOCATION_TAG_CATEGORY_LABELS, LOCATION_TYPE_LABELS, locationTagCategoryLabel, locationTypeLabel, relTime, type LocationRecord, type LocationTagRecord } from "@/lib/userUiShared";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
 import { useCopilotAction } from "@/hooks/useCopilotAction";
 import { useCopilotListControls } from "@/hooks/useCopilotListControls";
@@ -69,6 +69,234 @@ function DensityToggle({ density, setDensity }: { density: "compact" | "balanced
           {option.charAt(0).toUpperCase() + option.slice(1)}
         </button>
       ))}
+    </div>
+  );
+}
+
+type TagFormState = {
+  name: string;
+  code: string;
+  category: string;
+  is_active: boolean;
+};
+
+function emptyTagForm(): TagFormState {
+  return {
+    name: "",
+    code: "",
+    category: "BUILDING",
+    is_active: true,
+  };
+}
+
+function TagsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [mode, setMode] = useState<"list" | "create">("list");
+  const [tags, setTags] = useState<LocationTagRecord[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [form, setForm] = useState<TagFormState>(emptyTagForm);
+  const [touched, setTouched] = useState<Set<string>>(() => new Set());
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const loadTags = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const data = await apiFetch<LocationTagRecord[] | Page<LocationTagRecord>>("/api/inventory/location-tags/?page_size=500");
+      setTags(Array.isArray(data) ? data : data.results);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Failed to load tags.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    setMode("list");
+    setForm(emptyTagForm());
+    setTouched(new Set());
+    setSubmitting(false);
+    setSubmitError(null);
+    void loadTags();
+  }, [loadTags, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const nameError = touched.has("name") && !form.name.trim() ? "Tag name is required." : undefined;
+  const canSave = !submitting && Boolean(form.name.trim());
+
+  const submit = async () => {
+    setTouched(new Set(["name"]));
+    if (!form.name.trim()) return;
+
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const saved = await apiFetch<LocationTagRecord>("/api/inventory/location-tags/", {
+        method: "POST",
+        body: JSON.stringify({
+          name: form.name.trim(),
+          code: form.code.trim(),
+          category: form.category,
+          is_active: form.is_active,
+        }),
+      });
+      setTags(prev => [saved, ...prev.filter(item => item.id !== saved.id)].sort((a, b) => a.name.localeCompare(b.name)));
+      setMode("list");
+      setForm(emptyTagForm());
+      setTouched(new Set());
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to create tag.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="tags-modal-title">
+        <header className="modal-head">
+          <div>
+            <div className="eyebrow">Inventory · Tags</div>
+            <h2 id="tags-modal-title">Tags</h2>
+          </div>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
+            <Ic d="M6 6l12 12M6 18L18 6" />
+          </button>
+        </header>
+
+        <div className="modal-body">
+          <div style={{ padding: "24px" }}>
+            <div style={{ display: "grid", gap: 16 }}>
+              {loadError ? (
+                <div style={{ padding: "10px 14px", background: "var(--danger-weak)", border: "1px solid color-mix(in oklch, var(--danger) 30%, transparent)", borderRadius: "var(--radius)", color: "var(--danger)", fontSize: 13 }}>
+                  {loadError}
+                </div>
+              ) : null}
+              {submitError && mode === "create" ? (
+                <div style={{ padding: "10px 14px", background: "var(--danger-weak)", border: "1px solid color-mix(in oklch, var(--danger) 30%, transparent)", borderRadius: "var(--radius)", color: "var(--danger)", fontSize: 13 }}>
+                  {submitError}
+                </div>
+              ) : null}
+              {mode === "list" ? (
+                <div className="table-card" style={{ boxShadow: "none" }}>
+                  <div className="table-card-head">
+                    <div className="table-card-head-left">
+                      <div className="eyebrow">Available tags</div>
+                      <div className="table-count">
+                        <span className="mono">{tags.length}</span>
+                        <span>records</span>
+                      </div>
+                    </div>
+                    <button type="button" className="btn btn-sm btn-primary" onClick={() => setMode("create")}>
+                      <Ic d="M12 5v14M5 12h14" size={14} />
+                      Add Tag
+                    </button>
+                  </div>
+                  <div className="h-scroll">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Tag</th>
+                          <th>Category</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {loading ? (
+                          <tr><td colSpan={3}><div style={{ padding: 24, textAlign: "center", color: "var(--text-2)" }}>Loading tags...</div></td></tr>
+                        ) : tags.length === 0 ? (
+                          <tr><td colSpan={3}><div style={{ padding: 24, textAlign: "center", color: "var(--text-2)" }}>No tags have been created yet.</div></td></tr>
+                        ) : tags.map(tag => (
+                          <tr key={tag.id}>
+                            <td>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <span className="tag-color-swatch" style={{ background: tag.color || "#E0F2FE" }} />
+                                <span>
+                                  <div className="user-name">{tag.name}</div>
+                                  <div className="user-username mono">{tag.code}</div>
+                                </span>
+                              </div>
+                            </td>
+                            <td>{tag.category_display ?? locationTagCategoryLabel(tag.category)}</td>
+                            <td><StatusPill active={tag.is_active} /></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <section className="form-section">
+                  <header className="form-section-head">
+                    <div className="form-section-n mono">01</div>
+                    <div>
+                      <h3>New Tag</h3>
+                      <div className="form-section-sub">Create a reusable reporting/grouping tag for locations.</div>
+                    </div>
+                  </header>
+                  <div className="form-section-body">
+                    <div className="form-grid cols-2">
+                      <div className={"field" + (nameError ? " has-error" : "")}>
+                        <div className="field-label">Tag name<span className="field-req">*</span></div>
+                        <input value={form.name} onChange={event => setForm(prev => ({ ...prev, name: event.target.value }))} onBlur={() => setTouched(prev => new Set(prev).add("name"))} placeholder="Enter tag name" />
+                        {nameError ? <div className="field-error">{nameError}</div> : null}
+                      </div>
+                      <div className="field">
+                        <div className="field-label">Tag code</div>
+                        <input value={form.code} onChange={event => setForm(prev => ({ ...prev, code: event.target.value.toUpperCase() }))} placeholder="Optional code" />
+                        <div className="field-hint">Leave blank to auto-generate.</div>
+                      </div>
+                      <div className="field">
+                        <div className="field-label">Category</div>
+                        <ThemedSelect
+                          value={form.category}
+                          onChange={category => setForm(prev => ({ ...prev, category }))}
+                          ariaLabel="Tag category"
+                          options={Object.entries(LOCATION_TAG_CATEGORY_LABELS).map(([value, label]) => ({ value, label }))}
+                        />
+                      </div>
+                      <div className="field">
+                        <div className="field-label">Active state</div>
+                        <div className="seg seg-inline">
+                          <button type="button" className={"seg-btn" + (form.is_active ? " active" : "")} onClick={() => setForm(prev => ({ ...prev, is_active: true }))}>Active</button>
+                          <button type="button" className={"seg-btn" + (!form.is_active ? " active" : "")} onClick={() => setForm(prev => ({ ...prev, is_active: false }))}>Disabled</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <footer className="modal-foot">
+          <div className="modal-foot-meta mono">
+            {mode === "create" ? "Create reusable tag" : `${tags.length} tags`}
+          </div>
+          <div className="modal-foot-actions">
+            {mode === "create" ? <button type="button" className="btn btn-md" onClick={() => setMode("list")}>Back</button> : null}
+            <button type="button" className="btn btn-md" onClick={onClose}>{mode === "create" ? "Cancel" : "Close"}</button>
+            {mode === "create" ? (
+              <button type="button" className="btn btn-md btn-primary" onClick={() => { void submit(); }} disabled={!canSave}>
+                {submitting ? "Saving..." : "Create tag"}
+              </button>
+            ) : null}
+          </div>
+        </footer>
+      </div>
     </div>
   );
 }
@@ -152,8 +380,16 @@ function LocationCard({
         <div style={{ fontSize: 13, color: "var(--text-1)" }}>{location.parent_location_display ?? "Root location"}</div>
       </div>
       <div className="user-card-section">
-        <div className="eyebrow">Hierarchy Level</div>
-        <div className="mono" style={{ fontSize: 13, color: "var(--text-1)" }}>{location.hierarchy_level}</div>
+        <div className="eyebrow">Tags</div>
+        <div style={{ fontSize: 13, color: "var(--text-1)" }}>
+          {location.tags_display && location.tags_display.length > 0
+            ? location.tags_display.map(tag => tag.name).join(", ")
+            : "Not assigned"}
+        </div>
+      </div>
+      <div className="user-card-section">
+        <div className="eyebrow">In charge</div>
+        <div style={{ fontSize: 13, color: "var(--text-1)" }}>{location.in_charge || "Not assigned"}</div>
       </div>
       <div className="user-card-foot">
         <div>
@@ -204,11 +440,16 @@ function LocationRow({
       </td>
       <td><LocationTypeChips location={location} /></td>
       <td>
-        {location.parent_location_display
-          ? <span className="chip chip-loc">{location.parent_location_display}</span>
+        {location.tags_display && location.tags_display.length > 0
+          ? (
+            <span className="location-type-chips">
+              {location.tags_display.slice(0, 2).map(tag => <span key={tag.id} className="chip chip-loc">{tag.name}</span>)}
+              {location.tags_display.length > 2 ? <span className="chip">+{location.tags_display.length - 2}</span> : null}
+            </span>
+          )
           : <span className="muted-note">—</span>}
       </td>
-      <td className="mono">{location.hierarchy_level}</td>
+      <td>{location.in_charge || <span className="muted-note">—</span>}</td>
       <td><StatusPill active={location.is_active} /></td>
       <td className="col-login"><TimestampCell value={location.updated_at} fallback="Unknown" /></td>
       <td className="col-actions">
@@ -244,6 +485,7 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
   const [density, setDensity] = useState<"compact" | "balanced" | "comfortable">("balanced");
   const [mode, setMode] = useState<"table" | "grid">("table");
   const [modalOpen, setModalOpen] = useState(false);
+  const [tagsModalOpen, setTagsModalOpen] = useState(false);
   const [editingLocation, setEditingLocation] = useState<LocationRecord | null>(null);
   const [busyAction, setBusyAction] = useState<{ kind: "delete"; locationId: number } | null>(null);
 
@@ -326,7 +568,8 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
     const q = search.trim().toLowerCase();
     return locations.filter(location => {
       if (q) {
-        const hay = `${location.name} ${location.code} ${location.parent_location_display ?? ""} ${location.location_type} ${location.is_store ? "store inventory stock" : ""}`.toLowerCase();
+        const tagText = (location.tags_display ?? []).map(tag => `${tag.name} ${tag.category_display ?? tag.category}`).join(" ");
+        const hay = `${location.name} ${location.code} ${location.parent_location_display ?? ""} ${tagText} ${location.in_charge ?? ""} ${location.location_type} ${location.is_store ? "store inventory stock" : ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       if (typeFilter !== "all" && location.location_type !== typeFilter) return false;
@@ -365,6 +608,11 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
     clearActionError();
     setEditingLocation(null);
     setModalOpen(true);
+  }, [clearActionError]);
+
+  const openTagsModal = useCallback(() => {
+    clearActionError();
+    setTagsModalOpen(true);
   }, [clearActionError]);
 
   const {
@@ -444,6 +692,9 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
       is_store: loc.is_store,
       parent_location: loc.parent_location,
       parent_location_display: loc.parent_location_display ?? null,
+      tags: loc.tags ?? [],
+      tags_display: loc.tags_display ?? [],
+      in_charge: loc.in_charge,
       hierarchy_level: loc.hierarchy_level,
       is_active: loc.is_active,
       detail_route: `/locations/${loc.id}`,
@@ -531,7 +782,10 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
         onClose={() => { setModalOpen(false); setEditingLocation(null); }}
         onSave={handleSave}
       />
-
+      <TagsModal
+        open={tagsModalOpen}
+        onClose={() => setTagsModalOpen(false)}
+      />
       <Topbar breadcrumb={isChildrenView ? ["Inventory", "Locations", parentLocation?.name ?? "Details"] : ["Inventory", "Locations"]} />
 
       <div className="page">
@@ -649,8 +903,17 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
                   <tr>
                     <th>Location</th>
                     <th>Type</th>
-                    <th>Parent</th>
-                    <th>Level</th>
+                    <th>
+                      <span className="table-head-action">
+                        Tags
+                        {canAddLocation ? (
+                          <button type="button" className="btn btn-xs btn-ghost icon-only" onClick={openTagsModal} title="Manage tags" aria-label="Manage tags">
+                            <Ic d="M12 5v14M5 12h14" size={13} />
+                          </button>
+                        ) : null}
+                      </span>
+                    </th>
+                    <th>In charge</th>
                     <th>Status</th>
                     <th>Updated At</th>
                     <th>Actions</th>

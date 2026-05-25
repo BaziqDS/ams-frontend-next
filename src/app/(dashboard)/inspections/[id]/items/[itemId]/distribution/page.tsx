@@ -48,6 +48,14 @@ function detailKindLabel(kind: "store" | "person" | "location") {
   return "Location";
 }
 
+function rowStateLabel(row: { kind: "store" | "person" | "location"; availableQuantity: number | null; allocatedQuantity: number | null; inTransitQuantity: number | null }) {
+  if (row.kind !== "store") return "Allocated";
+  if ((row.inTransitQuantity ?? 0) > 0) return "In transit";
+  if ((row.allocatedQuantity ?? 0) > 0 && (row.availableQuantity ?? 0) > 0) return "Partly allocated";
+  if ((row.allocatedQuantity ?? 0) > 0) return "Allocated from store";
+  return "Available";
+}
+
 export default function InspectionItemDistributionPage() {
   const params = useParams<{ id: string; itemId: string }>();
   const router = useRouter();
@@ -94,6 +102,17 @@ export default function InspectionItemDistributionPage() {
       rows: flattenDistributionDetails(unit),
     }));
   }, [payload]);
+  const totals = useMemo(() => {
+    if (!payload) return { total: 0, available: 0, allocated: 0, inTransit: 0, rows: 0 };
+    return payload.units.reduce((acc, unit) => {
+      acc.total += unit.totalQuantity;
+      acc.available += unit.availableQuantity;
+      acc.allocated += unit.allocatedQuantity;
+      acc.inTransit += unit.inTransitQuantity;
+      acc.rows += flattenDistributionDetails(unit).length;
+      return acc;
+    }, { total: 0, available: 0, allocated: 0, inTransit: 0, rows: 0 });
+  }, [payload]);
   const trackingBatch = payload?.inspection_item.tracking_lot ?? "—";
 
   return (
@@ -125,48 +144,43 @@ export default function InspectionItemDistributionPage() {
           <>
             <div className="page-head-detail">
               <div className="page-title-group">
-                <div className="eyebrow">Inspection Quantity Distribution</div>
+                <div className="eyebrow">Quantity Trace</div>
                 <h1>{payload.inspection_item.item_name}</h1>
                 <div className="page-sub">
                   {payload.inspection.contract_no} / {payload.inspection.department_name ?? "Unknown department"} / {payload.inspection_item.item_code}
                 </div>
                 <div className="page-id-row">
                   <span className="doc-no">{trackingBatch}</span>
-                  <span className="chip">Quantity Tracking</span>
+                  <span className="chip">{formatQuantity(payload.inspection_item.accepted_quantity)} accepted</span>
                 </div>
               </div>
             </div>
 
-            <section className="detail-card" style={{ marginTop: 16 }}>
-              <header className="detail-card-head">
-                <div>
-                  <div className="eyebrow">Batch summary</div>
-                  <h2>Inspection provenance and batch metadata</h2>
-                </div>
-              </header>
+            <section className="detail-card inspection-distribution-summary" style={{ marginTop: 16 }}>
               <div className="detail-card-body">
-                <div className="detail-kv-grid">
-                  <div className="detail-kv">
-                    <div className="detail-kv-label">Inspection certificate</div>
-                    <div className="detail-kv-value">{payload.inspection.contract_no}</div>
+                <div className="detail-stat-strip">
+                  <div className="detail-stat">
+                    <div className="detail-stat-label">Current total</div>
+                    <div className="detail-stat-value">{formatQuantity(totals.total)}</div>
                   </div>
-                  <div className="detail-kv">
-                    <div className="detail-kv-label">Tracking batch</div>
-                    <div className="detail-kv-value">{trackingBatch}</div>
+                  <div className="detail-stat">
+                    <div className="detail-stat-label">Available</div>
+                    <div className="detail-stat-value">{formatQuantity(totals.available)}</div>
                   </div>
-                  <div className="detail-kv">
-                    <div className="detail-kv-label">Accepted quantity</div>
-                    <div className="detail-kv-value">{formatQuantity(payload.inspection_item.accepted_quantity)}</div>
+                  <div className="detail-stat">
+                    <div className="detail-stat-label">Allocated</div>
+                    <div className="detail-stat-value">{formatQuantity(totals.allocated)}</div>
                   </div>
-                  <div className="detail-kv">
-                    <div className="detail-kv-label">Manufactured date</div>
-                    <div className="detail-kv-value">{formatDate(payload.batch.manufactured_date)}</div>
-                  </div>
-                  <div className="detail-kv">
-                    <div className="detail-kv-label">Expiry date</div>
-                    <div className="detail-kv-value">{formatDate(payload.batch.expiry_date)}</div>
+                  <div className="detail-stat">
+                    <div className="detail-stat-label">In transit</div>
+                    <div className="detail-stat-value">{formatQuantity(totals.inTransit)}</div>
                   </div>
                 </div>
+                {(payload.batch.manufactured_date || payload.batch.expiry_date) ? (
+                  <div className="detail-empty-copy" style={{ marginTop: 12 }}>
+                    Manufactured {formatDate(payload.batch.manufactured_date)} · Expires {formatDate(payload.batch.expiry_date)}
+                  </div>
+                ) : null}
               </div>
             </section>
 
@@ -182,62 +196,38 @@ export default function InspectionItemDistributionPage() {
               <section key={unit.id} className="detail-card" style={{ marginTop: 16 }}>
                 <header className="detail-card-head">
                   <div>
-                    <div className="eyebrow">Standalone location</div>
+                    <div className="eyebrow">Current holder group</div>
                     <h2>{unit.name}</h2>
                   </div>
-                  <div className="detail-card-head-meta">{unit.code}</div>
+                  <div className="detail-card-head-meta">{formatQuantity(unit.totalQuantity)}</div>
                 </header>
                 <div className="detail-card-body">
-                  <div className="detail-kv-grid" style={{ marginBottom: 18 }}>
-                    <div className="detail-kv">
-                      <div className="detail-kv-label">Total</div>
-                      <div className="detail-kv-value">{formatQuantity(unit.totalQuantity)}</div>
-                    </div>
-                    <div className="detail-kv">
-                      <div className="detail-kv-label">Available</div>
-                      <div className="detail-kv-value">{formatQuantity(unit.availableQuantity)}</div>
-                    </div>
-                    <div className="detail-kv">
-                      <div className="detail-kv-label">Allocated</div>
-                      <div className="detail-kv-value">{formatQuantity(unit.allocatedQuantity)}</div>
-                    </div>
-                    <div className="detail-kv">
-                      <div className="detail-kv-label">In transit</div>
-                      <div className="detail-kv-value">{formatQuantity(unit.inTransitQuantity)}</div>
-                    </div>
-                  </div>
-
                   <div className="h-scroll">
                     <table className="inspection-line-table inspection-line-table-review">
                       <thead>
                         <tr>
-                          <th>Destination</th>
+                          <th>Holder</th>
                           <th>Type</th>
-                          <th>Source Store</th>
-                          <th className="num center">Quantity</th>
-                          <th className="num center">Available</th>
-                          <th className="num center">Allocated</th>
-                          <th className="num center">In Transit</th>
-                          <th>Batch</th>
+                          <th>Status</th>
+                          <th className="num center">Qty</th>
                           <th>Stock Entries</th>
                         </tr>
                       </thead>
                       <tbody>
                         {unit.rows.length === 0 ? (
                           <tr>
-                            <td colSpan={9} className="detail-empty-copy">No active stock or allocation rows in this standalone location.</td>
+                            <td colSpan={5} className="detail-empty-copy">No active stock or allocation rows in this group.</td>
                           </tr>
                         ) : unit.rows.map(row => (
                           <tr key={row.id}>
-                            <td>{row.name}</td>
+                            <td>
+                              <div className="inspection-line-primary">{row.name}</div>
+                              {row.sourceStoreName ? <div className="inspection-line-secondary">From {row.sourceStoreName}</div> : null}
+                            </td>
                             <td>{detailKindLabel(row.kind)}</td>
-                            <td>{row.sourceStoreName ?? "Current store row"}</td>
+                            <td>{rowStateLabel(row)}</td>
                             <td className="num center">{formatQuantity(row.quantity)}</td>
-                            <td className="num center">{row.availableQuantity == null ? "—" : formatQuantity(row.availableQuantity)}</td>
-                            <td className="num center">{row.allocatedQuantity == null ? "—" : formatQuantity(row.allocatedQuantity)}</td>
-                            <td className="num center">{row.inTransitQuantity == null ? "—" : formatQuantity(row.inTransitQuantity)}</td>
-                            <td>{row.batchNumber ?? "—"}</td>
-                            <td>{row.stockEntryIds.length ? row.stockEntryIds.join(", ") : "—"}</td>
+                            <td>{row.stockEntryIds.length ? row.stockEntryIds.map(id => <Link key={id} className="link-inline" href={`/stock-entries/${id}`}>#{id}</Link>).reduce((prev, curr) => <>{prev}, {curr}</>) : "—"}</td>
                           </tr>
                         ))}
                       </tbody>

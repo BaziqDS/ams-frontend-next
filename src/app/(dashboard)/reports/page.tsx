@@ -58,6 +58,7 @@ interface ReportDefinition {
 interface InventoryReportFilters {
   scope: string;
   locationId: string;
+  locationTagId: string;
   itemQuery: string;
   categoryType: string;
   updatedFrom: string;
@@ -146,11 +147,24 @@ interface StockRecord {
   batch_number?: string | null;
   location: number;
   location_name?: string | null;
+  location_tags?: number[];
+  location_tags_display?: LocationTagSummary[];
   quantity: number;
   allocated_quantity?: number | null;
   in_transit_quantity: number;
   available_quantity: number;
   last_updated?: string | null;
+}
+
+interface LocationTagSummary {
+  id: number;
+  name: string;
+  code?: string | null;
+  category: string;
+  category_display?: string | null;
+  label?: string | null;
+  color?: string | null;
+  is_active?: boolean;
 }
 
 interface StockEntryItem {
@@ -404,6 +418,12 @@ function stockStatus(row: StockRecord) {
   return "Healthy";
 }
 
+function locationTagLabels(row: StockRecord) {
+  return (row.location_tags_display ?? [])
+    .map(tag => tag.label ?? `${tag.category_display ?? tag.category}: ${tag.name}`)
+    .join(", ");
+}
+
 function reportNote(source: string) {
   return `Live data from ${source}. Rows shown are limited by the current API page size.`;
 }
@@ -600,6 +620,7 @@ function filterInventoryRows(rows: StockRecord[], filters?: InventoryReportFilte
 
   return rows.filter(row => {
     if (filters?.locationId && String(row.location) !== filters.locationId) return false;
+    if (filters?.locationTagId && !(row.location_tags ?? []).map(String).includes(filters.locationTagId)) return false;
     if (filters?.categoryType && row.category_type !== filters.categoryType) return false;
     if (itemQuery) {
       const haystack = `${row.item_code ?? ""} ${row.item_name ?? ""} ${row.batch_number ?? ""}`.toLowerCase();
@@ -635,9 +656,10 @@ async function inventoryPositionReport(filters?: InventoryReportFilters): Promis
       { label: "Allocated", value: fmtNumber(allocated), hint: `${pct(allocated, total)} of total`, tone: "amber" },
       { label: "In Transit", value: fmtNumber(transit), hint: `${pct(transit, total)} of total`, tone: "violet" },
     ],
-    columns: ["Store / Location", "Item Code", "Item Name", "Category", "Category Type", "Tracking", "Batch / Lot", "Total", "Allocated", "In Transit", "Available", "Stock Status", "Last Updated"],
+    columns: ["Store / Location", "Location Tags", "Item Code", "Item Name", "Category", "Category Type", "Tracking", "Batch / Lot", "Total", "Allocated", "In Transit", "Available", "Stock Status", "Last Updated"],
     rows: rows.map(row => [
       row.location_name ?? `Location ${row.location}`,
+      locationTagLabels(row) || "-",
       row.item_code ?? `Item ${row.item}`,
       row.item_name ?? "-",
       row.category_name ?? "-",
@@ -1359,6 +1381,7 @@ export default function ReportsPage() {
   const [inventoryFilters, setInventoryFilters] = useState<InventoryReportFilters>({
     scope: "",
     locationId: "",
+    locationTagId: "",
     itemQuery: "",
     categoryType: "",
     updatedFrom: "",
@@ -1409,6 +1432,16 @@ export default function ReportsPage() {
   }, [inventoryRowsForFilters]);
 
   const categoryTypeOptions = useMemo(() => uniqueOptions(inventoryRowsForFilters.map(row => row.category_type)), [inventoryRowsForFilters]);
+
+  const locationTagOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    inventoryRowsForFilters.forEach(row => {
+      (row.location_tags_display ?? []).forEach(tag => {
+        map.set(String(tag.id), tag.label ?? `${tag.category_display ?? tag.category}: ${tag.name}`);
+      });
+    });
+    return Array.from(map, ([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [inventoryRowsForFilters]);
 
   const pendingFromLocationOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -1490,7 +1523,7 @@ export default function ReportsPage() {
 
   const loadInventoryFilterRows = useCallback(async (scope: string) => {
     try {
-      const rows = await fetchInventoryRows({ scope, locationId: "", itemQuery: "", categoryType: "", updatedFrom: "", updatedTo: "" });
+      const rows = await fetchInventoryRows({ scope, locationId: "", locationTagId: "", itemQuery: "", categoryType: "", updatedFrom: "", updatedTo: "" });
       setInventoryRowsForFilters(rows);
     } catch {
       setInventoryRowsForFilters([]);
@@ -1697,7 +1730,7 @@ export default function ReportsPage() {
                       value={inventoryFilters.scope}
                       onChange={event => {
                         const scope = event.target.value;
-                        setInventoryFilters(current => ({ ...current, scope, locationId: "" }));
+                        setInventoryFilters(current => ({ ...current, scope, locationId: "", locationTagId: "" }));
                         void loadInventoryFilterRows(scope);
                       }}
                     >
@@ -1715,6 +1748,19 @@ export default function ReportsPage() {
                     >
                       <option value="">All locations in scope</option>
                       {locationOptions.map(option => (
+                        <option key={option.id} value={option.id}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span className="field-label">Location Tag</span>
+                    <select
+                      className="input"
+                      value={inventoryFilters.locationTagId}
+                      onChange={event => setInventoryFilters(current => ({ ...current, locationTagId: event.target.value }))}
+                    >
+                      <option value="">All location tags</option>
+                      {locationTagOptions.map(option => (
                         <option key={option.id} value={option.id}>{option.label}</option>
                       ))}
                     </select>
@@ -1768,7 +1814,7 @@ export default function ReportsPage() {
                       className="btn"
                       onClick={() => {
                         const scope = scopeOptions.default[0] ?? scopeOptions.options[0]?.id ?? "all";
-                        setInventoryFilters({ scope, locationId: "", itemQuery: "", categoryType: "", updatedFrom: "", updatedTo: "" });
+                        setInventoryFilters({ scope, locationId: "", locationTagId: "", itemQuery: "", categoryType: "", updatedFrom: "", updatedTo: "" });
                         void loadInventoryFilterRows(scope);
                       }}
                     >
