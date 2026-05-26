@@ -203,7 +203,7 @@ interface LocationModalProps {
   createContext?: LocationCreateContext;
   lockedParent?: LocationRecord | null;
   onClose: () => void;
-  onSave?: () => void | Promise<void>;
+  onSave?: (savedLocation: LocationRecord) => void | Promise<void>;
 }
 
 export function LocationModal({ open, mode, location, createContext = "default", lockedParent, onClose, onSave }: LocationModalProps) {
@@ -525,7 +525,7 @@ export function LocationModal({ open, mode, location, createContext = "default",
         });
       }
 
-      await onSave?.();
+      await onSave?.(saved);
       onClose();
       return {
         ok: true,

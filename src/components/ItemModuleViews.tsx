@@ -1417,6 +1417,13 @@ export function ItemListView() {
   };
 
   const handleSave = async (_savedItem: ItemRecord) => {
+    setItems(prev => [
+      _savedItem,
+      ...prev.filter(item => item.id !== _savedItem.id),
+    ]);
+    setSearch("");
+    setFilterKey("all");
+    setSelectedScopeTokens(defaultScopeTokens);
     const refreshed = await loadItems({ showLoading: false });
     if (!refreshed) setActionError("Item saved, but the list could not be refreshed. Reload to resync the list.");
   };

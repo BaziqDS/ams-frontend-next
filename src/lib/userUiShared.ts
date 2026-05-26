@@ -13,6 +13,7 @@ export interface User {
   groups_display: string[];
   last_login: string | null;
   created_at?: string | null;
+  avatar_url?: string | null;
 }
 
 export interface Location {

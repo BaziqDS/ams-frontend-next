@@ -600,12 +600,21 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
     setEditingCategory(null);
   }, []);
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(async (savedCategory: CategoryRecord) => {
+    const nextRecords = [
+      savedCategory,
+      ...allCategories.filter(category => category.id !== savedCategory.id),
+    ];
+    setAllCategories(nextRecords);
+    applyCategoryScope(nextRecords);
+    setSearch("");
+    setTypeFilter("all");
+    setStatusFilter("all");
     const refreshed = await loadCategories({ showLoading: false });
     if (!refreshed) {
       setActionError("Category saved, but the list could not be refreshed. Reload to resync the list.");
     }
-  }, [loadCategories]);
+  }, [allCategories, applyCategoryScope, loadCategories]);
 
   const handleDelete = useCallback(async (category: CategoryRecord) => {
     if (!canDeleteCategories) {

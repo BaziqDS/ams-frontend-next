@@ -14,6 +14,7 @@ export interface AuthUser {
   permissions: string[];
   assigned_locations: number[];
   groups_display: string[];
+  avatar_url?: string | null;
 }
 
 interface AuthContextValue {
@@ -22,6 +23,7 @@ interface AuthContextValue {
   isLoading: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  updateUser: (user: AuthUser) => void;
   can: (perm: string) => boolean;
 }
 
@@ -57,6 +59,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const updateUser = useCallback((nextUser: AuthUser) => {
+    setUser(nextUser);
+  }, []);
+
   const can = useCallback(
     (perm: string) => {
       if (!user) return false;
@@ -67,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, logout, can }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, logout, updateUser, can }}>
       {children}
     </AuthContext.Provider>
   );
