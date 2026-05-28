@@ -10,7 +10,7 @@ import { ThemedSelect } from "@/components/ThemedSelect";
 import { tierMeta, relTime, type User } from "@/lib/userUiShared";
 import { useClientPagination } from "@/lib/listPagination";
 import { shouldLoadUserAssignmentSelectors } from "@/lib/userAssignmentSelectors";
-import { apiFetch, type Page } from "@/lib/api";
+import { API_BASE, apiFetch, type Page } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { ADMIN_PERMISSIONS } from "@/lib/adminPermissions";
 import { Button } from "@/components/ui/button";
@@ -26,16 +26,22 @@ const Ic = ({ d, size = 16 }: { d: React.ReactNode | string; size?: number }) =>
 
 // ── Shared sub-components ─────────────────────────────────────────────────────
 
-function Avatar({ name, tone = 0, size = 32 }: { name: string; tone?: number; size?: number }) {
+function mediaUrl(value: string | null | undefined) {
+  if (!value) return null;
+  return value.startsWith("http") ? value : `${API_BASE}${value}`;
+}
+
+function Avatar({ name, avatarUrl, tone = 0, size = 32 }: { name: string; avatarUrl?: string | null; tone?: number; size?: number }) {
   const initials = name.split(" ").map(n => n[0]).slice(0, 2).join("").toUpperCase();
   const bg = tone === 0
     ? "linear-gradient(135deg, color-mix(in oklch, var(--primary) 82%, white), var(--primary))"
     : tone === 1
     ? "linear-gradient(135deg, #3b4052, #0e1116)"
     : "linear-gradient(135deg, #8a7b60, #4d442f)";
+  const href = mediaUrl(avatarUrl);
   return (
     <div className="avatar" style={{ width: size, height: size, background: bg, fontSize: size <= 30 ? 11 : 12 }}>
-      {initials}
+      {href ? <img src={href} alt="" /> : initials}
     </div>
   );
 }
@@ -264,7 +270,7 @@ function DensityToggle({ density, setDensity }: { density: string; setDensity: (
 
 export default function UsersPage() {
   const router = useRouter();
-  const { can, isLoading: authLoading } = useAuth();
+  const { can, isLoading: authLoading, user: currentUser } = useAuth();
 
   const canViewUsers = can(ADMIN_PERMISSIONS.users.view);
   const canViewRoles = can(ADMIN_PERMISSIONS.roles.view);
@@ -359,14 +365,28 @@ export default function UsersPage() {
     };
   }, [authLoading, canViewUsers, canAddUser]);
 
-  const handleCreateSave = useCallback(async () => {
+  const handleCreateSave = useCallback(async (savedUser: User) => {
+    setAllUsers(prev => [
+      savedUser,
+      ...prev.filter(user => user.id !== savedUser.id),
+    ]);
+    setSearch("");
+    setTierFilter("all");
+    setStatusFilter("all");
     const refreshed = await loadUsers({ showLoading: false });
     if (!refreshed) {
       setActionError("User created, but the list could not be refreshed. Reload to resync the list.");
     }
   }, [loadUsers]);
 
-  const handleEditSave = useCallback(async () => {
+  const handleEditSave = useCallback(async (savedUser: User) => {
+    setAllUsers(prev => [
+      savedUser,
+      ...prev.filter(user => user.id !== savedUser.id),
+    ]);
+    setSearch("");
+    setTierFilter("all");
+    setStatusFilter("all");
     const refreshed = await loadUsers({ showLoading: false });
     if (!refreshed) {
       setActionError("User updated, but the list could not be refreshed. Reload to resync the list.");
@@ -398,12 +418,16 @@ export default function UsersPage() {
   }, [busyAction, clearActionError, loadUsers, updateUserInList]);
 
   const handleToggleActive = useCallback(async (user: User) => {
+    if (currentUser?.id === user.id) {
+      setActionError("You cannot disable your own account.");
+      return;
+    }
     await updateUser(
       user,
       { is_active: !user.is_active },
       `Failed to ${user.is_active ? "disable" : "enable"} user`,
     );
-  }, [updateUser]);
+  }, [currentUser?.id, updateUser]);
 
   const handleDelete = useCallback(async (user: User) => {
     if (busyAction) return;
@@ -728,7 +752,7 @@ function UserRow({
     <tr>
       <td className="col-user">
         <div className="user-cell">
-          <Avatar name={`${u.first_name} ${u.last_name}`} tone={u.power_level === 0 ? 0 : u.power_level === 1 ? 0 : 2} />
+          <Avatar name={`${u.first_name} ${u.last_name}`} avatarUrl={u.avatar_url} tone={u.power_level === 0 ? 0 : u.power_level === 1 ? 0 : 2} />
           <div>
             <div className="user-name">{u.first_name} {u.last_name}</div>
             <div className="user-username mono">@{u.username}</div>
@@ -790,7 +814,7 @@ function UserCard({
   return (
     <div className="user-card">
       <div className="user-card-head">
-        <Avatar name={`${u.first_name} ${u.last_name}`} size={44} tone={u.power_level === 0 ? 0 : u.power_level === 1 ? 0 : 2} />
+        <Avatar name={`${u.first_name} ${u.last_name}`} avatarUrl={u.avatar_url} size={44} tone={u.power_level === 0 ? 0 : u.power_level === 1 ? 0 : 2} />
         <StatusPill active={u.is_active} />
       </div>
       <div className="user-card-name">{u.first_name} {u.last_name}</div>

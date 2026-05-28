@@ -126,7 +126,7 @@ interface StockRegisterModalProps {
   storesLoading?: boolean;
   storesError?: string | null;
   onClose: () => void;
-  onSave?: () => void | Promise<void>;
+  onSave?: (savedRegister: StockRegisterRecord) => void | Promise<void>;
 }
 
 export function StockRegisterModal({ open, mode, register, stores, storesLoading = false, storesError = null, onClose, onSave }: StockRegisterModalProps) {
@@ -265,7 +265,7 @@ export function StockRegisterModal({ open, mode, register, stores, storesLoading
         });
       }
 
-      await onSave?.();
+      await onSave?.(saved);
       onClose();
       return {
         ok: true,

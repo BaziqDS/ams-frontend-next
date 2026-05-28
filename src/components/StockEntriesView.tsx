@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
 import { ListPagination } from "@/components/ListPagination";
 import { ThemedSelect } from "@/components/ThemedSelect";
+import { DropdownPortal } from "@/components/DropdownPortal";
 import { apiFetch, type Page } from "@/lib/api";
 import { useClientPagination } from "@/lib/listPagination";
 import { getAllocatableTargetLocations, getAllocatableTargetPersons, getAllocatedReturnLocations, getAllocatedReturnPersons, getUserAssignedStores, type StockAllocationRecord } from "@/lib/stockEntryLocationRules";
@@ -297,6 +298,8 @@ interface SearchableSelectOption {
 function SearchableSelect({ value, options, onChange, placeholder, searchPlaceholder, emptyLabel = "No matching options", disabled = false }: { value: string; options: SearchableSelectOption[]; onChange: (value: string) => void; placeholder: string; searchPlaceholder?: string; emptyLabel?: string; disabled?: boolean }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const selected = options.find(option => option.value === value) ?? null;
   const normalizedQuery = query.trim().toLowerCase();
@@ -313,10 +316,14 @@ function SearchableSelect({ value, options, onChange, placeholder, searchPlaceho
 
   return (
     <div
+      ref={rootRef}
       className={"assignment-dropdown" + (open ? " open" : "") + (disabled ? " disabled" : "")}
       onBlur={event => {
         const nextTarget = event.relatedTarget;
-        if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
+        if (
+          !(nextTarget instanceof Node) ||
+          (!event.currentTarget.contains(nextTarget) && !menuRef.current?.contains(nextTarget))
+        ) {
           setOpen(false);
           setQuery("");
         }
@@ -369,7 +376,8 @@ function SearchableSelect({ value, options, onChange, placeholder, searchPlaceho
       </div>
 
       {open && !disabled ? (
-        <div className="assignment-menu">
+        <DropdownPortal anchorRef={rootRef} className="assignment-menu">
+        <div ref={menuRef}>
           <div className="assignment-list" style={{ maxHeight: 190 }}>
             {filteredOptions.length > 0 ? filteredOptions.map(option => (
               <button
@@ -390,6 +398,7 @@ function SearchableSelect({ value, options, onChange, placeholder, searchPlaceho
             )}
           </div>
         </div>
+        </DropdownPortal>
       ) : null}
     </div>
   );
@@ -398,6 +407,8 @@ function SearchableSelect({ value, options, onChange, placeholder, searchPlaceho
 function InstanceMultiSelect({ value, options, onChange, placeholder, searchPlaceholder, emptyLabel = "No matching instances", disabled = false }: { value: string[]; options: SearchableSelectOption[]; onChange: (value: string[]) => void; placeholder: string; searchPlaceholder?: string; emptyLabel?: string; disabled?: boolean }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const valueSet = new Set(value);
   const normalizedQuery = query.trim().toLowerCase();
@@ -420,10 +431,14 @@ function InstanceMultiSelect({ value, options, onChange, placeholder, searchPlac
 
   return (
     <div
+      ref={rootRef}
       className={"assignment-dropdown" + (open ? " open" : "") + (disabled ? " disabled" : "")}
       onBlur={event => {
         const nextTarget = event.relatedTarget;
-        if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
+        if (
+          !(nextTarget instanceof Node) ||
+          (!event.currentTarget.contains(nextTarget) && !menuRef.current?.contains(nextTarget))
+        ) {
           setOpen(false);
           setQuery("");
         }
@@ -484,7 +499,8 @@ function InstanceMultiSelect({ value, options, onChange, placeholder, searchPlac
       </div>
 
       {open && !disabled ? (
-        <div className="assignment-menu">
+        <DropdownPortal anchorRef={rootRef} className="assignment-menu">
+        <div ref={menuRef}>
           <div className="assignment-list" style={{ maxHeight: 190 }}>
             {filteredOptions.length > 0 ? filteredOptions.map(option => (
               <button
@@ -502,6 +518,7 @@ function InstanceMultiSelect({ value, options, onChange, placeholder, searchPlac
             )}
           </div>
         </div>
+        </DropdownPortal>
       ) : null}
     </div>
   );
@@ -596,7 +613,7 @@ function entrySource(entry: StockEntryRecord) {
   return getStockEntryDisplayDirection(entry).source;
 }
 
-function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocationIds, isSuperuser = false, onClose, onSave }: { open: boolean; mode: "create" | "edit"; entry: StockEntryRecord | null; refs: ReferenceData; refsLoading: boolean; assignedLocationIds?: number[]; isSuperuser?: boolean; onClose: () => void; onSave: () => void | Promise<void> }) {
+function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocationIds, isSuperuser = false, onClose, onSave }: { open: boolean; mode: "create" | "edit"; entry: StockEntryRecord | null; refs: ReferenceData; refsLoading: boolean; assignedLocationIds?: number[]; isSuperuser?: boolean; onClose: () => void; onSave: (savedEntry: StockEntryRecord) => void | Promise<void> }) {
   const [form, setForm] = useState<StockEntryFormState>(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -716,6 +733,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
   const update = <K extends keyof StockEntryFormState>(key: K, value: StockEntryFormState[K]) => {
     setForm(prev => {
       if (key === "entry_type") {
+        if (prev.entry_type === value) return prev;
         return { ...prev, entry_type: value as CreatableStockEntryType, from_location: "", to_location: "", issued_to: "", items: [blankItem()] };
       }
       if (key === "from_location" && prev.entry_type === "ISSUE") {
@@ -820,7 +838,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
         method: mode === "edit" ? "PATCH" : "POST",
         body: JSON.stringify(payload),
       });
-      await onSave();
+      await onSave(saved);
       onClose();
       return {
         ok: true,
@@ -1769,7 +1787,14 @@ export function StockEntriesView() {
     return () => window.removeEventListener(SAME_PAGE_OPEN_EVENT, onOpen);
   }, [canManage, openCreateModal]);
 
-  const handleSave = async () => {
+  const handleSave = async (savedEntry: StockEntryRecord) => {
+    setEntries(prev => [
+      savedEntry,
+      ...prev.filter(entry => entry.id !== savedEntry.id),
+    ]);
+    setSearch("");
+    setStatusFilter("all");
+    setStoreScope("all");
     const refreshed = await loadEntries({ showLoading: false });
     if (!refreshed) setActionError("Stock entry saved, but the list could not be refreshed. Reload to resync the table.");
   };

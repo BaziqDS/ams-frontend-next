@@ -458,7 +458,14 @@ export function StockRegisterListView() {
     loadStores();
   }, [capsLoading, canViewRegisters, loadRegisters, loadStores, router]);
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(async (savedRegister: StockRegisterRecord) => {
+    setRegisters(prev => [
+      savedRegister,
+      ...prev.filter(register => register.id !== savedRegister.id),
+    ]);
+    setSearch("");
+    setTypeFilter("all");
+    setStatusFilter("all");
     const refreshed = await loadRegisters({ showLoading: false });
     if (!refreshed) {
       setActionError("Register saved, but the list could not be refreshed. Reload to resync the list.");

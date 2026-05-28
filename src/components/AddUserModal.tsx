@@ -442,11 +442,102 @@ function validate(
 interface AddUserModalProps {
   open: boolean;
   onClose: () => void;
-  onSave?: () => void | Promise<void>;
+  onSave?: (savedUser: UserManagementDetail) => void | Promise<void>;
   mode?: "create" | "edit";
   user?: UserManagementDetail | null;
   canAssignRoles?: boolean;
   canAssignLocations?: boolean;
+}
+
+function AdminChangePasswordModal({
+  open,
+  user,
+  onClose,
+}: {
+  open: boolean;
+  user: UserManagementDetail | null;
+  onClose: () => void;
+}) {
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setNewPassword("");
+    setConfirmPassword("");
+    setSubmitting(false);
+    setError(null);
+  }, [open]);
+
+  if (!open || !user) return null;
+
+  const submit = async () => {
+    if (submitting) return;
+    if (!newPassword.trim()) {
+      setError("Enter a new password.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("New password and confirmation do not match.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      await apiFetch<UserManagementDetail>(`/api/users/management/${user.id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ password: newPassword }),
+      });
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to change password.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="profile-password-layer" role="presentation">
+      <div className="modal profile-password-modal" role="dialog" aria-modal="true" aria-labelledby="admin-password-title">
+        <header className="modal-head">
+          <div>
+            <div className="eyebrow">User Management</div>
+            <h2 id="admin-password-title">Change password</h2>
+          </div>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close change password">
+            <Ic d="M6 6l12 12M6 18L18 6" />
+          </button>
+        </header>
+        <form
+          onSubmit={event => {
+            event.preventDefault();
+            void submit();
+          }}
+        >
+          <div className="modal-body profile-password-body">
+            <div className="field">
+              <div className="field-label">New password</div>
+              <input type="password" value={newPassword} onChange={event => setNewPassword(event.target.value)} autoComplete="new-password" />
+            </div>
+            <div className="field">
+              <div className="field-label">Confirm new password</div>
+              <input type="password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} autoComplete="new-password" />
+            </div>
+          </div>
+          <footer className="modal-foot">
+            <div className="modal-foot-meta mono">{error ? <span className="foot-err">{error}</span> : `Updating @${user.username}`}</div>
+            <div className="modal-foot-actions">
+              <button type="button" className="btn btn-md" onClick={onClose} disabled={submitting}>Cancel</button>
+              <button type="submit" className="btn btn-md btn-primary" disabled={submitting}>{submitting ? "Saving..." : "Change password"}</button>
+            </div>
+          </footer>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 export function AddUserModal({
@@ -465,6 +556,11 @@ export function AddUserModal({
     !!user &&
     user.id === currentUser.id &&
     !currentUser.is_superuser;
+  const editingOwnAccount =
+    mode === "edit" &&
+    !!currentUser &&
+    !!user &&
+    user.id === currentUser.id;
   const selfAssignmentLocked = editingSelf;
   const [form, setForm] = useState<FormState>(emptyForm);
   const [touched, setTouched] = useState<Set<string>>(() => new Set());
@@ -472,6 +568,7 @@ export function AddUserModal({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [userLoadError, setUserLoadError] = useState<string | null>(null);
   const [userLoading, setUserLoading] = useState(false);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
 
   // Real data from API
   const [groups, setGroups] = useState<ApiGroup[]>([]);
@@ -540,6 +637,7 @@ export function AddUserModal({
     setSubmitError(null);
     setUserLoadError(null);
     setUserLoading(false);
+    setPasswordModalOpen(false);
     setForm(mode === "edit" && user ? formFromUser(user) : emptyForm());
   }, [open, mode, user]);
 
@@ -666,19 +764,20 @@ export function AddUserModal({
         payload.password = form.password;
       }
 
+      let savedUser: UserManagementDetail;
       if (isEditMode && user) {
-        await apiFetch(`/api/users/management/${user.id}/`, {
+        savedUser = await apiFetch<UserManagementDetail>(`/api/users/management/${user.id}/`, {
           method: "PATCH",
           body: JSON.stringify(payload),
         });
       } else {
-        await apiFetch("/api/users/management/", {
+        savedUser = await apiFetch<UserManagementDetail>("/api/users/management/", {
           method: "POST",
           body: JSON.stringify(payload),
         });
       }
 
-      await onSave?.();
+      await onSave?.(savedUser);
       onClose();
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : (isEditMode ? "Failed to update user." : "Failed to create user."));
@@ -691,6 +790,11 @@ export function AddUserModal({
 
   return (
     <div className="modal-backdrop">
+      <AdminChangePasswordModal
+        open={passwordModalOpen}
+        user={isEditMode ? user : null}
+        onClose={() => setPasswordModalOpen(false)}
+      />
       <div className="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="user-modal-title">
         {/* Header */}
         <header className="modal-head">
@@ -731,24 +835,34 @@ export function AddUserModal({
                   <input className="input-with-prefix" value={form.username} onChange={e => set({ username: e.target.value.toLowerCase() })} onBlur={() => blur("username")} />
                 </div>
               </Field>
-              <Field label="Password" required={!isEditMode} error={errors.password} hint={isEditMode ? "Leave blank to keep current password." : undefined}>
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  value={form.password}
-                  onChange={e => set({ password: e.target.value })}
-                  onBlur={() => blur("password")}
-                />
-              </Field>
+              {isEditMode ? (
+                <Field label="Password">
+                  <button type="button" className="btn btn-sm" onClick={() => setPasswordModalOpen(true)}>
+                    Change password
+                  </button>
+                </Field>
+              ) : (
+                <Field label="Password" required error={errors.password}>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={form.password}
+                    onChange={e => set({ password: e.target.value })}
+                    onBlur={() => blur("password")}
+                  />
+                </Field>
+              )}
               <Field label="Email" required error={errors.email} span={2}>
                 <input type="email" placeholder="name@example.com" value={form.email} onChange={e => set({ email: e.target.value })} onBlur={() => blur("email")} />
               </Field>
-              <Field label="Account status" span={2}>
-                <div className="seg seg-inline">
-                  <button type="button" className={"seg-btn" + (form.is_active ? " active" : "")} onClick={() => set({ is_active: true })}>Active</button>
-                  <button type="button" className={"seg-btn" + (!form.is_active ? " active" : "")} onClick={() => set({ is_active: false })}>Disabled</button>
-                </div>
-              </Field>
+              {!editingOwnAccount ? (
+                <Field label="Account status" span={2}>
+                  <div className="seg seg-inline">
+                    <button type="button" className={"seg-btn" + (form.is_active ? " active" : "")} onClick={() => set({ is_active: true })}>Active</button>
+                    <button type="button" className={"seg-btn" + (!form.is_active ? " active" : "")} onClick={() => set({ is_active: false })}>Disabled</button>
+                  </div>
+                </Field>
+              ) : null}
             </div>
           </Section>
 

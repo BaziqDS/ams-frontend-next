@@ -536,7 +536,14 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
     loadLocations();
   }, [capsLoading, canViewLocations, loadLocations, router]);
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(async (savedLocation: LocationRecord) => {
+    setLocations(prev => [
+      savedLocation,
+      ...prev.filter(location => location.id !== savedLocation.id),
+    ]);
+    setSearch("");
+    setTypeFilter("all");
+    setStatusFilter("all");
     const refreshed = await loadLocations({ showLoading: false });
     if (!refreshed) {
       setActionError("Location saved, but the list could not be refreshed. Reload to resync the list.");

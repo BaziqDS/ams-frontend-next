@@ -146,7 +146,7 @@ interface CategoryModalProps {
   createContext?: CategoryCreateContext;
   lockedParent?: CategoryRecord | null;
   onClose: () => void;
-  onSave?: () => void | Promise<void>;
+  onSave?: (savedCategory: CategoryRecord) => void | Promise<void>;
 }
 
 export function CategoryModal({ open, mode, category, createContext = "root", lockedParent, onClose, onSave }: CategoryModalProps) {
@@ -234,25 +234,22 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
 
     try {
       const body = JSON.stringify(toPayload(form));
-      let savedCategory: unknown;
+      let savedCategory: CategoryRecord;
       if (isEditMode && category) {
-        savedCategory = await apiFetch(`/api/inventory/categories/${category.id}/`, {
+        savedCategory = await apiFetch<CategoryRecord>(`/api/inventory/categories/${category.id}/`, {
           method: "PATCH",
           body,
         });
       } else {
-        savedCategory = await apiFetch("/api/inventory/categories/", {
+        savedCategory = await apiFetch<CategoryRecord>("/api/inventory/categories/", {
           method: "POST",
           body,
         });
       }
 
-      await onSave?.();
+      await onSave?.(savedCategory);
       onClose();
-      const recordId =
-        savedCategory && typeof savedCategory === "object" && "id" in savedCategory
-          ? (savedCategory as { id: string | number }).id
-          : category?.id;
+      const recordId = savedCategory.id;
       return {
         ok: true,
         message: isEditMode ? "Category updated successfully." : "Category created successfully.",

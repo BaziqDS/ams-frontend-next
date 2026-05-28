@@ -384,17 +384,24 @@ export default function EmployeesPage() {
       designation: form.designation.trim() || null,
     };
     try {
+      let saved: Employee;
       if (modalEmployee) {
-        await apiFetch<Employee>(`/api/inventory/employees/${modalEmployee.id}/`, {
+        saved = await apiFetch<Employee>(`/api/inventory/employees/${modalEmployee.id}/`, {
           method: "PATCH",
           body: JSON.stringify(payload),
         });
       } else {
-        await apiFetch<Employee>("/api/inventory/employees/", {
+        saved = await apiFetch<Employee>("/api/inventory/employees/", {
           method: "POST",
           body: JSON.stringify(payload),
         });
       }
+      setEmployees(prev => [
+        saved,
+        ...prev.filter(employee => employee.id !== saved.id),
+      ]);
+      setSearch("");
+      setStatusFilter("all");
       setIsModalOpen(false);
       await load();
     } catch (error) {

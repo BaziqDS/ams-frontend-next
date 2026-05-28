@@ -65,6 +65,7 @@ interface InventoryReportFilters {
   categoryType: string;
   updatedFrom: string;
   updatedTo: string;
+  inspectionWise: boolean;
 }
 
 interface PendingAcknowledgementFilters {
@@ -81,10 +82,10 @@ interface AssetCustodyFilters {
   person: string;
   targetLocation: string;
   itemQuery: string;
-  batch: string;
   status: string;
   allocatedFrom: string;
   allocatedTo: string;
+  inspectionWise: boolean;
 }
 
 interface MovementLedgerFilters {
@@ -151,6 +152,8 @@ interface StockRecord {
   location_name?: string | null;
   location_tags?: number[];
   location_tags_display?: LocationTagSummary[];
+  subcategory_name?: string | null;
+  source_inspection_contracts?: string[];
   quantity: number;
   allocated_quantity?: number | null;
   in_transit_quantity: number;
@@ -209,6 +212,9 @@ interface StockAllocation {
   id: number;
   item?: number | null;
   item_name?: string | null;
+  item_code?: string | null;
+  item_category_type?: string | null;
+  item_subcategory_name?: string | null;
   batch?: number | null;
   batch_number?: string | null;
   source_location?: number | null;
@@ -240,6 +246,8 @@ interface MovementHistory {
   to_location_name?: string | null;
   entry_number?: string | null;
   allocation?: number | null;
+  allocation_target_type?: "PERSON" | "LOCATION" | null;
+  allocation_target_name?: string | null;
   quantity: number;
   performed_by_name?: string | null;
   timestamp: string;
@@ -414,13 +422,13 @@ function stockAllocated(row: StockRecord) {
   return row.allocated_quantity ?? Math.max(0, n(row.quantity) - n(row.available_quantity) - n(row.in_transit_quantity));
 }
 
-function stockStatus(row: StockRecord) {
+function stockStatus(row: { quantity: number | string | null | undefined; available_quantity: number | string | null | undefined }) {
   if (n(row.quantity) <= 0 || n(row.available_quantity) <= 0) return "Out Of Stock";
   if (n(row.available_quantity) <= Math.max(1, Math.floor(n(row.quantity) * 0.2))) return "Low Stock";
   return "Healthy";
 }
 
-function locationTagLabels(row: StockRecord) {
+function locationTagLabels(row: { location_tags_display?: LocationTagSummary[] }) {
   return (row.location_tags_display ?? [])
     .map(tag => tag.label ?? `${tag.category_display ?? tag.category}: ${tag.name}`)
     .join(", ");
@@ -625,7 +633,7 @@ function filterInventoryRows(rows: StockRecord[], filters?: InventoryReportFilte
     if (filters?.locationTagId && !(row.location_tags ?? []).map(String).includes(filters.locationTagId)) return false;
     if (filters?.categoryType && row.category_type !== filters.categoryType) return false;
     if (itemQuery) {
-      const haystack = `${row.item_code ?? ""} ${row.item_name ?? ""} ${row.batch_number ?? ""}`.toLowerCase();
+      const haystack = `${row.item_code ?? ""} ${row.item_name ?? ""} ${row.subcategory_name ?? ""} ${row.source_inspection_contracts?.join(" ") ?? ""}`.toLowerCase();
       if (!haystack.includes(itemQuery)) return false;
     }
     if (updatedFrom !== null || updatedTo !== null) {
@@ -638,6 +646,85 @@ function filterInventoryRows(rows: StockRecord[], filters?: InventoryReportFilte
   });
 }
 
+interface InventoryPositionRow {
+  location: number;
+  location_name?: string | null;
+  location_tags?: number[];
+  location_tags_display?: LocationTagSummary[];
+  item: number;
+  item_code?: string | null;
+  item_name?: string | null;
+  subcategory_name?: string | null;
+  source_inspection_contracts?: string[];
+  quantity: number;
+  allocated_quantity: number;
+  in_transit_quantity: number;
+  available_quantity: number;
+  last_updated?: string | null;
+}
+
+function collapseInventoryRows(rows: StockRecord[], inspectionWise = false): InventoryPositionRow[] {
+  if (inspectionWise) {
+    return rows
+      .filter(row => n(row.quantity) > 0)
+      .map(row => ({
+        location: row.location,
+        location_name: row.location_name,
+        location_tags: row.location_tags,
+        location_tags_display: row.location_tags_display,
+        item: row.item,
+        item_code: row.item_code,
+        item_name: row.item_name,
+        subcategory_name: row.subcategory_name,
+        source_inspection_contracts: row.source_inspection_contracts,
+        quantity: n(row.quantity),
+        allocated_quantity: stockAllocated(row),
+        in_transit_quantity: n(row.in_transit_quantity),
+        available_quantity: n(row.available_quantity),
+        last_updated: row.last_updated,
+      }));
+  }
+
+  const grouped = new Map<string, InventoryPositionRow>();
+  rows.forEach(row => {
+    if (n(row.quantity) <= 0) return;
+    const key = `${row.location}:${row.item}`;
+    const existing = grouped.get(key);
+    if (!existing) {
+      grouped.set(key, {
+        location: row.location,
+        location_name: row.location_name,
+        location_tags: row.location_tags,
+        location_tags_display: row.location_tags_display,
+        item: row.item,
+        item_code: row.item_code,
+        item_name: row.item_name,
+        subcategory_name: row.subcategory_name,
+        source_inspection_contracts: [],
+        quantity: n(row.quantity),
+        allocated_quantity: stockAllocated(row),
+        in_transit_quantity: n(row.in_transit_quantity),
+        available_quantity: n(row.available_quantity),
+        last_updated: row.last_updated,
+      });
+      return;
+    }
+
+    existing.quantity += n(row.quantity);
+    existing.allocated_quantity += stockAllocated(row);
+    existing.in_transit_quantity += n(row.in_transit_quantity);
+    existing.available_quantity += n(row.available_quantity);
+    if (row.last_updated && (!existing.last_updated || new Date(row.last_updated).getTime() > new Date(existing.last_updated).getTime())) {
+      existing.last_updated = row.last_updated;
+    }
+  });
+
+  return Array.from(grouped.values()).sort((a, b) => (
+    (a.location_name ?? "").localeCompare(b.location_name ?? "") ||
+    (a.item_name ?? "").localeCompare(b.item_name ?? "")
+  ));
+}
+
 async function fetchInventoryRows(filters?: InventoryReportFilters) {
   const scope = filters?.scope;
   const path = scope && scope !== "all" ? `/api/inventory/distribution/?scope=${encodeURIComponent(scope)}` : "/api/inventory/distribution/";
@@ -645,11 +732,12 @@ async function fetchInventoryRows(filters?: InventoryReportFilters) {
 }
 
 async function inventoryPositionReport(filters?: InventoryReportFilters): Promise<ReportView> {
-  const rows = await fetchInventoryRows(filters);
+  const rows = collapseInventoryRows(await fetchInventoryRows(filters), Boolean(filters?.inspectionWise));
   const total = rows.reduce((sum, row) => sum + n(row.quantity), 0);
   const available = rows.reduce((sum, row) => sum + n(row.available_quantity), 0);
-  const allocated = rows.reduce((sum, row) => sum + stockAllocated(row), 0);
+  const allocated = rows.reduce((sum, row) => sum + n(row.allocated_quantity), 0);
   const transit = rows.reduce((sum, row) => sum + n(row.in_transit_quantity), 0);
+  const inspectionWise = Boolean(filters?.inspectionWise);
 
   return {
     metrics: [
@@ -658,21 +746,20 @@ async function inventoryPositionReport(filters?: InventoryReportFilters): Promis
       { label: "Allocated", value: fmtNumber(allocated), hint: `${pct(allocated, total)} of total`, tone: "amber" },
       { label: "In Transit", value: fmtNumber(transit), hint: `${pct(transit, total)} of total`, tone: "violet" },
     ],
-    columns: ["Store / Location", "Location Tags", "Item Code", "Item Name", "Category", "Category Type", "Tracking", "Batch / Lot", "Total", "Allocated", "In Transit", "Available", "Stock Status", "Last Updated"],
+    columns: inspectionWise
+      ? ["Store / Location", "Location Tags", "Item Code", "Item Name", "Subcategory", "Inspection Contract No.", "Total", "Allocated", "In Transit", "Available", "Last Updated"]
+      : ["Store / Location", "Location Tags", "Item Code", "Item Name", "Subcategory", "Total", "Allocated", "In Transit", "Available", "Last Updated"],
     rows: rows.map(row => [
       row.location_name ?? `Location ${row.location}`,
       locationTagLabels(row) || "-",
       row.item_code ?? `Item ${row.item}`,
       row.item_name ?? "-",
-      row.category_name ?? "-",
-      row.category_type ?? "-",
-      row.tracking_type ?? "-",
-      row.batch_number ?? "-",
+      row.subcategory_name ?? "-",
+      ...(inspectionWise ? [row.source_inspection_contracts?.length ? row.source_inspection_contracts.join(", ") : "-"] : []),
       fmtNumber(row.quantity),
-      fmtNumber(stockAllocated(row)),
+      fmtNumber(row.allocated_quantity),
       fmtNumber(row.in_transit_quantity),
       fmtNumber(row.available_quantity),
-      stockStatus(row),
       fmtDate(row.last_updated),
     ]),
     note: filters ? "Live scoped inventory position. Filters are applied to backend-scoped stock records." : reportNote("/api/inventory/distribution/"),
@@ -681,10 +768,10 @@ async function inventoryPositionReport(filters?: InventoryReportFilters): Promis
 
 async function lowStockReport(filters?: InventoryReportFilters): Promise<ReportView> {
   const base = await inventoryPositionReport(filters);
-  const rowData = await fetchInventoryRows(filters);
+  const rowData = collapseInventoryRows(await fetchInventoryRows(filters), Boolean(filters?.inspectionWise));
   const lowRows = rowData.filter(row => stockStatus(row) !== "Healthy");
   const available = lowRows.reduce((sum, row) => sum + n(row.available_quantity), 0);
-  const allocated = lowRows.reduce((sum, row) => sum + stockAllocated(row), 0);
+  const allocated = lowRows.reduce((sum, row) => sum + n(row.allocated_quantity), 0);
   return {
     ...base,
     metrics: [
@@ -766,17 +853,79 @@ function withinDateRange(value: string | null | undefined, from: string, to: str
   return true;
 }
 
-function filterAssetCustodyRows(rows: StockAllocation[], filters?: AssetCustodyFilters) {
+interface AssetPositionRow {
+  itemId: number | null;
+  itemCode: string;
+  itemName: string;
+  subcategory: string;
+  currentHolderType: "Store" | "Employee" | "Location";
+  currentHolderId: string;
+  currentHolder: string;
+  sourceStoreId: string;
+  sourceStore: string;
+  quantity: number;
+  status: "In Store" | "Allocated";
+  evidence: string;
+  recordedAt?: string | null;
+}
+
+function buildAssetPositionRows(stockRows: StockRecord[], allocationRows: StockAllocation[], inspectionWise = false) {
+  const positions: AssetPositionRow[] = [];
+
+  stockRows
+    .filter(row => row.category_type === "FIXED_ASSET" && n(row.available_quantity) > 0)
+    .forEach(row => {
+      positions.push({
+        itemId: row.item,
+        itemCode: row.item_code ?? `Item ${row.item}`,
+        itemName: row.item_name ?? "-",
+        subcategory: row.subcategory_name ?? "-",
+        currentHolderType: "Store",
+        currentHolderId: String(row.location),
+        currentHolder: row.location_name ?? `Location ${row.location}`,
+        sourceStoreId: String(row.location),
+        sourceStore: row.location_name ?? `Location ${row.location}`,
+        quantity: n(row.available_quantity),
+        status: "In Store",
+        evidence: inspectionWise && row.source_inspection_contracts?.length ? row.source_inspection_contracts.join(", ") : "Stock balance",
+        recordedAt: row.last_updated,
+      });
+    });
+
+  allocationRows
+    .filter(row => row.item_category_type === "FIXED_ASSET" && row.status === "ALLOCATED")
+    .forEach(row => {
+      const holderType = row.allocated_to_person_name ? "Employee" : "Location";
+      positions.push({
+        itemId: row.item ?? null,
+        itemCode: row.item_code ?? (row.item ? `Item ${row.item}` : "-"),
+        itemName: row.item_name ?? "-",
+        subcategory: row.item_subcategory_name ?? "-",
+        currentHolderType: holderType,
+        currentHolderId: row.allocated_to_person_name ? String(row.allocated_to_person ?? "") : String(row.allocated_to_location ?? ""),
+        currentHolder: row.allocated_to_person_name ?? row.allocated_to_location_name ?? "-",
+        sourceStoreId: String(row.source_location ?? ""),
+        sourceStore: row.source_location_name ?? "-",
+        quantity: n(row.quantity),
+        status: "Allocated",
+        evidence: row.entry_number ?? "-",
+        recordedAt: row.allocated_at,
+      });
+    });
+
+  return positions.sort((a, b) => a.itemName.localeCompare(b.itemName) || a.currentHolder.localeCompare(b.currentHolder));
+}
+
+function filterAssetCustodyRows(rows: AssetPositionRow[], filters?: AssetCustodyFilters) {
   const itemQuery = filters?.itemQuery.trim().toLowerCase() ?? "";
   return rows.filter(row => {
-    if (filters?.sourceLocation && String(row.source_location ?? "") !== filters.sourceLocation) return false;
-    if (filters?.person && String(row.allocated_to_person ?? "") !== filters.person) return false;
-    if (filters?.targetLocation && String(row.allocated_to_location ?? "") !== filters.targetLocation) return false;
-    if (filters?.batch && String(row.batch ?? "") !== filters.batch) return false;
+    if (filters?.sourceLocation && row.sourceStoreId !== filters.sourceLocation) return false;
+    if (filters?.person && !(row.currentHolderType === "Employee" && row.currentHolderId === filters.person)) return false;
+    if (filters?.targetLocation && !(row.currentHolderType === "Location" && row.currentHolderId === filters.targetLocation)) return false;
     if (filters?.status && row.status !== filters.status) return false;
-    if (!withinDateRange(row.allocated_at, filters?.allocatedFrom ?? "", filters?.allocatedTo ?? "")) return false;
+    if (!withinDateRange(row.recordedAt, filters?.allocatedFrom ?? "", filters?.allocatedTo ?? "")) return false;
     if (itemQuery) {
-      const haystack = `${row.item_name ?? ""} ${row.batch_number ?? ""} ${row.entry_number ?? ""}`.toLowerCase();
+      const haystack = `${row.itemCode} ${row.itemName} ${row.subcategory} ${row.currentHolder} ${row.sourceStore} ${row.evidence}`.toLowerCase();
       if (!haystack.includes(itemQuery)) return false;
     }
     return true;
@@ -784,30 +933,34 @@ function filterAssetCustodyRows(rows: StockAllocation[], filters?: AssetCustodyF
 }
 
 async function assetCustodyReport(filters?: AssetCustodyFilters): Promise<ReportView> {
-  const rows = filterAssetCustodyRows(await fetchList<StockAllocation>("/api/inventory/stock-allocations/"), filters);
-  const active = rows.filter(row => row.status === "ALLOCATED");
+  const [stockRows, allocationRows] = await Promise.all([
+    fetchInventoryRows({ scope: "", locationId: "", locationTagId: "", itemQuery: "", categoryType: "", updatedFrom: "", updatedTo: "", inspectionWise: Boolean(filters?.inspectionWise) }),
+    fetchList<StockAllocation>("/api/inventory/stock-allocations/?status=ALLOCATED"),
+  ]);
+  const rows = filterAssetCustodyRows(buildAssetPositionRows(stockRows, allocationRows, Boolean(filters?.inspectionWise)), filters);
+  const inStore = rows.filter(row => row.status === "In Store");
+  const allocated = rows.filter(row => row.status === "Allocated");
   return {
     metrics: [
-      { label: "Active Allocations", value: fmtNumber(active.length), hint: "status ALLOCATED", tone: "green" },
-      { label: "Allocated Quantity", value: fmtNumber(active.reduce((sum, row) => sum + n(row.quantity), 0)), hint: "sum allocation quantity", tone: "blue" },
-      { label: "Employee-Held Assets", value: fmtNumber(active.filter(row => row.allocated_to_person_name).length), hint: "allocated_to_person", tone: "violet" },
-      { label: "Location-Held Assets", value: fmtNumber(active.filter(row => row.allocated_to_location_name).length), hint: "allocated_to_location", tone: "amber" },
+      { label: "Fixed Asset Positions", value: fmtNumber(rows.length), hint: "current fixed-asset rows", tone: "blue" },
+      { label: "Total Quantity", value: fmtNumber(rows.reduce((sum, row) => sum + n(row.quantity), 0)), hint: "fixed assets only", tone: "green" },
+      { label: "In Store", value: fmtNumber(inStore.reduce((sum, row) => sum + n(row.quantity), 0)), hint: "available in stores", tone: "violet" },
+      { label: "Allocated Out", value: fmtNumber(allocated.reduce((sum, row) => sum + n(row.quantity), 0)), hint: "held by employee/location", tone: "amber" },
     ],
-    columns: ["Item Name", "Batch", "Source Store", "Allocated To Employee", "Allocated To Location", "Quantity", "Status", "Stock Entry", "Allocated By", "Allocated At", "Return Date"],
+    columns: ["Item Code", "Item Name", "Subcategory", "Current Holder Type", "Current Holder", "Source Store", "Quantity", "Position Status", "Evidence", "Recorded At"],
     rows: rows.map(row => [
-      row.item_name ?? "-",
-      row.batch_number ?? "-",
-      row.source_location_name ?? "-",
-      row.allocated_to_person_name ?? "-",
-      row.allocated_to_location_name ?? "-",
+      row.itemCode,
+      row.itemName,
+      row.subcategory,
+      row.currentHolderType,
+      row.currentHolder,
+      row.sourceStore,
       fmtNumber(row.quantity),
       row.status,
-      row.entry_number ?? "-",
-      row.allocated_by_name ?? "-",
-      fmtDate(row.allocated_at),
-      fmtDate(row.return_date),
+      row.evidence,
+      fmtDate(row.recordedAt),
     ]),
-    note: "Live asset custody and allocation rows. Filters are applied to backend-scoped allocation records.",
+    note: "Live fixed-asset position report. Store-held assets come from current stock balances; issued assets come from active allocations.",
   };
 }
 
@@ -822,6 +975,15 @@ function filterMovementRows(rows: MovementHistory[], filters?: MovementLedgerFil
     if (instanceQuery && !`${row.instance_serial ?? ""}`.toLowerCase().includes(instanceQuery)) return false;
     return true;
   });
+}
+
+function movementDestination(row: MovementHistory) {
+  if (row.action === "ALLOCATE" && row.allocation_target_name) {
+    return row.allocation_target_type === "PERSON"
+      ? `Employee: ${row.allocation_target_name}`
+      : `Location: ${row.allocation_target_name}`;
+  }
+  return row.to_location_name ?? "-";
 }
 
 async function movementLedgerReport(filters?: MovementLedgerFilters): Promise<ReportView> {
@@ -842,7 +1004,7 @@ async function movementLedgerReport(filters?: MovementLedgerFilters): Promise<Re
       row.batch_number ?? "-",
       row.instance_serial ?? "-",
       row.from_location_name ?? "-",
-      row.to_location_name ?? "-",
+      movementDestination(row),
       fmtNumber(row.quantity),
       row.entry_number ?? "-",
       row.allocation ? String(row.allocation) : "-",
@@ -924,12 +1086,39 @@ function buildStockEntryTraceSteps(certificate: InspectionCertificate): Procurem
 }
 
 function buildProcurementTraceSteps(certificate: InspectionCertificate, item: InspectionItem): ProcurementTraceStep[] {
+  const stockEvidence = item.stock_register_name || item.stock_register_no
+    ? `Stock register ${item.stock_register_name ?? item.stock_register_no}`
+    : certificate.central_store_filled_at && certificate.status === "COMPLETED"
+      ? "Not required separately; completed through central register workflow"
+      : "Awaiting stock register evidence";
+  const stockStep = traceStep(
+    "Stock details recorded",
+    certificate.stock_filled_at ?? (certificate.status === "COMPLETED" ? certificate.central_store_filled_at : null),
+    certificate.stock_filled_by_name ?? certificate.central_store_filled_by_name,
+    stockEvidence,
+    !certificate.stock_filled_at && certificate.central_store_filled_at && certificate.status === "COMPLETED" ? "done" : undefined,
+  );
+  if (!certificate.stock_filled_at && certificate.central_store_filled_at && certificate.status === "COMPLETED") {
+    stockStep.timestamp = traceTimestamp(certificate.central_store_filled_at) - 1;
+  }
+
+  const centralEvidence = item.central_register_name || item.central_register_no
+    ? `Central register ${item.central_register_name ?? item.central_register_no}`
+    : certificate.central_store_filled_at
+      ? "Central register stage completed"
+      : "Awaiting central register evidence";
+  const financeEvidence = item.capitalization_cost || item.capitalization_date
+    ? `Capitalization ${item.capitalization_cost ? fmtMoney(item.capitalization_cost) : "-"} on ${item.capitalization_date ?? "-"}`
+    : certificate.finance_reviewed_at
+      ? "Finance review completed; no capitalization fields recorded for this item"
+      : "Finance review not completed";
+
   const steps: ProcurementTraceStep[] = [
     traceStep("Certificate created", certificate.created_at, certificate.initiated_by_name, `Contract ${certificate.contract_no}`),
     traceStep("Inspection initiated", certificate.initiated_at, certificate.initiated_by_name, certificate.stage === "DRAFT" ? "Still in draft" : "Workflow started"),
-    traceStep("Stock details recorded", certificate.stock_filled_at, certificate.stock_filled_by_name, item.stock_register_name || item.stock_register_no ? `Stock register ${item.stock_register_name ?? item.stock_register_no}` : "Awaiting stock register evidence"),
-    traceStep("Central register recorded", certificate.central_store_filled_at, certificate.central_store_filled_by_name, item.central_register_name || item.central_register_no ? `Central register ${item.central_register_name ?? item.central_register_no}` : "Awaiting central register evidence"),
-    traceStep("Finance reviewed", certificate.finance_reviewed_at, certificate.finance_reviewed_by_name, item.capitalization_cost || item.capitalization_date ? `Capitalization ${item.capitalization_cost ? fmtMoney(item.capitalization_cost) : "-"} on ${item.capitalization_date ?? "-"}` : "Finance review not completed"),
+    stockStep,
+    traceStep("Central register recorded", certificate.central_store_filled_at, certificate.central_store_filled_by_name, centralEvidence),
+    traceStep("Finance reviewed", certificate.finance_reviewed_at, certificate.finance_reviewed_by_name, financeEvidence),
   ];
 
   if (certificate.stock_entries?.length) {
@@ -1245,9 +1434,9 @@ const REPORTS: ReportDefinition[] = [
     id: "asset-custody",
     family: "operational",
     title: "Asset Custody and Allocation",
-    description: "Shows active custody of stock allocated to employees or non-store locations.",
-    schema: ["StockAllocation", "ItemBatch", "Employee", "Location"],
-    filters: ["Department", "Store", "Employee", "Non-Store Location", "Item", "Batch", "Allocation Status", "Date Range"],
+    description: "Shows the current position of fixed assets, whether held in store or allocated to an employee or location.",
+    schema: ["StockRecord", "StockAllocation", "Item", "Employee", "Location"],
+    filters: ["Store", "Employee", "Non-Store Location", "Item", "Position Status", "Date Range"],
     loader: filters => assetCustodyReport(filters as AssetCustodyFilters | undefined),
   },
   {
@@ -1342,6 +1531,17 @@ function Icon({ children }: { children: ReactNode }) {
   );
 }
 
+function ReportToggle({ checked, onChange, label }: { checked: boolean; onChange: (checked: boolean) => void; label: string }) {
+  return (
+    <button type="button" className={"report-toggle" + (checked ? " active" : "")} onClick={() => onChange(!checked)} aria-pressed={checked}>
+      <span className="report-toggle-track" aria-hidden="true">
+        <span className="report-toggle-thumb" />
+      </span>
+      <span>{label}</span>
+    </button>
+  );
+}
+
 function metricIcon(tone: Tone | undefined) {
   if (tone === "green") return <><path d="M20 6L9 17l-5-5" /></>;
   if (tone === "amber") return <><circle cx="12" cy="8" r="4" /><path d="M6 21v-2a6 6 0 0112 0v2" /></>;
@@ -1375,6 +1575,7 @@ export default function ReportsPage() {
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [scopeOptions, setScopeOptions] = useState<ScopeOptionsResponse>({ options: [], default: ["all"], is_root_scope: false });
   const [inventoryRowsForFilters, setInventoryRowsForFilters] = useState<StockRecord[]>([]);
+  const [reportLocationTags, setReportLocationTags] = useState<LocationTagSummary[]>([]);
   const [pendingEntriesForFilters, setPendingEntriesForFilters] = useState<StockEntry[]>([]);
   const [assetRowsForFilters, setAssetRowsForFilters] = useState<StockAllocation[]>([]);
   const [movementRowsForFilters, setMovementRowsForFilters] = useState<MovementHistory[]>([]);
@@ -1388,6 +1589,7 @@ export default function ReportsPage() {
     categoryType: "",
     updatedFrom: "",
     updatedTo: "",
+    inspectionWise: false,
   });
   const [pendingFilters, setPendingFilters] = useState<PendingAcknowledgementFilters>({
     fromLocation: "",
@@ -1397,7 +1599,7 @@ export default function ReportsPage() {
     createdFrom: "",
     createdTo: "",
   });
-  const [assetFilters, setAssetFilters] = useState<AssetCustodyFilters>({ sourceLocation: "", person: "", targetLocation: "", itemQuery: "", batch: "", status: "", allocatedFrom: "", allocatedTo: "" });
+  const [assetFilters, setAssetFilters] = useState<AssetCustodyFilters>({ sourceLocation: "", person: "", targetLocation: "", itemQuery: "", status: "", allocatedFrom: "", allocatedTo: "", inspectionWise: false });
   const [movementFilters, setMovementFilters] = useState<MovementLedgerFilters>({ dateFrom: "", dateTo: "", itemQuery: "", location: "", batch: "", instanceSerial: "" });
   const [correctionFilters, setCorrectionFilters] = useState<CorrectionFilters>({ dateFrom: "", dateTo: "", status: "", resolutionType: "", requestedBy: "" });
   const [procurementFilters, setProcurementFilters] = useState<ProcurementTraceFilters>({ inspectionId: "" });
@@ -1427,23 +1629,42 @@ export default function ReportsPage() {
     if (!authLoading && !canViewReports) router.replace("/403");
   }, [authLoading, canViewReports, router]);
 
+  const scopeSelectOptions = useMemo<ThemedSelectOption[]>(() => {
+    return scopeOptions.options.map(option => ({
+      value: option.id,
+      label: option.label,
+      meta: option.kind === "all" ? "All accessible locations" : option.kind,
+    }));
+  }, [scopeOptions.options]);
+
   const locationOptions = useMemo(() => {
     const map = new Map<number, string>();
     inventoryRowsForFilters.forEach(row => map.set(row.location, row.location_name ?? `Location ${row.location}`));
     return Array.from(map, ([id, label]) => ({ id: String(id), label })).sort((a, b) => a.label.localeCompare(b.label));
   }, [inventoryRowsForFilters]);
 
-  const categoryTypeOptions = useMemo(() => uniqueOptions(inventoryRowsForFilters.map(row => row.category_type)), [inventoryRowsForFilters]);
+  const locationSelectOptions = useMemo<ThemedSelectOption[]>(() => [
+    { value: "", label: "All locations in scope" },
+    ...locationOptions.map(option => ({ value: option.id, label: option.label })),
+  ], [locationOptions]);
 
   const locationTagOptions = useMemo(() => {
     const map = new Map<string, string>();
+    reportLocationTags.forEach(tag => {
+      map.set(String(tag.id), tag.label ?? `${tag.category_display ?? tag.category}: ${tag.name}`);
+    });
     inventoryRowsForFilters.forEach(row => {
       (row.location_tags_display ?? []).forEach(tag => {
         map.set(String(tag.id), tag.label ?? `${tag.category_display ?? tag.category}: ${tag.name}`);
       });
     });
     return Array.from(map, ([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label));
-  }, [inventoryRowsForFilters]);
+  }, [inventoryRowsForFilters, reportLocationTags]);
+
+  const locationTagSelectOptions = useMemo<ThemedSelectOption[]>(() => [
+    { value: "", label: "All location tags" },
+    ...locationTagOptions.map(option => ({ value: option.id, label: option.label })),
+  ], [locationTagOptions]);
 
   const pendingFromLocationOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -1462,11 +1683,32 @@ export default function ReportsPage() {
   }, [pendingEntriesForFilters]);
 
   const pendingCreatedByOptions = useMemo(() => uniqueOptions(pendingEntriesForFilters.map(entry => entry.created_by_name)), [pendingEntriesForFilters]);
-  const assetSourceOptions = useMemo(() => mapIdOptions(assetRowsForFilters, "source_location", "source_location_name"), [assetRowsForFilters]);
-  const assetPersonOptions = useMemo(() => mapIdOptions(assetRowsForFilters, "allocated_to_person", "allocated_to_person_name"), [assetRowsForFilters]);
-  const assetTargetOptions = useMemo(() => mapIdOptions(assetRowsForFilters, "allocated_to_location", "allocated_to_location_name"), [assetRowsForFilters]);
-  const assetBatchOptions = useMemo(() => mapIdOptions(assetRowsForFilters, "batch", "batch_number"), [assetRowsForFilters]);
-  const assetStatusOptions = useMemo(() => uniqueOptions(assetRowsForFilters.map(row => row.status)), [assetRowsForFilters]);
+  const assetPositionRowsForFilters = useMemo(
+    () => buildAssetPositionRows(inventoryRowsForFilters, assetRowsForFilters, assetFilters.inspectionWise),
+    [assetFilters.inspectionWise, assetRowsForFilters, inventoryRowsForFilters],
+  );
+  const assetSourceOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    assetPositionRowsForFilters.forEach(row => {
+      if (row.sourceStoreId) map.set(row.sourceStoreId, row.sourceStore);
+    });
+    return Array.from(map, ([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [assetPositionRowsForFilters]);
+  const assetPersonOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    assetPositionRowsForFilters.forEach(row => {
+      if (row.currentHolderType === "Employee" && row.currentHolderId) map.set(row.currentHolderId, row.currentHolder);
+    });
+    return Array.from(map, ([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [assetPositionRowsForFilters]);
+  const assetTargetOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    assetPositionRowsForFilters.forEach(row => {
+      if (row.currentHolderType === "Location" && row.currentHolderId) map.set(row.currentHolderId, row.currentHolder);
+    });
+    return Array.from(map, ([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [assetPositionRowsForFilters]);
+  const assetStatusOptions = useMemo(() => ["In Store", "Allocated"], []);
   const movementLocationOptions = useMemo(() => {
     const map = new Map<string, string>();
     movementRowsForFilters.forEach(row => {
@@ -1525,10 +1767,16 @@ export default function ReportsPage() {
 
   const loadInventoryFilterRows = useCallback(async (scope: string) => {
     try {
-      const rows = await fetchInventoryRows({ scope, locationId: "", locationTagId: "", itemQuery: "", categoryType: "", updatedFrom: "", updatedTo: "" });
+      const scopeParam = scope && scope !== "all" ? `?scope=${encodeURIComponent(scope)}` : "";
+      const [rows, tags] = await Promise.all([
+        fetchInventoryRows({ scope, locationId: "", locationTagId: "", itemQuery: "", categoryType: "", updatedFrom: "", updatedTo: "", inspectionWise: false }),
+        apiFetch<LocationTagSummary[]>(`/api/inventory/distribution/tag-options/${scopeParam}`),
+      ]);
       setInventoryRowsForFilters(rows);
+      setReportLocationTags(tags);
     } catch {
       setInventoryRowsForFilters([]);
+      setReportLocationTags([]);
     }
   }, []);
 
@@ -1713,7 +1961,7 @@ export default function ReportsPage() {
                   <span className="eyebrow">Report setup</span>
                   <strong>
                     {isInventoryStockReport
-                      ? "Filter live stock records by your accessible scope, location, item, category type, and update date."
+                      ? "Filter live stock records by your accessible scope, location, item, tag, and update date."
                       : isPendingAcknowledgement
                         ? "Filter pending acknowledgement entries by source, destination, item, creator, and created date."
                         : isProcurementTrace
@@ -1727,45 +1975,36 @@ export default function ReportsPage() {
                 <div className={styles.filters}>
                   <label className="field">
                     <span className="field-label">Standalone / Scope</span>
-                    <select
-                      className="input"
+                    <ThemedSelect
                       value={inventoryFilters.scope}
-                      onChange={event => {
-                        const scope = event.target.value;
+                      options={scopeSelectOptions}
+                      onChange={scope => {
                         setInventoryFilters(current => ({ ...current, scope, locationId: "", locationTagId: "" }));
                         void loadInventoryFilterRows(scope);
                       }}
-                    >
-                      {scopeOptions.options.map(option => (
-                        <option key={option.id} value={option.id}>{option.label}</option>
-                      ))}
-                    </select>
+                      placeholder="Search standalone or scope"
+                      ariaLabel="Search standalone or scope"
+                    />
                   </label>
                   <label className="field">
                     <span className="field-label">Store / Location</span>
-                    <select
-                      className="input"
+                    <ThemedSelect
                       value={inventoryFilters.locationId}
-                      onChange={event => setInventoryFilters(current => ({ ...current, locationId: event.target.value }))}
-                    >
-                      <option value="">All locations in scope</option>
-                      {locationOptions.map(option => (
-                        <option key={option.id} value={option.id}>{option.label}</option>
-                      ))}
-                    </select>
+                      options={locationSelectOptions}
+                      onChange={value => setInventoryFilters(current => ({ ...current, locationId: value }))}
+                      placeholder="Search store or location"
+                      ariaLabel="Search store or location"
+                    />
                   </label>
                   <label className="field">
                     <span className="field-label">Location Tag</span>
-                    <select
-                      className="input"
+                    <ThemedSelect
                       value={inventoryFilters.locationTagId}
-                      onChange={event => setInventoryFilters(current => ({ ...current, locationTagId: event.target.value }))}
-                    >
-                      <option value="">All location tags</option>
-                      {locationTagOptions.map(option => (
-                        <option key={option.id} value={option.id}>{option.label}</option>
-                      ))}
-                    </select>
+                      options={locationTagSelectOptions}
+                      onChange={value => setInventoryFilters(current => ({ ...current, locationTagId: value }))}
+                      placeholder="Search location tag"
+                      ariaLabel="Search location tag"
+                    />
                   </label>
                   <label className="field">
                     <span className="field-label">Item</span>
@@ -1775,19 +2014,6 @@ export default function ReportsPage() {
                       onChange={event => setInventoryFilters(current => ({ ...current, itemQuery: event.target.value }))}
                       placeholder="Search item code, name, or batch"
                     />
-                  </label>
-                  <label className="field">
-                    <span className="field-label">Category Type</span>
-                    <select
-                      className="input"
-                      value={inventoryFilters.categoryType}
-                      onChange={event => setInventoryFilters(current => ({ ...current, categoryType: event.target.value }))}
-                    >
-                      <option value="">All category types</option>
-                      {categoryTypeOptions.map(option => (
-                        <option key={option} value={option}>{option}</option>
-                      ))}
-                    </select>
                   </label>
                   <label className="field">
                     <span className="field-label">Last Updated From</span>
@@ -1807,6 +2033,14 @@ export default function ReportsPage() {
                       onChange={event => setInventoryFilters(current => ({ ...current, updatedTo: event.target.value }))}
                     />
                   </label>
+                  <label className="field report-checkbox-field">
+                    <span className="field-label">Inspection Detail</span>
+                    <ReportToggle
+                      checked={inventoryFilters.inspectionWise}
+                      onChange={checked => setInventoryFilters(current => ({ ...current, inspectionWise: checked }))}
+                      label="Show inspection certificate wise distribution"
+                    />
+                  </label>
                   <div className={styles.filterActions}>
                     <Button type="button"  onClick={loadReport} disabled={loading}>
                       Apply Filters
@@ -1816,7 +2050,7 @@ export default function ReportsPage() {
                       variant="outline"
                       onClick={() => {
                         const scope = scopeOptions.default[0] ?? scopeOptions.options[0]?.id ?? "all";
-                        setInventoryFilters({ scope, locationId: "", locationTagId: "", itemQuery: "", categoryType: "", updatedFrom: "", updatedTo: "" });
+                        setInventoryFilters({ scope, locationId: "", locationTagId: "", itemQuery: "", categoryType: "", updatedFrom: "", updatedTo: "", inspectionWise: false });
                         void loadInventoryFilterRows(scope);
                       }}
                     >
@@ -1910,12 +2144,19 @@ export default function ReportsPage() {
                   <label className="field"><span className="field-label">Store</span><select className="input" value={assetFilters.sourceLocation} onChange={event => setAssetFilters(current => ({ ...current, sourceLocation: event.target.value }))}><option value="">All source stores</option>{assetSourceOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
                   <label className="field"><span className="field-label">Employee</span><select className="input" value={assetFilters.person} onChange={event => setAssetFilters(current => ({ ...current, person: event.target.value }))}><option value="">All employees</option>{assetPersonOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
                   <label className="field"><span className="field-label">Non-Store Location</span><select className="input" value={assetFilters.targetLocation} onChange={event => setAssetFilters(current => ({ ...current, targetLocation: event.target.value }))}><option value="">All non-store locations</option>{assetTargetOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
-                  <label className="field"><span className="field-label">Item</span><input className="input" value={assetFilters.itemQuery} onChange={event => setAssetFilters(current => ({ ...current, itemQuery: event.target.value }))} placeholder="Search item, batch, or entry" /></label>
-                  <label className="field"><span className="field-label">Batch</span><select className="input" value={assetFilters.batch} onChange={event => setAssetFilters(current => ({ ...current, batch: event.target.value }))}><option value="">All batches</option>{assetBatchOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
-                  <label className="field"><span className="field-label">Allocation Status</span><select className="input" value={assetFilters.status} onChange={event => setAssetFilters(current => ({ ...current, status: event.target.value }))}><option value="">All statuses</option>{assetStatusOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></label>
-                  <label className="field"><span className="field-label">Allocated From</span><input className="input" type="date" value={assetFilters.allocatedFrom} onChange={event => setAssetFilters(current => ({ ...current, allocatedFrom: event.target.value }))} /></label>
-                  <label className="field"><span className="field-label">Allocated To</span><input className="input" type="date" value={assetFilters.allocatedTo} onChange={event => setAssetFilters(current => ({ ...current, allocatedTo: event.target.value }))} /></label>
-                  <div className={styles.filterActions}><Button type="button"  onClick={loadReport} disabled={loading}>Apply Filters</Button><Button type="button" variant="outline" onClick={() => setAssetFilters({ sourceLocation: "", person: "", targetLocation: "", itemQuery: "", batch: "", status: "", allocatedFrom: "", allocatedTo: "" })}>Clear</Button></div>
+                  <label className="field"><span className="field-label">Item</span><input className="input" value={assetFilters.itemQuery} onChange={event => setAssetFilters(current => ({ ...current, itemQuery: event.target.value }))} placeholder="Search item, subcategory, holder, store, or evidence" /></label>
+                  <label className="field"><span className="field-label">Position Status</span><select className="input" value={assetFilters.status} onChange={event => setAssetFilters(current => ({ ...current, status: event.target.value }))}><option value="">All positions</option>{assetStatusOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></label>
+                  <label className="field"><span className="field-label">Recorded From</span><input className="input" type="date" value={assetFilters.allocatedFrom} onChange={event => setAssetFilters(current => ({ ...current, allocatedFrom: event.target.value }))} /></label>
+                  <label className="field"><span className="field-label">Recorded To</span><input className="input" type="date" value={assetFilters.allocatedTo} onChange={event => setAssetFilters(current => ({ ...current, allocatedTo: event.target.value }))} /></label>
+                  <label className="field report-checkbox-field">
+                    <span className="field-label">Inspection Detail</span>
+                    <ReportToggle
+                      checked={assetFilters.inspectionWise}
+                      onChange={checked => setAssetFilters(current => ({ ...current, inspectionWise: checked }))}
+                      label="Show inspection certificate evidence"
+                    />
+                  </label>
+                  <div className={styles.filterActions}><Button type="button" onClick={loadReport} disabled={loading}>Apply Filters</Button><Button type="button" variant="outline" onClick={() => setAssetFilters({ sourceLocation: "", person: "", targetLocation: "", itemQuery: "", status: "", allocatedFrom: "", allocatedTo: "", inspectionWise: false })}>Clear</Button></div>
                 </div>
               ) : isMovementLedger ? (
                 <div className={styles.filters}>

@@ -67,4 +67,6 @@ npm run start
 ## NOTES
 - Child guidance exists for `src/app/(dashboard)/` because that subtree has distinct admin-page rules.
 - Large hotspots: `globals.css`, `src/components/AddUserModal.tsx`, dashboard page files.
+- For local browser testing, assume a superuser account is available with username `admin` and password `admin`.
+- When opening a browser for UI testing, use a full desktop-sized viewport, for example 1440×1000, before judging layout or screenshots.
 <!-- END:nextjs-agent-rules -->

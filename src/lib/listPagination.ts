@@ -10,6 +10,10 @@ export function useClientPagination<T>(items: T[], pageSize: number, resetDeps: 
   }, resetDeps);
 
   useEffect(() => {
+    setPage(1);
+  }, [items.length]);
+
+  useEffect(() => {
     setPage(current => Math.min(Math.max(1, current), totalPages));
   }, [totalPages]);
 

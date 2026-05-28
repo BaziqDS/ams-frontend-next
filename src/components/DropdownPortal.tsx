@@ -76,8 +76,8 @@ export function DropdownPortal({
         position: "fixed",
         left: style.left,
         right: style.right,
-        top: style.top,
-        bottom: style.bottom,
+        top: style.top ?? "auto",
+        bottom: style.bottom ?? "auto",
         width: style.width,
       }}
       onMouseDown={event => event.preventDefault()}
