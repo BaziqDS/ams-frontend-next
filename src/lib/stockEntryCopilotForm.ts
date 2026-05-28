@@ -14,6 +14,11 @@ type NamedOption = {
   location_type?: string | null;
   designation?: string | null;
   department?: string | null;
+  // Parent location display name (when this option is a sub-location). The
+  // visible UI dropdown does NOT use this — it's only included in the agent's
+  // option catalog so the agent can disambiguate sub-locations whose names
+  // collide across parents (e.g. "Central Store" under NED vs. another root).
+  parent_location_display?: string | null;
 };
 
 type RegisterOption = {
@@ -196,7 +201,12 @@ function optionLabel(option: NamedOption) {
   const meta = [option.code, option.location_type, option.designation, option.department]
     .filter(Boolean)
     .join(" - ");
-  return meta ? `${option.name} (${meta})` : option.name;
+  // Prefix the parent location's name when present so the agent can resolve
+  // user phrases like "NED Central Store" → the Central Store under NED,
+  // disambiguating sub-locations that share names across different parents.
+  const parent = option.parent_location_display?.trim();
+  const base = parent ? `${parent} > ${option.name}` : option.name;
+  return meta ? `${base} (${meta})` : base;
 }
 
 function toNamedSelectOption(option: NamedOption) {

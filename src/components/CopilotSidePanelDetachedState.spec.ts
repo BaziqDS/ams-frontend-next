@@ -10,6 +10,10 @@ const styles = readFileSync(
   join(process.cwd(), "src", "app", "globals.css"),
   "utf8",
 );
+const dashboardLayoutSource = readFileSync(
+  join(process.cwd(), "src", "app", "(dashboard)", "layout.tsx"),
+  "utf8",
+);
 
 describe("detached copilot mirrored state", () => {
   it("mirrors loading state from the chat panel without clobbering the composer input", () => {
@@ -82,17 +86,18 @@ describe("detached copilot mirrored state", () => {
     );
   });
 
-  it("shows a stock-details-primary reply popover instead of a red unread badge", () => {
+  it("shows an amber rounded reply popover with a pointed notch", () => {
     expect(source).toMatch(/copilot-dock-reply-pop/);
     expect(source).toMatch(/Assistant has a new reply/);
     expect(source).toMatch(/onClick=\{openPanel\}/);
     expect(source).not.toMatch(/copilot-dock-unread/);
     expect(styles).toMatch(/\.copilot-dock-reply-pop \{[\s\S]*right: 0/);
-    expect(styles).toMatch(
-      /\.copilot-dock-reply-pop \{[\s\S]*var\(--primary\)/,
-    );
+    expect(styles).toMatch(/\.copilot-dock-reply-pop \{[\s\S]*border-radius: 18px/);
+    expect(styles).toMatch(/\.copilot-dock-reply-pop \{[\s\S]*#fef3c7/);
+    expect(styles).toMatch(/\.copilot-dock-reply-pop \{[\s\S]*#78350f/);
     expect(styles).toMatch(/\.copilot-dock-reply-pop::after/);
-    expect(styles).toMatch(/copilot-reply-spark-spin/);
+    expect(styles).toMatch(/\.copilot-dock-reply-pop::after \{[\s\S]*transform: rotate\(45deg\)/);
+    expect(styles).toMatch(/\.copilot-dock-reply-pop::after \{[\s\S]*#fef3c7/);
     expect(styles).toMatch(/copilot-reply-dot-pulse/);
     expect(styles).not.toMatch(
       /\.copilot-dock-unread \{[\s\S]*var\(--danger\)/,
@@ -111,6 +116,54 @@ describe("detached copilot mirrored state", () => {
     );
   });
 
+  it("keeps the collapsed launcher from restyling the opened detached composer", () => {
+    expect(source).toMatch(/copilot-launcher/);
+    expect(source).toMatch(/copilot-launcher-icon/);
+    expect(source).toMatch(/copilot-launcher-message/);
+    expect(source).toMatch(/copilot-launcher-cta/);
+    expect(source).toMatch(/<Sparkles size=\{14\}/);
+    expect(source).toMatch(
+      /const closePanel = useCallback\(\(\) => \{[\s\S]*setIsOpen\(false\);[\s\S]*setComposerOpen\(true\);[\s\S]*DETACHED_COMPOSER_OPEN_KEY/,
+    );
+    expect(source).toMatch(/e\.key === "Escape" && isOpen\) closePanel\(\)/);
+    expect(source).toMatch(
+      /if \(target && panelRef\.current\?\.contains\(target\)\) return;[\s\S]*closePanel\(\);/,
+    );
+    expect(source).toMatch(/composerOpen/);
+    expect(source).toMatch(/aria-label="Collapse AMS Copilot"/);
+    expect(source).toMatch(/onClick=\{closeComposer\}/);
+    expect(source).toMatch(/ChevronDown/);
+    expect(source).toMatch(
+      /it, but do not force it open again after the user manually collapses it/,
+    );
+    expect(source).not.toMatch(
+      /approvalInterrupt, composerOpen, persistComposerOpen/,
+    );
+    expect(source).toMatch(
+      /className=\{`copilot-search-overlay\$\{hasApproval \? " has-approval" : ""\}`\}/,
+    );
+    expect(source).not.toMatch(/actionRequests\?\.length\) return;\s+closeComposer/);
+    expect(source).not.toMatch(/copilot-search-overlay--drawer/);
+    expect(source).not.toMatch(/copilot-drawer-/);
+    // Launcher pill — new floating rounded design (pulsing dot + uppercase
+    // label + mono status text + chevron). Asserts the structural pieces
+    // exist; exact pixel/radius values are implementation detail.
+    expect(styles).toMatch(/\.copilot-launcher \{/);
+    expect(styles).toMatch(/\.copilot-launcher \{[\s\S]*border-radius: 999px/);
+    expect(styles).toMatch(/\.copilot-launcher-icon \{/);
+    expect(styles).toMatch(/\.copilot-launcher-message \{/);
+    expect(styles).toMatch(/\.copilot-launcher-message \{[\s\S]*text-overflow: ellipsis/);
+    expect(styles).toMatch(/\.copilot-launcher-cta \{/);
+    expect(styles).toMatch(/\.copilot-launcher-cta \{[\s\S]*#f59e0b/);
+    // Old bottom-attached shoulder pseudo-elements removed.
+    expect(styles).not.toMatch(/\.copilot-launcher::before/);
+    expect(styles).not.toMatch(/\.copilot-launcher::after/);
+    // Old "AI" badge mark removed.
+    expect(styles).not.toMatch(/\.copilot-launcher-mark \{/);
+    expect(styles).not.toMatch(/\.copilot-search-overlay--drawer/);
+    expect(styles).not.toMatch(/\.copilot-drawer-/);
+  });
+
   it("lets the detached composer stop a pending agent run", () => {
     expect(source).toMatch(/const stopDetachedRun = useCallback/);
     expect(source).toMatch(/type: "STOP_RUN"/);
@@ -123,6 +176,29 @@ describe("detached copilot mirrored state", () => {
     expect(source).toMatch(
       /aria-label=\{quickMessagePending \? "Stop task" : "Send message"\}/,
     );
+  });
+
+  it("records voice inline into the detached composer without an overlay", () => {
+    const startVoiceStart = source.indexOf("const startVoiceFromSearch");
+    const startVoiceEnd = source.indexOf("// Inline speech-to-text") >= 0
+      ? source.indexOf("const startVoiceFromSearch", source.indexOf("// Inline speech-to-text"))
+      : startVoiceStart;
+    const startVoiceFn =
+      startVoiceStart >= 0
+        ? source.slice(startVoiceStart, startVoiceStart + 2000)
+        : "";
+
+    expect(source).not.toMatch(/COPILOT_START_VOICE_EVENT/);
+    expect(startVoiceFn).toMatch(/SpeechRecognition/);
+    expect(startVoiceFn).toMatch(/setQuickMessage/);
+    expect(startVoiceFn).not.toMatch(/setIsOpen\(true\)/);
+    expect(startVoiceFn).not.toMatch(/START_VOICE_CAPTURE/);
+    expect(startVoiceFn).not.toMatch(/postMessage/);
+    expect(startVoiceEnd).toBeGreaterThanOrEqual(0);
+  });
+
+  it("does not mount the separate voice overlay in the dashboard shell", () => {
+    expect(dashboardLayoutSource).not.toMatch(/CopilotVoiceOverlay/);
   });
 
   it("guards against stuck pending state with a stop window and safety timeout", () => {
@@ -192,7 +268,10 @@ describe("detached approval bubble layout", () => {
     expect(source).not.toMatch(/copilot-search-approval-btn/);
     expect(source).not.toMatch(/"audit"|Audit/);
     expect(source).not.toMatch(/"details"|Details/);
-    expect(source).not.toMatch(/Intent/);
+    // Original concern: the deprecated approval-review tab label "Intent".
+    // Exclude legitimate camelCase usages (suggestedIntent, intentTarget,
+    // etc.) introduced by the proactive notification dispatcher.
+    expect(source).not.toMatch(/(?<![a-z])Intent\b(?!Target)/);
     expect(source).not.toMatch(/ListChecks|is-preview/);
     expect(source).not.toMatch(/View fields/);
     expect(source).not.toMatch(
@@ -232,7 +311,10 @@ describe("detached approval bubble layout", () => {
     expect(styles).toMatch(
       /\.copilot-search-approval-bubble-action\.is-approve/,
     );
-    expect(approvalThemeStyles).toMatch(/#eaf4ff|#1e4f8a/);
+    // Approval bubble uses the amber gradient theme. The exact hexes are
+    // implementation detail; match any amber-family token so theme tweaks
+    // (lightness, saturation) don't break the test.
+    expect(approvalThemeStyles).toMatch(/#fde68a|#fef3c7|#fffbeb|#b45309|#92400e|#fcd34d/);
     expect(approvalThemeStyles).not.toMatch(/var\(--warn/);
     expect(styles).not.toMatch(/\.copilot-search-approval-bubble::after/);
     expect(styles).not.toMatch(/\.copilot-search-approval-bubble-open/);

@@ -30,6 +30,10 @@ export interface StockEntryRegisterOption {
   is_active: boolean;
 }
 
+export interface StockEntrySelectableRegisterOption extends StockEntryRegisterOption {
+  id: string | number;
+}
+
 export interface StockEntryDisplayDirectionInput {
   entry_type: string;
   from_location_name?: string | null;
@@ -124,6 +128,17 @@ export function getStockEntrySourceRegisterOptions<T extends StockEntryRegisterO
     register.is_active &&
     String(register.store) === String(storeId)
   ));
+}
+
+export function resolveStockEntrySourceRegisterValue(
+  currentValue: string,
+  sourceRegisterOptions: StockEntrySelectableRegisterOption[],
+) {
+  if (currentValue && sourceRegisterOptions.some(register => String(register.id) === currentValue)) {
+    return currentValue;
+  }
+  if (sourceRegisterOptions.length === 1) return String(sourceRegisterOptions[0].id);
+  return "";
 }
 
 export function getStockEntryDisplayDirection(entry: StockEntryDisplayDirectionInput) {

@@ -138,6 +138,7 @@ export function CopilotVoiceOverlay() {
   const [interrupt, setInterrupt] = useState<CopilotHitlInterrupt | null>(null);
   const [approvalBusy, setApprovalBusy] = useState<"approve" | "reject" | null>(null);
   const [liveTranslation, setLiveTranslation] = useState("");
+  const [isVisible, setIsVisible] = useState(false);
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const lastVoiceCommandAtRef = useRef<number | null>(null);
@@ -163,6 +164,11 @@ export function CopilotVoiceOverlay() {
       : "color-mix(in oklch, var(--primary) 76%, white)";
   const typedMessage = draftTranscript.trim();
   const canSendDraft = typedMessage.length > 0 && !isBusy;
+  const showVoiceOverlay =
+    isVisible ||
+    isBusy ||
+    isVoiceAgentWorking ||
+    Boolean(draftTranscript || finalTranscript || liveTranscript || liveTranslation || assistantPreview || error);
 
   const stopRecognition = useCallback(() => {
     const recognition = recognitionRef.current;
@@ -199,6 +205,7 @@ export function CopilotVoiceOverlay() {
       return;
     }
     setStatus("sending");
+    setIsVisible(true);
     setDraftTranscript("");
     setFinalTranscript(trimmed);
     setIsVoiceAgentWorking(true);
@@ -285,6 +292,7 @@ export function CopilotVoiceOverlay() {
 
   const startRecording = useCallback(() => {
     if (isBusy) return;
+    setIsVisible(true);
     const Recognition = getSpeechRecognitionCtor();
     if (!Recognition) {
       setError("Speech recognition is not supported in this browser.");
@@ -317,6 +325,7 @@ export function CopilotVoiceOverlay() {
     setLiveTranscript("");
     setLiveTranslation("");
     setError("");
+    setIsVisible(false);
     setStatus("idle");
   }, []);
 
@@ -349,6 +358,7 @@ export function CopilotVoiceOverlay() {
       setIsVoiceAgentWorking(false);
       const text = speakableAssistantText(detail.text);
       if (!text) return;
+      setIsVisible(true);
       setAssistantPreview(text);
       speak(text);
     };
@@ -356,7 +366,9 @@ export function CopilotVoiceOverlay() {
     const onHitlInterrupt = (event: Event) => {
       setIsVoiceAgentWorking(false);
       setApprovalBusy(null);
-      setInterrupt((event as CustomEvent<CopilotHitlInterrupt | null>).detail ?? null);
+      const nextInterrupt = (event as CustomEvent<CopilotHitlInterrupt | null>).detail ?? null;
+      if (nextInterrupt) setIsVisible(true);
+      setInterrupt(nextInterrupt);
     };
 
     window.addEventListener(COPILOT_ASSISTANT_MESSAGE_EVENT, onAssistantMessage);
@@ -549,8 +561,9 @@ export function CopilotVoiceOverlay() {
         </section>
       ) : null}
 
+      {showVoiceOverlay ? (
       <section
-        aria-label="Voice assistant"
+        aria-label={`Voice assistant - ${statusLabel}`}
         className={`voice-copilot-overlay${hasVoiceGlow ? " voice-copilot-overlay--active" : ""}`}
         style={{
           "--voice-glow-color": voiceGlowColor,
@@ -584,7 +597,7 @@ export function CopilotVoiceOverlay() {
                 submitTranscript(draftTranscript);
               }
             }}
-            placeholder={error || assistantPreview || displayTranscript || "Ask AMS anything..."}
+            placeholder={visibleVoiceText}
             aria-label="Type or edit assistant message"
             style={{
               width: "100%",
@@ -694,6 +707,7 @@ export function CopilotVoiceOverlay() {
           </div>
         </div>
       </section>
+      ) : null}
     </>
   );
 }

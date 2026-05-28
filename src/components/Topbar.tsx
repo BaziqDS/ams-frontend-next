@@ -729,12 +729,23 @@ export function Topbar({ breadcrumb }: TopbarProps) {
               <div className="tb-notify-panel" role="dialog" aria-label="Notifications and alerts">
                 <div className="tb-notify-panel-head">
                   <div className="tb-notify-panel-title">Notifications</div>
-                  <div className="tb-notify-feed-actions">
-                    <button type="button" className="tb-notify-header-action" onClick={() => void markAllRead()} disabled={summary.unread_notifications === 0}>
-                      Mark all as read
+                  <div className="tb-notify-panel-head-actions">
+                    <button
+                      type="button"
+                      className="tb-notify-header-action"
+                      onClick={() => void markAllRead()}
+                      disabled={summary.unread_notifications === 0}
+                    >
+                      Mark all read
                     </button>
-                    <button type="button" className="tb-notify-header-action" onClick={() => void clearFeed()} disabled={panelFeed.length === 0}>
-                      Clear updates
+                    <button
+                      type="button"
+                      className="tb-notify-header-action"
+                      onClick={() => void clearFeed()}
+                      disabled={feed.length === 0}
+                      title="Remove all updates from the feed"
+                    >
+                      Clear
                     </button>
                   </div>
                 </div>

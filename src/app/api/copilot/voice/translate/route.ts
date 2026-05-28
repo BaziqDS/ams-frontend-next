@@ -41,12 +41,15 @@ export async function POST(request: NextRequest) {
   const url = new URL("https://translation.googleapis.com/language/translate/v2");
   url.searchParams.set("key", apiKey);
 
+  // The v2 endpoint (translation.googleapis.com/language/translate/v2) only
+  // accepts simple model names like "nmt" or "base", not the v3-style
+  // projects/.../locations/.../models/general/translation-llm path. Passing
+  // that path here returns HTTP 400 from Google. Drop projectId so the v2
+  // request omits the model field and uses Google's default NMT model.
   const translateBody = buildGoogleTranslateV2Body({
     text,
     target,
     source,
-    projectId: process.env.GOOGLE_CLOUD_PROJECT_ID?.trim(),
-    location: process.env.GOOGLE_TRANSLATE_LOCATION?.trim() || "us-central1",
   });
 
   try {
@@ -59,6 +62,7 @@ export async function POST(request: NextRequest) {
     const payload = await response.json().catch(() => ({}));
 
     if (!response.ok) {
+      console.error("[voice/translate] Google API error:", response.status, JSON.stringify(payload));
       return jsonError(
         "Google Translate API request failed.",
         response.status,

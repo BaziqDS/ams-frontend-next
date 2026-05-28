@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildStockEntryPayload, getStockEntryDisplayDirection, getStockEntryRegisterStoreId, getStockEntrySourceRegisterOptions, validateStockEntryForm, type StockEntryFormState } from "./stockEntryFormRules";
+import { buildStockEntryPayload, getStockEntryDisplayDirection, getStockEntryRegisterStoreId, getStockEntrySourceRegisterOptions, resolveStockEntrySourceRegisterValue, validateStockEntryForm, type StockEntryFormState } from "./stockEntryFormRules";
 
 const baseForm: StockEntryFormState = {
   entry_type: "ISSUE",
@@ -144,6 +144,22 @@ describe("stock entry form rules", () => {
 
     expect(getStockEntryRegisterStoreId(receiptForm)).toBe("20");
     expect(getStockEntrySourceRegisterOptions(receiptForm, registers).map(register => register.id)).toEqual([2]);
+  });
+
+  it("defaults the only available source register so it is visible without searching", () => {
+    expect(resolveStockEntrySourceRegisterValue("", [
+      { id: 1, store: 10, is_active: true },
+    ])).toBe("1");
+  });
+
+  it("preserves a valid selected source register and clears invalid stale values", () => {
+    const registers = [
+      { id: 1, store: 10, is_active: true },
+      { id: 2, store: 10, is_active: true },
+    ];
+
+    expect(resolveStockEntrySourceRegisterValue("2", registers)).toBe("2");
+    expect(resolveStockEntrySourceRegisterValue("99", registers)).toBe("");
   });
 
   it("displays employee return receipts from the employee back to the receiving store", () => {

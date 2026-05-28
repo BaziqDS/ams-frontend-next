@@ -151,6 +151,8 @@ describe("ItemDetailDossier distribution helpers", () => {
 
 describe("ItemDetailDossier action surface", () => {
   const source = readFileSync("src/components/ItemDetailDossier.tsx", "utf8");
+  const detailStyles = readFileSync("src/components/ItemDetailDossier.module.css", "utf8");
+  const distributionViewSource = readFileSync("src/components/ItemDistributionView.tsx", "utf8");
   const itemModuleSource = readFileSync("src/components/ItemModuleViews.tsx", "utf8");
   const instancesRoute = readFileSync("src/app/(dashboard)/items/[id]/instances/page.tsx", "utf8");
   const batchesRoute = readFileSync("src/app/(dashboard)/items/[id]/batches/page.tsx", "utf8");
@@ -166,6 +168,49 @@ describe("ItemDetailDossier action surface", () => {
   it("keeps one tracking-aware quick action for batches or instances", () => {
     expect(source).toContain("View instances");
     expect(source).toContain("View batches");
+  });
+
+  it("embeds the distribution content on the item detail page instead of linking away", () => {
+    expect(source).toContain("<ItemDistributionPanel");
+    expect(source).not.toContain("View Distribution");
+    expect(source).not.toContain("/items/${item.id}/distribution");
+  });
+
+  it("uses distribution stats at the top and removes the record-details side card", () => {
+    expect(source).toContain("<ItemDistributionStats");
+    expect(source).not.toContain("<ItemStatCard");
+    expect(source).not.toContain("Record Details");
+    expect(source).not.toContain("styles.recordList");
+  });
+
+  it("keeps the embedded distribution stack compact below the item header", () => {
+    expect(source).toContain("styles.detailHead");
+    expect(detailStyles).toContain(".detailHead.detailHead");
+    expect(detailStyles).toContain(".detailDistributionStats {\n  margin-top: 0;");
+    expect(detailStyles).toContain(".embeddedDistribution {\n  gap: 12px;");
+  });
+
+  it("does not render or fetch the recent transactions panel on the item detail page", () => {
+    expect(source).not.toContain("Recent Transactions");
+    expect(source).not.toContain("View all transactions");
+    expect(source).not.toContain("/api/inventory/stock-entries/");
+  });
+
+  it("keeps distribution loading on the existing permission-scoped hook", () => {
+    expect(source).toContain("useItemDistribution(itemId, selectedScopeTokens)");
+    expect(distributionViewSource).toContain("useItemDistribution(itemId, selectedScopeTokens)");
+  });
+
+  it("does not show the locate action on the embedded item detail page", () => {
+    expect(source).not.toMatch(/>\s*Locate\s*</);
+    expect(source).not.toContain("onLocate");
+  });
+
+  it("does not ship mojibake separators in distribution row metadata", () => {
+    expect(distributionViewSource).not.toContain(String.fromCharCode(0xc2));
+    expect(distributionViewSource).not.toContain(String.fromCharCode(0xc3));
+    expect(source).not.toContain(String.fromCharCode(0xc2));
+    expect(source).not.toContain(String.fromCharCode(0xc3));
   });
 
   it("sends the tracking quick actions to dedicated listing pages", () => {

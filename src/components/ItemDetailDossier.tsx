@@ -3,6 +3,19 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  AlertTriangle,
+  BadgeCheck,
+  Boxes,
+  CircleSlash,
+  Clock,
+  ClipboardCheck,
+  Fingerprint,
+  Layers,
+  PackageOpen,
+  Truck,
+  type LucideIcon,
+} from "lucide-react";
 import { Topbar } from "@/components/Topbar";
 import { MultiSelectFilter } from "@/components/MultiSelectFilter";
 import type { CategoryRecord } from "@/components/CategoryModal";
@@ -28,6 +41,7 @@ import {
   type ItemDistributionStore,
   type ItemDistributionUnit,
   type ItemRecord,
+  type ItemScopeOption,
 } from "@/lib/itemUi";
 import {
   Alert,
@@ -47,35 +61,12 @@ import {
   workspaceLocationIcon,
   workspaceTrackingTone,
 } from "@/components/ItemModuleViews";
+import { ItemDistributionPanel, ItemDistributionStats } from "@/components/ItemDistributionView";
 import styles from "./ItemDetailDossier.module.css";
 import { Button } from "@/components/ui/button";
 
 
 type SectionKey = "distribution" | "instances" | "batches" | "info" | "activity";
-
-interface ItemStockEntryLine {
-  item: number;
-  quantity: number;
-}
-
-interface ItemStockEntryRecord {
-  id: number;
-  entry_type: string;
-  entry_number: string;
-  entry_date: string;
-  from_location: number | null;
-  from_location_name?: string | null;
-  to_location: number | null;
-  to_location_name?: string | null;
-  issued_to: number | null;
-  issued_to_name?: string | null;
-  status: string;
-  items: ItemStockEntryLine[];
-  created_at: string;
-  remarks?: string | null;
-}
-
-type TransactionTone = "positive" | "negative" | "neutral";
 
 export interface DistributionPanelRow {
   id: string;
@@ -267,8 +258,6 @@ export function ItemDetailDossierView({ itemId }: { itemId: string }) {
       : null,
     actions: {
       edit: canManageItems && Boolean(item),
-      view_transactions: Boolean(item),
-      locate_distribution: Boolean(item && units.length > 0),
       view_instances: Boolean(item && canShowInstances(item.tracking_type)),
       view_batches: Boolean(item && canShowBatches(item.tracking_type, item.category_type)),
     },
@@ -496,10 +485,13 @@ export function ItemDetailDossierView({ itemId }: { itemId: string }) {
           lowFlag={lowFlag}
           outFlag={outFlag}
           canManageItems={canManageItems}
+          scopeOptions={scopeOptions}
+          selectedScopeTokens={selectedScopeTokens}
+          defaultScopeTokens={defaultScopeTokens}
+          isDistributionLoading={isLoading}
+          onScopeTokensChange={setSelectedScopeTokens}
           onBack={() => router.push("/items")}
           onEdit={() => openEditModal(item)}
-          onViewTransactions={() => router.push(`/stock-entries?search=${encodeURIComponent(item.name)}`)}
-          onLocate={() => setLocateOpen(true)}
           onShowInstances={() => router.push(`/items/${itemId}/instances`)}
           onShowBatches={() => router.push(`/items/${itemId}/batches`)}
           showInstances={showInstances}
@@ -537,10 +529,13 @@ function ItemOverviewLayout({
   lowFlag,
   outFlag,
   canManageItems,
+  scopeOptions,
+  selectedScopeTokens,
+  defaultScopeTokens,
+  isDistributionLoading,
+  onScopeTokensChange,
   onBack,
   onEdit,
-  onViewTransactions,
-  onLocate,
   onShowInstances,
   onShowBatches,
   showInstances,
@@ -559,10 +554,13 @@ function ItemOverviewLayout({
   lowFlag: boolean;
   outFlag: boolean;
   canManageItems: boolean;
+  scopeOptions: ItemScopeOption[];
+  selectedScopeTokens: string[];
+  defaultScopeTokens: string[];
+  isDistributionLoading: boolean;
+  onScopeTokensChange: (tokens: string[]) => void;
   onBack: () => void;
   onEdit: () => void;
-  onViewTransactions: () => void;
-  onLocate: () => void;
   onShowInstances: () => void;
   onShowBatches: () => void;
   showInstances: boolean;
@@ -571,236 +569,65 @@ function ItemOverviewLayout({
   const allocatedPct = totalQuantity > 0 ? Math.round((allocatedQuantity / totalQuantity) * 100) : 0;
   const availablePct = totalQuantity > 0 ? Math.round((availableQuantity / totalQuantity) * 100) : 0;
   const lastUpdated = formatItemDateTime(item.updated_at ?? item.created_at);
-  const [recentEntries, setRecentEntries] = useState<ItemStockEntryRecord[]>([]);
-  const [transactionsLoading, setTransactionsLoading] = useState(true);
-  const [transactionsError, setTransactionsError] = useState<string | null>(null);
-  const [distributionOpen, setDistributionOpen] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    const params = new URLSearchParams({ page_size: "500" });
-
-    setTransactionsLoading(true);
-    setTransactionsError(null);
-    apiFetch<Page<ItemStockEntryRecord> | ItemStockEntryRecord[]>(`/api/inventory/stock-entries/?${params.toString()}`)
-      .then(data => {
-        if (!cancelled) {
-          setRecentEntries(
-            normalizeList(data)
-              .filter(entry => entry.items.some(line => Number(line.item) === item.id))
-              .slice(0, 4),
-          );
-        }
-      })
-      .catch(err => {
-        if (!cancelled) {
-          setRecentEntries([]);
-          setTransactionsError(err instanceof Error ? err.message : "Recent transactions could not be loaded.");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setTransactionsLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [item.id]);
-
-  const recentRows = useMemo(
-    () => recentEntries.map(entry => buildStockEntryRow(entry, item.id, acctUnit)),
-    [acctUnit, item.id, recentEntries],
-  );
-  const visibleUnits = units.slice(0, 4);
   const stockTone = outFlag ? "danger" : lowFlag ? "warn" : "ok";
 
   return (
     <div className={styles.dossierPage}>
-      <header className={styles.dossierHero}>
-        <div className={styles.dossierHeroMain}>
-          <div className={styles.crumbs}>
-            <button type="button" onClick={onBack}>Items</button>
-            <Ic d="M9 18l6-6-6-6" size={12} />
-            <span>{categoryPath ?? item.category_display ?? "Uncategorized"}</span>
-            <Ic d="M9 18l6-6-6-6" size={12} />
-            <strong>{item.code}</strong>
-          </div>
-          <div className={styles.heroIdentityLine}>
-            <span className={styles.heroCode}>{item.code}</span>
-            <span className={styles.trackChip} data-t={workspaceTrackingTone(item.tracking_type)}>
-              <span />
-              {trackingLabel}
-            </span>
-            <span className={styles.statusChip} data-tone={stockTone}>
-              <span />
-              {outFlag ? "Out of stock" : lowFlag ? "Low stock" : item.is_active ? "Active" : "Inactive"}
-            </span>
-          </div>
-          <h1 className={styles.dossierTitle}>{item.name}</h1>
-          <p className={styles.dossierSummary}>
+      <div className={`${styles.detailHead} page-head-detail`}>
+        <div className="page-title-group">
+          <div className="eyebrow">{categoryPath ?? item.category_display ?? "Item"}</div>
+          <h1>{item.name}</h1>
+          <div className="page-sub">
             {item.description?.trim() || "No description has been added for this item."}
-          </p>
+          </div>
+          <div className="page-id-row">
+            <span className="doc-no">{item.code}</span>
+            <TrackingBadge trackingType={item.tracking_type} label={trackingLabel} />
+            <StatusBadge tone={stockTone} outFlag={outFlag} lowFlag={lowFlag} isActive={item.is_active} />
+          </div>
         </div>
-
-        <div className={styles.heroActionRail}>
+        <div className="page-head-actions">
+          <Button type="button" variant="outline" size="sm" className="page-head-back" onClick={onBack}>
+            <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
+            Back to Items
+          </Button>
+          {showInstances ? (
+            <Button type="button" variant="outline" size="sm" onClick={onShowInstances}>
+              <Fingerprint size={14} strokeWidth={2.25} />
+              View instances
+            </Button>
+          ) : null}
+          {showBatches ? (
+            <Button type="button" variant="outline" size="sm" onClick={onShowBatches}>
+              <Layers size={14} strokeWidth={2.25} />
+              View batches
+            </Button>
+          ) : null}
           {canManageItems ? (
-            <Button type="button"  onClick={onEdit}>
+            <Button type="button" size="sm" onClick={onEdit}>
               <Ic d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.1 2.1 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5Z" size={14} />
               Edit Item
             </Button>
           ) : null}
-          <Button type="button" variant="outline" onClick={() => setDistributionOpen(true)}>
-            <Ic d="M4 7h16M4 12h16M4 17h16M8 7v10M16 7v10" size={14} />
-            View Distribution
-          </Button>
-          <Button type="button" variant="outline" onClick={onLocate}>
-            <Ic d="M12 12h.01M18 12h.01M6 12h.01" size={16} />
-            More
-            <Ic d="M6 9l6 6 6-6" size={12} />
-          </Button>
         </div>
-      </header>
-
-      <section className={styles.stockCommand}>
-        <div className={styles.stockCommandLead}>
-          <span>Available stock</span>
-          <strong>{formatQuantity(availableQuantity)} <em>{acctUnit}</em></strong>
-          <small>{availablePct}% of total inventory</small>
-        </div>
-        <StockMetric label="Total" value={totalQuantity} unit={acctUnit} />
-        <StockMetric label="Allocated" value={allocatedQuantity} unit={acctUnit} />
-        <StockMetric label="In Transit" value={inTransitQuantity} unit={acctUnit} />
-        <div className={styles.stockCommandStatus}>
-          <span className={styles.statusChip} data-tone={stockTone}>
-            <span />
-            {outFlag ? "Empty" : lowFlag ? "Attention" : "Healthy"}
-          </span>
-          <div className={styles.stockBar}>
-            <span style={{ width: `${Math.min(100, allocatedPct)}%` }} />
-          </div>
-          <small>{allocatedPct}% allocated · reorder at {formatQuantity(lowStockThreshold)} {acctUnit}</small>
-        </div>
-      </section>
-
-      <div className={styles.dossierGrid}>
-        <main className={styles.dossierMain}>
-          <section className={styles.detailPanel}>
-            <div className={styles.cardTitleRow}>
-              <h2>Distribution Snapshot</h2>
-              <button type="button" className={styles.panelTextButton} onClick={() => setDistributionOpen(true)}>
-                Open full ledger
-              </button>
-            </div>
-            {visibleUnits.length ? (
-              <div className={styles.unitPreviewList}>
-                {visibleUnits.map(unit => {
-                  const unitTotal = toNumber(unit.totalQuantity);
-                  const width = maxPercent(unitTotal, totalQuantity);
-                  return (
-                    <button key={unit.id} type="button" className={styles.unitPreviewRow} onClick={onLocate}>
-                      <span className={styles.unitPreviewMain}>
-                        <strong>{unit.name}</strong>
-                        <small>{unit.code || "No location code"} · {unit.stores.length} store rows</small>
-                      </span>
-                      <span className={styles.unitPreviewBar}><span style={{ width: `${width}%` }} /></span>
-                      <span className={styles.unitPreviewQty}>{formatQuantity(unitTotal)} {acctUnit}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className={styles.transactionEmpty}>No distribution is visible in your current permission scope.</div>
-            )}
-          </section>
-
-          <section className={`${styles.detailPanel} ${styles.transactionsPanel}`}>
-          <h2>Recent Transactions</h2>
-          <table className={styles.transactionTable}>
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>Reference</th>
-                <th>Location</th>
-                <th>Quantity</th>
-                <th>Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {transactionsLoading ? (
-                <tr>
-                  <td colSpan={5} className={styles.transactionEmpty}>Loading recent transactions...</td>
-                </tr>
-              ) : transactionsError ? (
-                <tr>
-                  <td colSpan={5} className={styles.transactionEmpty}>Recent transactions are not available.</td>
-                </tr>
-              ) : recentRows.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className={styles.transactionEmpty}>No stock movement has been recorded for this item yet.</td>
-                </tr>
-              ) : recentRows.map(row => (
-                <tr key={row.id}>
-                  <td><span className={styles.txIcon} data-tone={row.tone}>{row.icon}</span>{row.type}</td>
-                  <td>{row.reference}</td>
-                  <td><span className="chip-sm">{row.location}</span></td>
-                  <td className={styles.txQty} data-tone={row.tone}>{row.quantity}</td>
-                  <td>{row.date}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <button type="button" className={styles.viewAllBtn} onClick={onViewTransactions}>
-            View all transactions
-            <Ic d="M5 12h14M12 5l7 7-7 7" size={14} />
-          </button>
-          </section>
-        </main>
-
-        <aside className={styles.dossierAside}>
-          <section className={styles.detailPanel}>
-            <h2>Record Details</h2>
-            <div className={styles.recordList}>
-              <InfoRow label="Category" value={categoryPath ?? item.category_display ?? "Uncategorized"} />
-              <InfoRow label="Category Type" value={formatItemLabel(item.category_type, "-")} />
-              <InfoRow label="Tracking Method" value={formatItemLabel(item.tracking_type, "-")} />
-              <InfoRow label="Unit of Measure" value={acctUnit} />
-              <InfoRow label="SKU" value={item.code} mono />
-              <InfoRow label="Status" value={item.is_active ? "Active" : "Inactive"} />
-              <InfoRow label="Created At" value={formatItemDateTime(item.created_at)} />
-              <InfoRow label="Last Updated" value={lastUpdated} />
-            </div>
-          </section>
-
-          <section className={styles.detailPanel}>
-            <h2>Scope & Actions</h2>
-            <div className={styles.scopeSummary}>
-              <span className={styles.powerShield}>{units.length}</span>
-              <div>
-                <strong>{units.length === 1 ? "1 location" : `${units.length} locations`}</strong>
-                <p>Distribution shown here is limited to the current permission scope.</p>
-              </div>
-            </div>
-            <div className={styles.createdBy}>
-              <span>{initials(item.created_by_name || "Not available")}</span>
-              {item.created_by_name || "Not available"}
-            </div>
-            <div className={styles.quickGrid}>
-              {showInstances ? (
-                <button type="button" onClick={onShowInstances}><Ic d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6" size={16} />View instances</button>
-              ) : showBatches ? (
-                <button type="button" onClick={onShowBatches}><Ic d="M4 7h16M4 12h16M4 17h16M8 7v10M16 7v10" size={16} />View batches</button>
-              ) : null}
-            </div>
-          </section>
-        </aside>
       </div>
-      <DistributionDrawer
-        open={distributionOpen}
-        item={item}
-        units={units}
-        acctUnit={acctUnit}
-        onClose={() => setDistributionOpen(false)}
-      />
+
+      <ItemDistributionStats units={units} acctUnit={acctUnit} className={styles.detailDistributionStats} />
+
+      <main className={styles.dossierMain}>
+        <ItemDistributionPanel
+          itemId={String(item.id)}
+          item={item}
+          units={units}
+          scopeOptions={scopeOptions}
+          selectedScopeTokens={selectedScopeTokens}
+          defaultScopeTokens={defaultScopeTokens}
+          isLoading={isDistributionLoading}
+          onScopeTokensChange={onScopeTokensChange}
+          className={styles.embeddedDistribution}
+          showStats={false}
+        />
+      </main>
     </div>
   );
 }
@@ -810,239 +637,36 @@ function maxPercent(value: number, max: number) {
   return Math.max(3, Math.min(100, Math.round((value / max) * 100)));
 }
 
-function InfoRow({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
+function TrackingBadge({ trackingType, label }: { trackingType: string | null | undefined; label: string }) {
+  const tone = workspaceTrackingTone(trackingType);
+  const Icon: LucideIcon = tone === "individual" ? Fingerprint : tone === "quantity" ? Layers : Clock;
   return (
-    <div className={styles.infoRow}>
-      <span>{label}</span>
-      <strong className={mono ? "mono" : undefined}>{value}</strong>
-    </div>
+    <span className={styles.trackingBadge} data-tone={tone}>
+      <Icon size={12} strokeWidth={2.25} />
+      {label}
+    </span>
   );
 }
 
-function StockMetric({ label, value, unit, tone }: { label: string; value: number; unit: string; tone?: "success" }) {
-  return (
-    <div className={styles.stockMetric}>
-      <span>{label}</span>
-      <strong data-tone={tone ?? ""}>{formatQuantity(value)} <em>{unit}</em></strong>
-    </div>
-  );
-}
-
-function DistributionDrawer({
-  open,
-  item,
-  units,
-  acctUnit,
-  onClose,
+function StatusBadge({
+  tone,
+  outFlag,
+  lowFlag,
+  isActive,
 }: {
-  open: boolean;
-  item: ItemRecord;
-  units: ItemDistributionUnit[];
-  acctUnit: string;
-  onClose: () => void;
+  tone: "ok" | "warn" | "danger";
+  outFlag: boolean;
+  lowFlag: boolean;
+  isActive: boolean;
 }) {
-  const [selectedUnitId, setSelectedUnitId] = useState<number | null>(null);
-  const [subFilter, setSubFilter] = useState<"all" | "store" | "location" | "person">("all");
-
-  useEffect(() => {
-    if (!open) return;
-    setSelectedUnitId(current => {
-      if (current != null && units.some(unit => unit.id === current)) return current;
-      return units[0]?.id ?? null;
-    });
-  }, [open, units]);
-
-  useEffect(() => {
-    if (!open) return;
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, open]);
-
-  const standaloneRows = useMemo(() => buildStandaloneDistributionRows(units), [units]);
-  const selectedUnit = units.find(unit => unit.id === selectedUnitId) ?? units[0] ?? null;
-  const subRows = useMemo(() => (selectedUnit ? buildSubDistributionRows(selectedUnit) : []), [selectedUnit]);
-  const filteredSubRows = useMemo(
-    () => subRows.filter(row => subFilter === "all" || row.kind === subFilter),
-    [subFilter, subRows],
-  );
-
-  if (!open) return null;
-
+  const Icon: LucideIcon = tone === "danger" ? CircleSlash : tone === "warn" ? AlertTriangle : BadgeCheck;
+  const label = outFlag ? "Out of stock" : lowFlag ? "Low stock" : isActive ? "Active" : "Inactive";
   return (
-    <div className={styles.distributionDrawerLayer}>
-      <button type="button" className={styles.distributionDrawerBackdrop} aria-label="Close distribution panel" onClick={onClose} />
-      <aside className={styles.distributionDrawer} role="dialog" aria-modal="true" aria-label="Location-wise distribution">
-        <header className={styles.distributionDrawerHead}>
-          <div>
-            <h2>Location-wise Distribution</h2>
-            <p>View stock distribution across all locations and sublocations.</p>
-          </div>
-          <button type="button" className={styles.distributionClose} aria-label="Close distribution panel" onClick={onClose}>
-            <Ic d="M18 6 6 18M6 6l12 12" size={18} />
-          </button>
-        </header>
-
-        <div className={styles.distributionDrawerBody}>
-          <DistributionDrawerSection
-            title="Standalone Locations"
-            columnLabel="Location"
-            rows={standaloneRows}
-            selectedId={selectedUnit?.id ? `unit-${selectedUnit.id}` : null}
-            onSelect={row => setSelectedUnitId(Number(row.id.replace("unit-", "")))}
-          />
-
-          <DistributionDrawerSection
-            title="Sub Locations"
-            titleSuffix={selectedUnit ? `(Under ${selectedUnit.name})` : undefined}
-            columnLabel="Sub Location"
-            rows={filteredSubRows}
-            emptyLabel={selectedUnit ? "No holders match this filter." : "No location is selected."}
-            controls={(
-              <div className={styles.distributionFilter}>
-                {[
-                  { k: "all", label: "All" },
-                  { k: "store", label: "Stores" },
-                  { k: "location", label: "Non-store" },
-                  { k: "person", label: "Employees" },
-                ].map(option => (
-                  <button
-                    key={option.k}
-                    type="button"
-                    className={styles.distributionFilterButton}
-                    data-active={subFilter === option.k ? "true" : "false"}
-                    onClick={() => setSubFilter(option.k as "all" | "store" | "location" | "person")}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          />
-        </div>
-
-        <footer className={styles.distributionDrawerFoot}>
-          <Button type="button" variant="outline" onClick={() => exportDistributionCsv(item, units, acctUnit)}>
-            <Ic d="M12 3v12M7 10l5 5 5-5M5 21h14" size={16} />
-            Export Distribution
-          </Button>
-        </footer>
-      </aside>
-    </div>
+    <span className={styles.statusBadge} data-tone={tone}>
+      <Icon size={12} strokeWidth={2.25} />
+      {label}
+    </span>
   );
-}
-
-function DistributionDrawerSection({
-  title,
-  titleSuffix,
-  columnLabel,
-  rows,
-  selectedId,
-  onSelect,
-  emptyLabel = "No distribution rows are available.",
-  controls,
-}: {
-  title: string;
-  titleSuffix?: string;
-  columnLabel: string;
-  rows: DistributionPanelRow[];
-  selectedId?: string | null;
-  onSelect?: (row: DistributionPanelRow) => void;
-  emptyLabel?: string;
-  controls?: ReactNode;
-}) {
-  return (
-    <section className={styles.distributionSectionPanel}>
-      <div className={styles.distributionSectionTop}>
-        <h3>
-          {title}
-          {titleSuffix ? <span> {titleSuffix}</span> : null}
-        </h3>
-        {controls}
-      </div>
-      <div className={styles.distributionHeaderRow}>
-        <span>{columnLabel}</span>
-        <span>Allocated</span>
-        <span>Available</span>
-        <span>In transit</span>
-        <span>Total</span>
-      </div>
-      <div className={styles.distributionRows}>
-        {rows.length ? rows.map(row => (
-          <DistributionDrawerRow
-            key={row.id}
-            row={row}
-            selected={selectedId === row.id}
-            onSelect={onSelect}
-          />
-        )) : (
-          <div className={styles.distributionEmpty}>{emptyLabel}</div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function DistributionDrawerRow({
-  row,
-  selected,
-  onSelect,
-}: {
-  row: DistributionPanelRow;
-  selected: boolean;
-  onSelect?: (row: DistributionPanelRow) => void;
-}) {
-  const allocatedPct = distributionPercent(row.allocated, row.total);
-  const availablePct = distributionPercent(row.available, row.total);
-  const inTransitPct = distributionPercent(row.inTransit, row.total);
-  const isPassiveTarget = row.kind === "person" || row.kind === "location";
-  const allocatedDisplay = isPassiveTarget ? "-" : formatQuantity(row.allocated);
-  const availableDisplay = isPassiveTarget ? formatQuantity(row.total) : formatQuantity(row.available);
-  const inTransitDisplay = isPassiveTarget ? "-" : formatQuantity(row.inTransit);
-  const rowBody = (
-    <>
-      <div className={styles.distributionMainLine}>
-        <span className={styles.distributionLocation}>
-          {row.name}
-          {row.badge ? <em>{row.badge}</em> : null}
-        </span>
-        <strong>{allocatedDisplay}</strong>
-        <strong>{availableDisplay}</strong>
-        <strong>{inTransitDisplay}</strong>
-        <strong>{formatQuantity(row.total)}</strong>
-      </div>
-      {!isPassiveTarget ? (
-        <>
-          <div className={styles.distributionProgress} aria-hidden="true">
-            <span style={{ width: `${allocatedPct}%` }} />
-            <span style={{ width: `${inTransitPct}%` }} />
-          </div>
-          <div className={styles.distributionPercents}>
-            <span>{allocatedPct}% allocated</span>
-            <span>{availablePct}% available</span>
-            <span>{inTransitPct}% in transit</span>
-          </div>
-        </>
-      ) : null}
-    </>
-  );
-
-  if (onSelect) {
-    return (
-      <button
-        type="button"
-        className={styles.distributionDataRow}
-        data-selected={selected ? "true" : "false"}
-        onClick={() => onSelect(row)}
-      >
-        {rowBody}
-      </button>
-    );
-  }
-
-  return <div className={styles.distributionDataRow}>{rowBody}</div>;
 }
 
 function formatItemDateTime(value: string | null | undefined) {
@@ -1052,53 +676,13 @@ function formatItemDateTime(value: string | null | undefined) {
   return `${formatItemDate(value, "-")} · ${date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}`;
 }
 
-function initials(value: string) {
-  return value.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]?.toUpperCase()).join("") || "AD";
-}
-
-function buildStockEntryRow(entry: ItemStockEntryRecord, itemId: number, acctUnit: string) {
-  const tone = stockEntryTone(entry.entry_type);
-  const sign = tone === "positive" ? "+" : tone === "negative" ? "-" : "";
-  const quantity = entry.items
-    .filter(line => Number(line.item) === itemId)
-    .reduce((sum, line) => sum + toNumber(line.quantity), 0);
-
-  return {
-    id: entry.id,
-    type: stockEntryTypeLabel(entry),
-    reference: entry.entry_number,
-    location: stockEntryLocation(entry),
-    quantity: `${sign}${formatQuantity(quantity)} ${acctUnit}`,
-    date: formatItemDateTime(entry.entry_date || entry.created_at),
-    tone,
-    icon: transactionIcon(tone),
-  };
-}
-
-function stockEntryTypeLabel(entry: ItemStockEntryRecord) {
-  const labels: Record<string, string> = {
-    RECEIPT: "Received",
-    RETURN: "Returned",
-  };
-  if (entry.entry_type === "ISSUE") {
-    return entry.to_location_name ? "Transfer" : "Issued";
-  }
-  return labels[entry.entry_type] ?? formatItemLabel(entry.entry_type, "Stock Entry");
-}
-
-function stockEntryTone(entryType: string): TransactionTone {
-  if (entryType === "RECEIPT" || entryType === "RETURN") return "positive";
-  if (entryType === "ISSUE") return "negative";
-  return "neutral";
-}
-
-function transactionIcon(tone: TransactionTone) {
+function transactionIcon(tone: "positive" | "negative" | "neutral") {
   if (tone === "positive") return "↓";
   if (tone === "negative") return "↑";
   return "↔";
 }
 
-function stockEntryLocation(entry: ItemStockEntryRecord) {
+function stockEntryLocation(entry: { from_location_name?: string | null; to_location_name?: string | null; issued_to_name?: string | null }) {
   const from = entry.from_location_name?.trim();
   const to = entry.to_location_name?.trim();
   const person = entry.issued_to_name?.trim();

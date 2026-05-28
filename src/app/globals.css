@@ -776,6 +776,146 @@ kbd {
   width: min(464px, calc(100vw - 32px));
 }
 
+/* =============================================================================
+   Copilot launcher — bottom-attached iOS-style tab (resting state)
+   Dynamic-Island feel: flush to the bottom edge, rounded top, frosted glass.
+   ========================================================================= */
+/* ── Copilot launcher pill ─────────────────────────────────────────────────
+ * Floating bottom-center card. Sparkle icon + conversational message
+ * + filled amber CTA chip on the right. Modelled on the in-app banner
+ * pattern (e.g. "AI search preview is live for Team plans — Try it").
+ * The whole pill is one button so clicking anywhere opens the composer. */
+.copilot-launcher {
+  position: fixed;
+  left: 50%;
+  bottom: 14px;
+  z-index: 1099;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 4px 6px 4px 12px;
+  border: 1px solid color-mix(in oklch, var(--ink) 8%, var(--hairline));
+  border-radius: 999px;
+  background: color-mix(in oklch, white 96%, var(--card));
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  cursor: pointer;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.92) inset,
+    0 12px 30px -16px rgba(15, 23, 42, 0.28),
+    0 2px 6px rgba(15, 23, 42, 0.05);
+  transition:
+    transform var(--t-fast),
+    box-shadow var(--t-fast),
+    border-color var(--t-fast),
+    background var(--t-fast);
+}
+
+.copilot-launcher:hover {
+  transform: translate(-50%, -2px);
+  border-color: color-mix(in oklch, var(--ink) 14%, var(--hairline));
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.94) inset,
+    0 18px 36px -16px rgba(15, 23, 42, 0.34),
+    0 3px 8px rgba(15, 23, 42, 0.06);
+}
+
+.copilot-launcher-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: var(--ink);
+}
+
+.copilot-launcher-message {
+  color: var(--ink);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+
+/* Right-side filled amber CTA — visual style of the "Try it" button in the
+ * reference banner. Lives inside the same <button>, so it's a span styled
+ * to look like a button. The whole pill is the click target. */
+.copilot-launcher-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 14px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%);
+  color: #422006;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.005em;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.35) inset,
+    0 4px 10px -4px rgba(245, 158, 11, 0.45);
+  transition: filter var(--t-fast), box-shadow var(--t-fast);
+}
+
+.copilot-launcher:hover .copilot-launcher-cta {
+  filter: brightness(1.04) saturate(1.05);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.4) inset,
+    0 6px 14px -4px rgba(245, 158, 11, 0.55);
+}
+
+/* State-aware accents.
+ *   idle     → neutral icon, default CTA
+ *   working  → amber-tinted sparkle, CTA stays amber (consistent)
+ *   unread   → emerald sparkle (matches assistant new-reply hint)
+ *   approval → red sparkle + red CTA, slight border accent (urgent) */
+.copilot-launcher--working .copilot-launcher-icon { color: #b45309; }
+
+.copilot-launcher--unread .copilot-launcher-icon { color: #047857; }
+.copilot-launcher--unread .copilot-launcher-cta {
+  background: linear-gradient(180deg, #34d399 0%, #10b981 100%);
+  color: #052e1a;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.35) inset,
+    0 4px 10px -4px rgba(16, 185, 129, 0.45);
+}
+
+.copilot-launcher--approval {
+  border-color: color-mix(in oklch, var(--danger) 38%, transparent);
+}
+.copilot-launcher--approval .copilot-launcher-icon { color: var(--danger); }
+.copilot-launcher--approval .copilot-launcher-cta {
+  background: linear-gradient(180deg,
+    color-mix(in oklch, var(--danger) 88%, white) 0%,
+    var(--danger) 100%);
+  color: white;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.22) inset,
+    0 4px 12px -4px color-mix(in oklch, var(--danger) 55%, transparent);
+}
+
+@media (max-width: 520px) {
+  .copilot-launcher {
+    max-width: calc(100vw - 22px);
+  }
+  .copilot-launcher-message {
+    max-width: 150px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .copilot-launcher { transition: none; }
+}
+
 .copilot-search-input {
   min-width: 0;
   width: 100%;
@@ -866,12 +1006,12 @@ kbd {
   min-height: 54px;
   margin: -7px -9px 5px;
   padding: 7px 8px;
-  border: 1px solid #d8e8f8;
+  border: 1px solid #fde68a;
   border-radius: 18px 18px 0 0;
-  background: #eaf4ff;
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 60%, #fde68a 100%);
   color: var(--ink);
   box-shadow:
-    0 10px 24px -22px rgba(30, 79, 138, 0.28),
+    0 10px 24px -22px rgba(180, 83, 9, 0.28),
     0 1px 0 rgba(255, 255, 255, 0.92) inset;
   font: inherit;
   text-align: left;
@@ -881,9 +1021,9 @@ kbd {
 }
 
 .copilot-search-approval-bubble:hover {
-  border-color: #b9d8f5;
+  border-color: #fcd34d;
   box-shadow:
-    0 12px 28px -22px rgba(30, 79, 138, 0.34),
+    0 12px 28px -22px rgba(180, 83, 9, 0.34),
     0 1px 0 rgba(255, 255, 255, 0.94) inset;
   transform: translateY(-1px);
 }
@@ -907,7 +1047,7 @@ kbd {
 .copilot-search-approval-bubble-main:focus-visible,
 .copilot-search-approval-bubble-action:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(30, 79, 138, 0.16);
+  box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.16);
 }
 
 .copilot-search-approval-bubble-icon {
@@ -920,8 +1060,8 @@ kbd {
   justify-content: center;
   place-items: center;
   border-radius: 8px;
-  background: #dcebfb;
-  color: #1e4f8a;
+  background: #fef3c7;
+  color: #b45309;
 }
 
 .copilot-search-approval-bubble-check {
@@ -934,16 +1074,16 @@ kbd {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: #1e4f8a;
+  background: #b45309;
   color: white;
-  box-shadow: 0 0 0 2px #dcebfb;
+  box-shadow: 0 0 0 2px #fef3c7;
 }
 
 .copilot-search-approval-bubble-divider {
   width: 1px;
   height: 30px;
   flex: 0 0 auto;
-  background: #d8e8f8;
+  background: #fde68a;
 }
 
 .copilot-search-approval-bubble-copy {
@@ -972,8 +1112,8 @@ kbd {
   justify-content: center;
   padding: 0 9px;
   border-radius: 4px;
-  background: #eaf4ff;
-  color: #1e4f8a;
+  background: #fef3c7;
+  color: #b45309;
   font-size: 9.5px;
   font-weight: 800;
   letter-spacing: 0.12em;
@@ -986,7 +1126,7 @@ kbd {
   min-width: 0;
   flex: 1 1 auto;
   overflow: hidden;
-  color: #1e4f8a;
+  color: #92400e;
   font-size: 13px;
   font-weight: 700;
   line-height: 1.15;
@@ -1006,7 +1146,7 @@ kbd {
   align-items: center;
   gap: 4px;
   overflow: hidden;
-  color: #1e4f8a;
+  color: #92400e;
   font-size: 11px;
   font-weight: 600;
   line-height: 1.2;
@@ -1066,15 +1206,15 @@ kbd {
 }
 
 .copilot-search-approval-bubble-action.is-approve {
-  border-color: #b9d8f5;
-  background: #eaf4ff;
-  color: #1e4f8a;
+  border-color: #fcd34d;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  color: #92400e;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.86) inset;
 }
 
 .copilot-search-approval-bubble-action.is-approve:hover:not(:disabled) {
-  border-color: #9fc9ef;
-  background: #dcebfb;
+  border-color: #f59e0b;
+  background: linear-gradient(135deg, #fde68a 0%, #fcd34d 100%);
 }
 
 @media (max-width: 430px) {
@@ -1249,10 +1389,19 @@ kbd {
 }
 
 .copilot-search-send:hover:not(:disabled) {
+  /* Override shadcn outline-variant hover (hover:bg-accent → white). The
+   * detached send is a dark filled button; hover should deepen it slightly,
+   * not flip it to white. */
+  background:
+    linear-gradient(180deg,
+      color-mix(in oklch, var(--ink) 92%, white) 0%,
+      var(--ink) 100%) !important;
+  color: color-mix(in oklch, white 96%, var(--ink)) !important;
+  border-color: color-mix(in oklch, var(--ink) 92%, white) !important;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
     0 5px 14px -4px rgba(0, 0, 0, 0.42);
-  opacity: 0.88;
+  opacity: 1;
 }
 
 .copilot-search-send:active:not(:disabled) {
@@ -1302,68 +1451,65 @@ kbd {
 
 .copilot-dock-reply-pop {
   position: absolute;
-  top: -42px;
+  top: -48px;
   right: 0;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   max-width: min(280px, calc(100vw - 56px));
-  height: 34px;
-  padding: 0 13px;
-  border: 1px solid color-mix(in oklch, var(--primary) 36%, white);
-  border-radius: 999px;
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.97), color-mix(in oklch, var(--primary) 9%, white));
-  color: var(--primary);
+  height: 36px;
+  padding: 0 15px 0 13px;
+  border: 1px solid #fcd34d;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 58%, #fde68a 100%);
+  color: #78350f;
   box-shadow:
-    0 12px 28px -18px color-mix(in oklch, var(--primary) 42%, transparent),
-    0 0 0 1px rgba(255, 255, 255, 0.74) inset;
+    0 14px 30px -18px rgba(180, 83, 9, 0.42),
+    0 1px 0 rgba(255, 255, 255, 0.92) inset;
   font: inherit;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.005em;
   white-space: nowrap;
   cursor: pointer;
-  backdrop-filter: blur(12px);
-  transition: transform var(--t-fast), border-color var(--t-fast), box-shadow var(--t-fast);
+  transition: transform var(--t-fast), border-color var(--t-fast), box-shadow var(--t-fast), background var(--t-fast);
   animation: copilot-reply-pop-in 0.24s ease-out both;
 }
 
 .copilot-dock-reply-pop::after {
   content: "";
   position: absolute;
-  right: 68px;
+  right: 28px;
   bottom: -5px;
-  width: 10px;
-  height: 10px;
-  border-right: 1px solid color-mix(in oklch, var(--primary) 32%, white);
-  border-bottom: 1px solid color-mix(in oklch, var(--primary) 32%, white);
-  background: color-mix(in oklch, var(--primary) 9%, white);
+  width: 9px;
+  height: 9px;
+  background: #fef3c7;
+  border-right: 1px solid #fcd34d;
+  border-bottom: 1px solid #fcd34d;
   transform: rotate(45deg);
 }
 
 .copilot-dock-reply-pop:hover {
-  border-color: color-mix(in oklch, var(--primary) 48%, white);
+  border-color: #f59e0b;
+  background: linear-gradient(135deg, #fff7ed 0%, #fde68a 58%, #fcd34d 100%);
   box-shadow:
-    0 16px 34px -18px color-mix(in oklch, var(--primary) 52%, transparent),
-    0 0 0 1px rgba(255, 255, 255, 0.82) inset;
+    0 18px 36px -18px rgba(180, 83, 9, 0.5),
+    0 1px 0 rgba(255, 255, 255, 0.94) inset,
+    0 0 0 1px rgba(245, 158, 11, 0.14);
   transform: translateY(-1px);
 }
 
-.copilot-dock-reply-pop svg {
-  flex-shrink: 0;
-  color: var(--primary);
-  animation: copilot-reply-spark-spin 1.9s linear infinite;
-}
-
 .copilot-dock-reply-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   flex-shrink: 0;
   display: inline-flex;
   border-radius: 999px;
-  background: var(--primary);
-  box-shadow: 0 0 0 4px color-mix(in oklch, var(--primary) 12%, transparent);
-  animation: copilot-reply-dot-pulse 1.35s ease-in-out infinite;
+  background: #f59e0b;
+  box-shadow:
+    0 0 0 3px rgba(245, 158, 11, 0.16),
+    0 0 8px rgba(245, 158, 11, 0.42);
+  animation: copilot-reply-dot-pulse 1.6s ease-in-out infinite;
 }
 
 @keyframes copilot-reply-pop-in {
@@ -1747,6 +1893,151 @@ kbd {
   color: var(--muted-2);
   cursor: default;
   text-decoration: none;
+}
+.tb-notify-panel-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* ── In-app notification toast popups (NotificationToastHost) ──────────────
+ * Fixed-position stack in the top-right. Each toast auto-dismisses after
+ * ~5s; the user can also close immediately with the × button. Layered
+ * above the dashboard but below the chat panel iframe so a focused chat
+ * stays interactive. Animates in/out so a burst of three doesn't snap. */
+.ams-toast-host {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 1050;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(360px, calc(100vw - 32px));
+  pointer-events: none; /* host doesn't block clicks; each toast re-enables */
+}
+
+@keyframes ams-toast-slide-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+
+.ams-toast {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  padding: 10px 32px 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--card) 96%, white);
+  box-shadow:
+    0 14px 30px -16px rgba(15, 23, 42, 0.32),
+    0 1px 0 rgba(255, 255, 255, 0.7) inset;
+  pointer-events: auto;
+  animation: ams-toast-slide-in 0.18s ease-out both;
+}
+
+.ams-toast--warning {
+  border-color: #fde68a;
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+}
+
+.ams-toast--critical {
+  border-color: color-mix(in oklch, var(--danger) 40%, white);
+  background: color-mix(in oklch, var(--danger) 6%, white);
+}
+
+.ams-toast-link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ams-toast-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.ams-toast-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--ink) 6%, white);
+  color: var(--muted);
+}
+
+.ams-toast-icon--warning {
+  background: #fde68a;
+  color: #92400e;
+}
+
+.ams-toast-icon--critical {
+  background: color-mix(in oklch, var(--danger) 18%, white);
+  color: var(--danger);
+}
+
+.ams-toast-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.ams-toast-title {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--ink);
+  line-height: 1.25;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+
+.ams-toast-message {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.3;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+
+.ams-toast-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+
+.ams-toast-close:hover {
+  background: color-mix(in oklch, var(--ink) 8%, transparent);
+  color: var(--ink);
 }
 .ui-tabs-root {
   min-width: 0;

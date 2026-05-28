@@ -8,6 +8,7 @@ import { NotificationsProvider } from "@/contexts/NotificationsContext";
 import { AppSidebar } from "@/components/AppSidebar";
 import { CopilotSidePanel } from "@/components/CopilotSidePanel";
 import { CopilotProvider } from "@/contexts/CopilotContext";
+import { NotificationToastHost } from "@/components/NotificationToastHost";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -43,6 +44,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className="main-col">
               {children}
               <CopilotSidePanel />
+              <NotificationToastHost />
             </div>
           </div>
         </CopilotProvider>

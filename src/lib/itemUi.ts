@@ -51,6 +51,18 @@ export interface ItemDistributionStore {
   inTransitQuantity: number;
   allocatedTotal: number;
   lastUpdated: string | null;
+  batches?: ItemDistributionBatchBreakdown[];
+}
+
+export interface ItemDistributionBatchBreakdown {
+  batchNumber: string | null;
+  batchId: number | null;
+  quantity: number;
+  availableQuantity: number;
+  inTransitQuantity: number;
+  allocatedTotal: number;
+  lastUpdated: string | null;
+  allocations: ItemDistributionAllocation[];
 }
 
 export interface ItemDistributionAllocation {
@@ -66,6 +78,30 @@ export interface ItemDistributionAllocation {
   allocatedAt: string | null;
   stockEntryIds: number[];
   locationId: number | null;
+}
+
+export interface ItemDistributionInstance {
+  id: number;
+  item: number;
+  item_name?: string | null;
+  item_code?: string | null;
+  serial_number: string | null;
+  qr_code?: string | null;
+  current_location: number | null;
+  location_name?: string | null;
+  location_code?: string | null;
+  full_location_path?: string | null;
+  status: string;
+  in_charge?: string | null;
+  authority_store_name?: string | null;
+  authority_store_code?: string | null;
+  allocated_to?: string | null;
+  allocated_to_type?: string | null;
+  stock_entry_ids?: number[];
+  is_active: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+  created_by_name?: string | null;
 }
 
 export interface ItemDistributionUnit {

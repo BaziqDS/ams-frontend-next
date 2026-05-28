@@ -13,10 +13,14 @@
   color: var(--muted);
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  padding: 0 0 12px;
+  font-size: 12.5px;
+  font-weight: 550;
+  letter-spacing: 0;
+  padding: 0 0 10px;
+  transition: color 120ms ease, border-color 120ms ease;
 }
+
+.tabs button:hover { color: var(--ink-2); }
 
 .tabs .activeTab {
   border-bottom-color: var(--primary);
@@ -109,7 +113,10 @@
   align-items: center;
   color: var(--ink);
   display: flex;
-  font-size: 14px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.005em;
   gap: 8px;
   margin: 0 0 8px;
 }
@@ -123,13 +130,15 @@
   cursor: pointer;
   display: grid;
   font: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
+  font-weight: 500;
   gap: 8px;
   grid-template-columns: 20px minmax(0, 1fr) 16px;
-  padding: 8px 10px;
+  padding: 7px 10px;
   text-align: left;
   width: 100%;
   background: transparent;
+  transition: background 120ms ease;
 }
 
 .reportItem:hover {
@@ -165,14 +174,19 @@
 }
 
 .reportTopline h2 {
-  font-size: 22px;
-  line-height: 1.15;
-  margin: 0 0 5px;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 17px;
+  line-height: 1.2;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+  margin: 0 0 4px;
 }
 
 .reportTopline p {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12.5px;
+  line-height: 1.45;
   margin: 0;
   max-width: 760px;
 }
@@ -197,7 +211,8 @@
   gap: 16px;
   justify-content: space-between;
   list-style: none;
-  padding: 12px 14px;
+  padding: 10px 14px;
+  font-size: 12.5px;
 }
 
 .filterDisclosure summary::-webkit-details-marker {

@@ -3,6 +3,7 @@ import {
   getAllocatedReturnLocations,
   getAllocatedReturnPersons,
   getUserAssignedStores,
+  getSelectableStockEntryStores,
   getAllocatableTargetLocations,
   getAllocatableTargetPersons,
   getTransferDestinationStores,
@@ -228,5 +229,16 @@ describe("stock entry store transfer hierarchy", () => {
 
   it("finds the current user's directly assigned active stores", () => {
     expect(getUserAssignedStores([11, 12, 21], locations).map(location => location.name)).toEqual(["CS Main Store", "EE Main Store"]);
+  });
+
+  it("uses backend scoped source stores when the assigned store is not present in the first locations page", () => {
+    const firstPageLocations = locations.filter(location => location.id !== 21);
+
+    expect(getSelectableStockEntryStores({
+      assignedLocationIds: [21],
+      locations: firstPageLocations,
+      scopeStores: [{ id: 21, name: "EE Main Store", code: "EE-MAIN" }],
+      isSuperuser: false,
+    }).map(location => location.name)).toEqual(["EE Main Store"]);
   });
 });

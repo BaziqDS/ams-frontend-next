@@ -8,9 +8,9 @@ import { ThemedSelect } from "@/components/ThemedSelect";
 import { DropdownPortal } from "@/components/DropdownPortal";
 import { apiFetch, type Page } from "@/lib/api";
 import { useClientPagination } from "@/lib/listPagination";
-import { getAllocatableTargetLocations, getAllocatableTargetPersons, getAllocatedReturnLocations, getAllocatedReturnPersons, getUserAssignedStores, type StockAllocationRecord } from "@/lib/stockEntryLocationRules";
+import { getAllocatableTargetLocations, getAllocatableTargetPersons, getAllocatedReturnLocations, getAllocatedReturnPersons, getSelectableStockEntryStores, type StockAllocationRecord } from "@/lib/stockEntryLocationRules";
 import { getIssueAvailableQuantity, getIssueBatchOptions, getIssueInstanceOptions, getIssueItemOptions, getReturnBatchOptions, getReturnInstanceOptions, getReturnItemOptions, getReturnQuantityLimit, type StockEntryItemInstance, type StockEntryStockRecord, type StockEntryReturnTarget } from "@/lib/stockEntryItemRules";
-import { buildStockEntryPayload, getStockEntryDisplayDirection, getStockEntryRegisterStoreId, getStockEntrySourceRegisterOptions, validateStockEntryForm, type CreatableStockEntryType, type StockEntryFormItem, type StockEntryFormState } from "@/lib/stockEntryFormRules";
+import { buildStockEntryPayload, getStockEntryDisplayDirection, getStockEntryRegisterStoreId, getStockEntrySourceRegisterOptions, resolveStockEntrySourceRegisterValue, validateStockEntryForm, type CreatableStockEntryType, type StockEntryFormItem, type StockEntryFormState } from "@/lib/stockEntryFormRules";
 import { applyStockEntryCopilotValuePatch, buildStockEntryCopilotReferenceContext, searchStockEntryCopilotOptions } from "@/lib/stockEntryCopilotForm";
 import { getStockEntryAcknowledgeTarget, getStockEntryMovementRows, getStockEntryMovementStatus, getStockEntryMovementUpdatedEntry } from "@/lib/stockEntryMovementRows";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
@@ -152,10 +152,6 @@ const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
     {typeof d === "string" ? <path d={d} /> : d}
   </svg>
 );
-
-function normalizeList<T>(data: Page<T> | T[]): T[] {
-  return Array.isArray(data) ? data : data.results;
-}
 
 function nextPagePath(next: string | null) {
   if (!next) return null;
@@ -613,16 +609,19 @@ function entrySource(entry: StockEntryRecord) {
   return getStockEntryDisplayDirection(entry).source;
 }
 
-function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocationIds, isSuperuser = false, onClose, onSave }: { open: boolean; mode: "create" | "edit"; entry: StockEntryRecord | null; refs: ReferenceData; refsLoading: boolean; assignedLocationIds?: number[]; isSuperuser?: boolean; onClose: () => void; onSave: (savedEntry: StockEntryRecord) => void | Promise<void> }) {
+function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocationIds, scopeStores = [], isSuperuser = false, onClose, onSave }: { open: boolean; mode: "create" | "edit"; entry: StockEntryRecord | null; refs: ReferenceData; refsLoading: boolean; assignedLocationIds?: number[]; scopeStores?: StockEntryScopeStore[]; isSuperuser?: boolean; onClose: () => void; onSave: (savedEntry: StockEntryRecord) => void | Promise<void> }) {
   const [form, setForm] = useState<StockEntryFormState>(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [transferrableStores, setTransferrableStores] = useState<LocationRecord[]>([]);
   const [transferrableLoading, setTransferrableLoading] = useState(false);
-  const storeOptions = useMemo(() => refs.locations.filter(location => location.is_store && location.is_active), [refs.locations]);
-  const assignedStoreOptions = useMemo(() => getUserAssignedStores(assignedLocationIds, refs.locations), [assignedLocationIds, refs.locations]);
-  const selectableStoreOptions = isSuperuser ? storeOptions : assignedStoreOptions;
+  const selectableStoreOptions = useMemo(() => getSelectableStockEntryStores({
+    assignedLocationIds,
+    locations: refs.locations,
+    scopeStores,
+    isSuperuser,
+  }), [assignedLocationIds, isSuperuser, refs.locations, scopeStores]);
   const singleAssignedStore = mode === "create" && selectableStoreOptions.length === 1 ? selectableStoreOptions[0] : null;
 
   useEffect(() => {
@@ -728,7 +727,25 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
   const getQuantityLimit = (row: StockEntryFormItem) => getQuantityLimitForForm(form, row);
   const getInstanceOptions = (row: StockEntryFormItem) => getInstanceOptionsForForm(form, row);
   const selectedSourceStoreId = getStockEntryRegisterStoreId(form);
-  const sourceRegisterOptions = getStockEntrySourceRegisterOptions(form, refs.registers);
+  const sourceRegisterOptions = useMemo(
+    () => getStockEntrySourceRegisterOptions(form, refs.registers),
+    [form.entry_type, form.from_location, form.to_location, refs.registers],
+  );
+
+  useEffect(() => {
+    if (!open || refsLoading || refs.registers.length === 0) return;
+    setForm(prev => {
+      const nextSourceRegisterOptions = getStockEntrySourceRegisterOptions(prev, refs.registers);
+      let changed = false;
+      const items = prev.items.map(row => {
+        const nextStockRegister = resolveStockEntrySourceRegisterValue(row.stock_register, nextSourceRegisterOptions);
+        if (nextStockRegister === row.stock_register) return row;
+        changed = true;
+        return { ...row, stock_register: nextStockRegister };
+      });
+      return changed ? { ...prev, items } : prev;
+    });
+  }, [open, refs.registers, refsLoading, sourceRegisterOptions]);
 
   const update = <K extends keyof StockEntryFormState>(key: K, value: StockEntryFormState[K]) => {
     setForm(prev => {
@@ -1485,24 +1502,24 @@ export function StockEntriesView() {
     const promise = (async () => {
       try {
         const [itemsData, batchesData, locationsData, personsData, registersData, allocationsData, stockRecordsData, instancesData] = await Promise.all([
-          apiFetch<Page<ItemRecord> | ItemRecord[]>("/api/inventory/items/?page_size=500"),
-          apiFetch<Page<ItemBatchRecord> | ItemBatchRecord[]>("/api/inventory/item-batches/?page_size=500"),
-          apiFetch<Page<LocationRecord> | LocationRecord[]>("/api/inventory/locations/?page_size=500"),
-          apiFetch<Page<PersonRecord> | PersonRecord[]>("/api/inventory/persons/?page_size=500"),
-          apiFetch<Page<StockRegisterRecord> | StockRegisterRecord[]>("/api/inventory/stock-registers/?page_size=500"),
-          apiFetch<Page<StockAllocationRecord> | StockAllocationRecord[]>("/api/inventory/stock-allocations/?status=ALLOCATED&page_size=500"),
-          apiFetch<Page<StockEntryStockRecord> | StockEntryStockRecord[]>("/api/inventory/distribution/?page_size=1000"),
-          apiFetch<Page<StockEntryItemInstance> | StockEntryItemInstance[]>("/api/inventory/item-instances/?page_size=1000"),
+          fetchAllPages<ItemRecord>("/api/inventory/items/?page_size=500"),
+          fetchAllPages<ItemBatchRecord>("/api/inventory/item-batches/?page_size=500"),
+          fetchAllPages<LocationRecord>("/api/inventory/locations/?page_size=500"),
+          fetchAllPages<PersonRecord>("/api/inventory/persons/?page_size=500"),
+          fetchAllPages<StockRegisterRecord>("/api/inventory/stock-registers/?page_size=500"),
+          fetchAllPages<StockAllocationRecord>("/api/inventory/stock-allocations/?status=ALLOCATED&page_size=500"),
+          fetchAllPages<StockEntryStockRecord>("/api/inventory/distribution/?page_size=1000"),
+          fetchAllPages<StockEntryItemInstance>("/api/inventory/item-instances/?page_size=1000"),
         ]);
         setRefs({
-          items: normalizeList(itemsData),
-          batches: normalizeList(batchesData),
-          locations: normalizeList(locationsData),
-          persons: normalizeList(personsData),
-          registers: normalizeList(registersData),
-          allocations: normalizeList(allocationsData),
-          stockRecords: normalizeList(stockRecordsData),
-          instances: normalizeList(instancesData),
+          items: itemsData,
+          batches: batchesData,
+          locations: locationsData,
+          persons: personsData,
+          registers: registersData,
+          allocations: allocationsData,
+          stockRecords: stockRecordsData,
+          instances: instancesData,
         });
         refsLoadedRef.current = true;
         return true;
@@ -1847,7 +1864,7 @@ export function StockEntriesView() {
 
   return (
     <div data-density={density}>
-      <StockEntryModal open={modalOpen} mode={modalMode} entry={editingEntry} refs={refs} refsLoading={refsLoading} assignedLocationIds={user?.assigned_locations} isSuperuser={user?.is_superuser} onClose={closeModal} onSave={handleSave} />
+      <StockEntryModal open={modalOpen} mode={modalMode} entry={editingEntry} refs={refs} refsLoading={refsLoading} assignedLocationIds={user?.assigned_locations} scopeStores={scopeStores} isSuperuser={user?.is_superuser} onClose={closeModal} onSave={handleSave} />
       <Topbar breadcrumb={["Operations", "Stock Entries"]} />
       <div className="page">
         {fetchError && (

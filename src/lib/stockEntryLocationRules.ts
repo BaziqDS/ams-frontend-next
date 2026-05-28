@@ -30,6 +30,13 @@ export interface StockAllocationRecord {
   stock_entry?: number | null;
 }
 
+export interface StockEntryScopedStore {
+  id: number;
+  name: string;
+  code?: string | null;
+  is_central?: boolean | null;
+}
+
 function toNumericId(value: string | number | null | undefined) {
   if (value === null || value === undefined || value === "") return null;
   const id = Number(value);
@@ -241,4 +248,26 @@ export function getUserAssignedStores<T extends StockEntryLocation>(
   if (!assignedLocationIds?.length) return [];
   const assignedIds = new Set(assignedLocationIds.map(Number));
   return locations.filter(location => location.is_active && location.is_store && assignedIds.has(location.id));
+}
+
+export function getSelectableStockEntryStores<T extends StockEntryLocation>({
+  assignedLocationIds,
+  locations,
+  scopeStores = [],
+  isSuperuser = false,
+}: {
+  assignedLocationIds?: number[] | null;
+  locations: T[];
+  scopeStores?: StockEntryScopedStore[];
+  isSuperuser?: boolean;
+}): Array<T | StockEntryScopedStore> {
+  const activeStores = locations.filter(isActiveStore);
+
+  if (scopeStores.length) {
+    const locationById = new Map(activeStores.map(location => [location.id, location]));
+    return scopeStores.map(store => locationById.get(store.id) ?? store);
+  }
+
+  if (isSuperuser) return activeStores;
+  return getUserAssignedStores(assignedLocationIds, locations);
 }
