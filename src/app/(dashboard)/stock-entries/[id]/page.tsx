@@ -147,6 +147,15 @@ interface CorrectionPreview {
   lines: CorrectionPreviewLine[];
 }
 
+const SUBMITTABLE_CORRECTION_RESOLUTIONS = new Set([
+  "ADDITIONAL_MOVEMENT",
+  "REVERSAL",
+  "ALLOCATION_INCREASE",
+  "ALLOCATION_REDUCTION",
+  "RETURN_INCREASE",
+  "RETURN_REDUCTION",
+]);
+
 interface CorrectionSubmitResult extends CorrectionSummary {
   original_entry?: number;
   generated_entries?: RelatedEntrySummary[];
@@ -1639,8 +1648,9 @@ function CorrectionActionsPanel({
 }) {
   const hasAppliedReversal = entry.generated_correction_entries?.some(generated => generated.reference_purpose === "REVERSAL");
   const canCreateReplacement = entry.status === "CANCELLED" || hasAppliedReversal;
-  const hasActions = entry.can_cancel || entry.can_correct || entry.can_request_reversal || entry.active_correction || canCreateReplacement;
   const activeCorrection = entry.active_correction;
+  const canStartNewCorrection = !activeCorrection;
+  const hasActions = entry.can_cancel || (canStartNewCorrection && (entry.can_correct || entry.can_request_reversal)) || activeCorrection || canCreateReplacement;
   const differenceCopy = getCorrectionModeCopy("difference");
   const reversalCopy = getCorrectionModeCopy("reversal");
   const isProjectedReceiptCorrection = Boolean(
@@ -1704,12 +1714,12 @@ function CorrectionActionsPanel({
               Cancel Entry
             </button>
           ) : null}
-          {entry.can_correct ? (
+          {canStartNewCorrection && entry.can_correct ? (
             <button type="button" className="btn btn-sm btn-primary" onClick={onResolveDifference}>
               {differenceCopy.actionLabel}
             </button>
           ) : null}
-          {entry.can_request_reversal ? (
+          {canStartNewCorrection && entry.can_request_reversal ? (
             <button type="button" className="btn btn-sm" onClick={onRequestReversal}>
               {reversalCopy.actionLabel}
             </button>
@@ -1788,6 +1798,7 @@ function CorrectionModal({ entry, related, instances, onDone, onClose }: { entry
   const hasChangedLine = lineStates.some(line => line.delta !== 0);
   const hasInvalidQuantity = lineStates.some(line => line.rawQuantity === "" || !Number.isFinite(line.correctedQuantity) || line.correctedQuantity < 0);
   const instanceSelectionError = lineStates.find(line => line.requiredInstanceCount > 0 && line.selectedInstanceCount !== line.requiredInstanceCount);
+  const previewCanBeSubmitted = Boolean(preview && SUBMITTABLE_CORRECTION_RESOLUTIONS.has(preview.resolution_type));
   const validationMessage = !reason.trim()
     ? "Enter a reason before submitting a correction."
     : hasInvalidQuantity
@@ -1797,10 +1808,12 @@ function CorrectionModal({ entry, related, instances, onDone, onClose }: { entry
         : instanceSelectionError
           ? `Select exactly ${instanceSelectionError.requiredInstanceCount} affected instance${instanceSelectionError.requiredInstanceCount === 1 ? "" : "s"} for ${instanceSelectionError.item.item_name ?? `item ${instanceSelectionError.item.item}`}.`
           : preview
-            ? null
+            ? previewCanBeSubmitted
+              ? null
+              : "This correction cannot be submitted as one request. Split mixed actions or use the supported correction workflow for this entry."
             : "Review what will happen before sending this correction request.";
   const canPreview = reason.trim().length > 0 && !hasInvalidQuantity && hasChangedLine && !instanceSelectionError;
-  const canSubmit = canPreview && Boolean(preview) && preview?.resolution_type !== "BLOCKED";
+  const canSubmit = canPreview && previewCanBeSubmitted;
   const changedPreviewLines = preview?.lines.filter(line => line.delta !== 0) ?? [];
   const primaryLabel = preview ? copy.submitLabel : "Check What Will Happen";
 
@@ -1962,7 +1975,7 @@ function CorrectionModal({ entry, related, instances, onDone, onClose }: { entry
             </div>
 
             {preview ? (
-              <div className={`stock-correction-preview ${preview.resolution_type === "BLOCKED" ? "is-blocked" : "is-ready"}`}>
+              <div className={`stock-correction-preview ${previewCanBeSubmitted ? "is-ready" : "is-blocked"}`}>
                 <div>
                   <div className="stock-correction-preview-title">What will happen</div>
                   <div className="stock-correction-preview-text">{preview.message}</div>

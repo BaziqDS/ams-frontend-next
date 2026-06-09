@@ -76,6 +76,8 @@ type CopilotDepreciationAssetClassOption = {
   id: number;
   name: string;
   code: string;
+  display_name?: string | null;
+  display_code?: string | null;
   current_rate?: string | null;
 };
 
@@ -990,8 +992,8 @@ export default function InspectionDetailPage() {
       })),
       asset_classes: copilotAssetClasses.map(assetClass => ({
         id: assetClass.id,
-        name: assetClass.name,
-        code: assetClass.code,
+        name: assetClass.display_name || assetClass.name,
+        code: assetClass.display_code || assetClass.code,
         current_rate: assetClass.current_rate ?? null,
       })),
       department_stock_registers: departmentRegisterOptions.map(r => r.id),

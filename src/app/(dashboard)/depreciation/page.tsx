@@ -63,6 +63,8 @@ interface DepreciationAssetClass {
   id: number;
   name: string;
   code: string;
+  display_name?: string | null;
+  display_code?: string | null;
   category?: number | null;
   category_name?: string | null;
   current_rate?: string | null;
@@ -212,6 +214,14 @@ function statusPillClass(status: string | null | undefined) {
   if (status === "DRAFT") return "pill pill-warning";
   if (status === "REVERSED" || status === "DISPOSED" || status === "LOST" || status === "JUNK") return "pill pill-danger";
   return "pill pill-neutral";
+}
+
+function assetClassDisplayName(assetClass: DepreciationAssetClass | null | undefined) {
+  return assetClass?.display_name || assetClass?.category_name || assetClass?.name || "Not configured";
+}
+
+function assetClassDisplayCode(assetClass: DepreciationAssetClass | null | undefined) {
+  return assetClass?.display_code || assetClass?.code || "";
 }
 
 function SetupStatusPill({ row }: { row: DepreciationSetupRow }) {
@@ -1003,7 +1013,9 @@ export default function DepreciationPage() {
                         <SetupStatusPill row={row} />
                       </div>
                       <div className="user-card-name">{row.categoryName}</div>
-                      <div className="user-card-eid mono">{row.assetClass?.name ?? "Not configured"} · {row.categoryCode}</div>
+                      <div className="user-card-eid mono">
+                        {row.assetClass ? `${assetClassDisplayName(row.assetClass)} · ${assetClassDisplayCode(row.assetClass) || row.categoryCode}` : `Not configured · ${row.categoryCode}`}
+                      </div>
                       <div className="user-card-section">
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px" }}>
                           <div>
@@ -1306,7 +1318,7 @@ export default function DepreciationPage() {
         {historyAssetClass ? (
           <ModalShell
             eyebrow="Rate History"
-            title={historyAssetClass.name}
+            title={assetClassDisplayName(historyAssetClass)}
             maxWidth="min(980px, calc(100vw - 32px))"
             onClose={() => setHistoryClassId(null)}
             footer={(

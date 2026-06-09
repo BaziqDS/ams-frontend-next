@@ -47,6 +47,8 @@ type DepreciationAssetClassOption = {
   id: number;
   name: string;
   code: string;
+  display_name?: string | null;
+  display_code?: string | null;
   current_rate?: string | null;
 };
 
@@ -79,9 +81,11 @@ function formatCurrency(value: number) {
 }
 
 function getAssetClassLabel(assetClass: DepreciationAssetClassOption) {
+  const name = assetClass.display_name || assetClass.name;
+  const code = assetClass.display_code || assetClass.code;
   return assetClass.current_rate
-    ? `${assetClass.name} (${assetClass.code}) - ${assetClass.current_rate}%`
-    : `${assetClass.name} (${assetClass.code})`;
+    ? `${name} (${code}) - ${assetClass.current_rate}%`
+    : `${name} (${code})`;
 }
 
 function Field({
