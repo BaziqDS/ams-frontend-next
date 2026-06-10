@@ -4,12 +4,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import {
-  Boxes,
   ChevronRight,
-  ClipboardCheck,
   Download,
-  PackageOpen,
+  PackageCheck,
   Truck,
+  UserCheck,
+  Warehouse,
   type LucideIcon,
 } from "lucide-react";
 import { Topbar } from "@/components/Topbar";
@@ -474,9 +474,9 @@ export function ItemDistributionStats({
 
   return (
     <div className={statsClassName}>
-      <StatCard title="Total stock" value={formatQuantity(totals.total)} unit={acctUnit} hint={`${units.length} ${units.length === 1 ? "location" : "locations"}`} icon={Boxes} tone="neutral" accent="slate" />
-      <StatCard title="Available" value={formatQuantity(totals.available)} unit={acctUnit} hint={`${segPct(totals.available, totals.total)}% of total`} icon={PackageOpen} tone="ok" accent="success" />
-      <StatCard title="Allocated" value={formatQuantity(totals.allocated)} unit={acctUnit} hint={`${segPct(totals.allocated, totals.total)}% of total`} icon={ClipboardCheck} tone="neutral" accent="primary" />
+      <StatCard title="Total stock" value={formatQuantity(totals.total)} unit={acctUnit} hint={`${units.length} ${units.length === 1 ? "location" : "locations"}`} icon={Warehouse} tone="neutral" accent="slate" />
+      <StatCard title="Available" value={formatQuantity(totals.available)} unit={acctUnit} hint={`${segPct(totals.available, totals.total)}% of total`} icon={PackageCheck} tone="ok" accent="success" />
+      <StatCard title="Allocated" value={formatQuantity(totals.allocated)} unit={acctUnit} hint={`${segPct(totals.allocated, totals.total)}% of total`} icon={UserCheck} tone="neutral" accent="primary" />
       <StatCard title="In transit" value={formatQuantity(totals.inTransit)} unit={acctUnit} hint={totals.inTransit > 0 ? "Awaiting confirmation" : "Nothing in transit"} icon={Truck} tone={totals.inTransit > 0 ? "warning" : "neutral"} accent="warn" />
     </div>
   );
@@ -832,9 +832,9 @@ export function ItemDistributionView({ itemId }: { itemId: string }) {
         ) : null}
 
         <div className={`notif-stat-grid ${styles.statStrip}`}>
-          <StatCard title="Total stock" value={formatQuantity(totals.total)} unit={acctUnit} hint={`${units.length} ${units.length === 1 ? "location" : "locations"}`} icon={Boxes} tone="neutral" accent="slate" />
-          <StatCard title="Available" value={formatQuantity(totals.available)} unit={acctUnit} hint={`${segPct(totals.available, totals.total)}% of total`} icon={PackageOpen} tone="ok" accent="success" />
-          <StatCard title="Allocated" value={formatQuantity(totals.allocated)} unit={acctUnit} hint={`${segPct(totals.allocated, totals.total)}% of total`} icon={ClipboardCheck} tone="neutral" accent="primary" />
+          <StatCard title="Total stock" value={formatQuantity(totals.total)} unit={acctUnit} hint={`${units.length} ${units.length === 1 ? "location" : "locations"}`} icon={Warehouse} tone="neutral" accent="slate" />
+          <StatCard title="Available" value={formatQuantity(totals.available)} unit={acctUnit} hint={`${segPct(totals.available, totals.total)}% of total`} icon={PackageCheck} tone="ok" accent="success" />
+          <StatCard title="Allocated" value={formatQuantity(totals.allocated)} unit={acctUnit} hint={`${segPct(totals.allocated, totals.total)}% of total`} icon={UserCheck} tone="neutral" accent="primary" />
           <StatCard title="In transit" value={formatQuantity(totals.inTransit)} unit={acctUnit} hint={totals.inTransit > 0 ? "Awaiting confirmation" : "Nothing in transit"} icon={Truck} tone={totals.inTransit > 0 ? "warning" : "neutral"} accent="warn" />
         </div>
 

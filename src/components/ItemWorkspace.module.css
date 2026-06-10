@@ -7,9 +7,9 @@
 /* ---------- shell ---------- */
 .workspaceShell {
   display: grid;
-  grid-template-columns: 460px minmax(0, 1fr);
+  grid-template-columns: 28.75rem minmax(0, 1fr);
   gap: 0;
-  height: calc(100vh - 56px);
+  height: calc(100vh - 3.5rem);
   overflow: hidden;
   background: var(--surface);
 }
@@ -44,13 +44,13 @@
 }
 
 .detailPageShell {
-  min-height: calc(100vh - 56px);
+  min-height: calc(100vh - 3.5rem);
   background: var(--surface);
 }
 
 .detailPageShell .detailStack {
-  max-width: 1680px;
-  padding: 24px 28px 40px 28px;
+  max-width: 105rem;
+  padding: 1.5rem 1.75rem 2.5rem 1.75rem;
 }
 
 .detailPageShell .mobileBackRow {
@@ -58,7 +58,7 @@
 }
 
 .listHead {
-  padding: 18px 20px 0 20px;
+  padding: 1.125rem 1.25rem 0 1.25rem;
   border-bottom: 1px solid var(--hairline);
   background: var(--card);
 }
@@ -67,14 +67,14 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 0.75rem;
 }
 
 .listTitle {
-  margin: 2px 0 0 0;
+  margin: 0.125rem 0 0 0;
   font-family: var(--font-display);
   font-weight: 400;
-  font-size: 26px;
+  font-size: 1.625rem;
   line-height: 1.1;
   letter-spacing: -0.01em;
   color: var(--ink);
@@ -82,7 +82,7 @@
 
 .listActions {
   display: flex;
-  gap: 6px;
+  gap: 0.375rem;
   align-items: center;
 }
 
@@ -90,21 +90,21 @@
 .listSummary {
   display: flex;
   align-items: center;
-  gap: 18px;
-  margin-top: 14px;
-  padding: 10px 0;
+  gap: 1.125rem;
+  margin-top: 0.875rem;
+  padding: 0.625rem 0;
   border-top: 1px solid var(--hairline);
 }
 
 .listStat {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0.125rem;
 }
 
 .listStatValue {
   font-family: var(--font-display);
-  font-size: 20px;
+  font-size: 1.25rem;
   font-weight: 400;
   color: var(--ink);
   line-height: 1;
@@ -115,7 +115,7 @@
 .listStatDanger { color: var(--danger); }
 
 .listStatLabel {
-  font-size: 10.5px;
+  font-size: 0.6563rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
@@ -123,8 +123,8 @@
 }
 
 .listStatSep {
-  width: 1px;
-  height: 28px;
+  width: 0.0625rem;
+  height: 1.75rem;
   background: var(--hairline);
 }
 
@@ -132,17 +132,17 @@
 .listToolbar {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 10px 0 14px 0;
+  gap: 0.625rem;
+  padding: 0.625rem 0 0.875rem 0;
   border-top: 1px solid var(--hairline);
 }
 
 .listSearch {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 32px;
-  padding: 0 10px;
+  gap: 0.5rem;
+  height: 2rem;
+  padding: 0 0.625rem;
   background: var(--surface-2);
   border: 1px solid transparent;
   border-radius: var(--radius);
@@ -164,21 +164,21 @@
   outline: none;
   color: var(--ink);
   font: inherit;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .listSearch input::placeholder { color: var(--muted-2); }
 
 .listSearchClear {
-  width: 22px;
-  height: 22px;
+  width: 1.375rem;
+  height: 1.375rem;
   border: 0;
   background: transparent;
   color: var(--muted-2);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: 0.375rem;
   cursor: pointer;
 }
 
@@ -190,39 +190,39 @@
 .listSearchKbd {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 1px 5px;
+  border-radius: 0.1875rem;
+  padding: 0.0625rem 0.3125rem;
   color: var(--muted);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 0.6563rem;
 }
 
 .listFilters {
   display: flex;
-  gap: 6px;
+  gap: 0.375rem;
   align-items: center;
   flex-wrap: wrap;
 }
 
 .listFiltersSep {
-  width: 1px;
-  height: 18px;
+  width: 0.0625rem;
+  height: 1.125rem;
   background: var(--hairline);
-  margin: 0 4px;
+  margin: 0 0.25rem;
 }
 
 .filterPill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 10px;
+  gap: 0.375rem;
+  height: 1.625rem;
+  padding: 0 0.625rem;
   border: 1px solid var(--hairline);
   background: var(--card);
   color: var(--ink-2);
   border-radius: 999px;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 450;
   cursor: pointer;
   transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
@@ -238,11 +238,11 @@
 
 .filterPillCount {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 0.6563rem;
   background: var(--surface-2);
   color: var(--muted);
-  padding: 1px 5px;
-  border-radius: 3px;
+  padding: 0.0625rem 0.3125rem;
+  border-radius: 0.1875rem;
 }
 
 .filterPillActive .filterPillCount {
@@ -274,19 +274,19 @@
 }
 
 .listEmpty {
-  padding: 80px 20px;
+  padding: 5rem 1.25rem;
   text-align: center;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 0.7813rem;
 }
 
 .itemRow {
   display: grid;
-  grid-template-columns: 26px 1fr auto;
+  grid-template-columns: 1.625rem 1fr auto;
   align-items: center;
-  gap: 12px;
+  gap: 0.75rem;
   width: 100%;
-  padding: 11px 20px;
+  padding: 0.6875rem 1.25rem;
   border: 0;
   border-bottom: 1px solid var(--hairline);
   background: transparent;
@@ -307,14 +307,14 @@
   left: 0;
   top: 0;
   bottom: 0;
-  width: 3px;
+  width: 0.1875rem;
   background: var(--primary);
 }
 
 .itemRowAvatar {
-  width: 26px;
-  height: 26px;
-  border-radius: 5px;
+  width: 1.625rem;
+  height: 1.625rem;
+  border-radius: 0.3125rem;
   background: var(--surface-2);
   border: 1px solid var(--hairline);
   display: inline-flex;
@@ -343,9 +343,9 @@
 }
 
 .itemTableIcon {
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
+  width: 1.625rem;
+  height: 1.625rem;
+  border-radius: 0.375rem;
   background: var(--surface-2);
   border: 1px solid var(--hairline);
   display: inline-flex;
@@ -379,15 +379,15 @@
 
 
 .itemsListTable :global(thead th) {
-  padding-inline: 12px;
+  padding-inline: 0.75rem;
   text-align: left;
 }
 
 /* Left-align all body cells; use padding-block for taller rows instead of
    overriding --row-h with complex :global selectors */
 .itemsListTable :global(tbody td) {
-  padding-inline: 12px;
-  padding-block: 10px;
+  padding-inline: 0.75rem;
+  padding-block: 0.625rem;
   height: auto;
   text-align: left;
 }
@@ -444,7 +444,7 @@
 .itemsListStatusCell :global(.group-cell) {
   flex-wrap: nowrap;
   justify-content: flex-start;
-  gap: 6px;
+  gap: 0.375rem;
 }
 
 .itemsListUpdatedCell {
@@ -472,7 +472,7 @@
 .itemRowTitle {
   display: block;
   color: var(--ink);
-  font-size: 13.5px;
+  font-size: 0.8438rem;
   line-height: 1.22;
   font-weight: 550;
   letter-spacing: -0.005em;
@@ -485,9 +485,9 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-top: 2px;
-  font-size: 11.5px;
+  gap: 0.5rem;
+  margin-top: 0.125rem;
+  font-size: 0.7188rem;
   color: var(--muted);
 }
 
@@ -500,12 +500,12 @@
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 2px;
+  gap: 0.125rem;
 }
 
 .itemRowQuantity {
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: 1.125rem;
   font-weight: 400;
   color: var(--ink);
   letter-spacing: -0.01em;
@@ -513,9 +513,9 @@
 }
 
 .itemRowUnit {
-  margin-left: 3px;
+  margin-left: 0.1875rem;
   font-family: var(--font-sans);
-  font-size: 10.5px;
+  font-size: 0.6563rem;
   color: var(--muted);
   font-weight: 450;
   letter-spacing: 0.02em;
@@ -523,13 +523,13 @@
 
 .itemRowFlags {
   display: flex;
-  gap: 4px;
+  gap: 0.25rem;
 }
 
 .itemRowFlag {
-  padding: 1px 5px;
-  border-radius: 3px;
-  font-size: 10px;
+  padding: 0.0625rem 0.3125rem;
+  border-radius: 0.1875rem;
+  font-size: 0.625rem;
   font-family: var(--font-mono);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -547,10 +547,10 @@
 
 .itemRowActions {
   position: absolute;
-  right: 14px;
-  bottom: 6px;
+  right: 0.875rem;
+  bottom: 0.375rem;
   display: inline-flex;
-  gap: 6px;
+  gap: 0.375rem;
   opacity: 0;
   transition: opacity var(--t-fast);
   pointer-events: none;
@@ -563,9 +563,9 @@
 }
 
 /* density variants */
-.workspaceShell[data-density="compact"] .itemRow { padding: 8px 20px; }
-.workspaceShell[data-density="compact"] .itemRowQuantity { font-size: 15px; }
-.workspaceShell[data-density="comfortable"] .itemRow { padding: 14px 20px; }
+.workspaceShell[data-density="compact"] .itemRow { padding: 0.5rem 1.25rem; }
+.workspaceShell[data-density="compact"] .itemRowQuantity { font-size: 0.9375rem; }
+.workspaceShell[data-density="comfortable"] .itemRow { padding: 0.875rem 1.25rem; }
 
 /* ---------- detail empty state ---------- */
 .emptyState,
@@ -573,24 +573,24 @@
   min-height: 100%;
   display: grid;
   place-items: center;
-  padding: 40px 24px;
+  padding: 2.5rem 1.5rem;
   text-align: center;
 }
 
 .emptyState {
-  gap: 12px;
+  gap: 0.75rem;
 }
 
 .emptyBadge {
   display: inline-flex;
   width: fit-content;
-  padding: 6px 10px;
+  padding: 0.375rem 0.625rem;
   border: 1px solid var(--hairline);
   border-radius: 999px;
   background: var(--card);
   color: var(--muted);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 0.6563rem;
   letter-spacing: 0.08em;
   font-weight: 500;
   text-transform: uppercase;
@@ -599,7 +599,7 @@
 .emptyTitle {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 22px;
+  font-size: 1.375rem;
   line-height: 1;
   font-weight: 400;
   color: var(--ink);
@@ -611,17 +611,17 @@
   max-width: 40ch;
   margin: 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.55;
 }
 
 /* ---------- detail pane ---------- */
 .detailStack {
   display: grid;
-  gap: 18px;
-  max-width: 1080px;
+  gap: 1.125rem;
+  max-width: 67.5rem;
   margin: 0 auto;
-  padding: 22px 28px 80px 28px;
+  padding: 1.375rem 1.75rem 5rem 1.75rem;
 }
 
 .mobileBackRow {
@@ -631,15 +631,15 @@
 .mobileBackButton {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
   border: 0;
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 12px;
+  font-size: 0.75rem;
   cursor: pointer;
   padding: 0;
-  margin-bottom: 14px;
+  margin-bottom: 0.875rem;
 }
 
 .mobileBackButton:hover { color: var(--ink); }
@@ -648,8 +648,8 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 24px;
-  padding-bottom: 18px;
+  gap: 1.5rem;
+  padding-bottom: 1.125rem;
   border-bottom: 1px solid var(--hairline);
 }
 
@@ -659,10 +659,10 @@
 }
 
 .detailTitle {
-  margin: 4px 0 0 0;
+  margin: 0.25rem 0 0 0;
   font-family: var(--font-display);
   font-weight: 400;
-  font-size: 30px;
+  font-size: 1.875rem;
   line-height: 1.15;
   letter-spacing: -0.01em;
   color: var(--ink);
@@ -672,19 +672,19 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  margin-top: 10px;
+  gap: 0.625rem;
+  margin-top: 0.625rem;
 }
 
 .detailCodeChip {
   display: inline-flex;
   align-items: center;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--ink-2);
   background: var(--surface-2);
   border: 1px solid var(--hairline);
-  padding: 3px 9px;
+  padding: 0.1875rem 0.5625rem;
   border-radius: var(--radius);
   letter-spacing: 0.02em;
 }
@@ -692,9 +692,9 @@
 .detailTrackingPill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  padding: 3px 9px;
+  gap: 0.375rem;
+  font-size: 0.7188rem;
+  padding: 0.1875rem 0.5625rem;
   border-radius: 999px;
   border: 1px solid var(--hairline);
   background: var(--card);
@@ -721,8 +721,8 @@
 }
 
 .detailTrackingDot {
-  width: 6px;
-  height: 6px;
+  width: 0.375rem;
+  height: 0.375rem;
   border-radius: 999px;
   background: var(--muted);
 }
@@ -735,8 +735,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: 0.375rem;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 
@@ -748,7 +748,7 @@
 .detailHeaderActions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 0.375rem;
   align-items: center;
   flex-shrink: 0;
 }
@@ -766,7 +766,7 @@
 }
 
 .metricCard {
-  padding: 14px 16px;
+  padding: 0.875rem 1rem;
   border-right: 1px solid var(--hairline);
 }
 
@@ -774,17 +774,17 @@
 
 .metricLabel {
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: 0.6563rem;
   font-family: var(--font-mono);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-weight: 500;
-  margin-bottom: 4px;
+  margin-bottom: 0.25rem;
 }
 
 .metricValue {
   font-family: var(--font-display);
-  font-size: 24px;
+  font-size: 1.5rem;
   line-height: 1.1;
   font-weight: 400;
   color: var(--ink);
@@ -796,42 +796,42 @@
 
 .metricUnit,
 .treeQtyUnit {
-  margin-left: 4px;
+  margin-left: 0.25rem;
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
   font-weight: 450;
 }
 
 .metricSub {
-  margin-top: 4px;
+  margin-top: 0.25rem;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 
 /* tabs */
 .tabBar {
   display: flex;
   gap: 0;
-  margin-top: 4px;
+  margin-top: 0.25rem;
   border-bottom: 1px solid var(--hairline);
 }
 
 .tabButton {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  height: 38px;
-  padding: 0 14px;
+  gap: 0.5rem;
+  height: 2.375rem;
+  padding: 0 0.875rem;
   border: 0;
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 500;
   cursor: pointer;
   border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
+  margin-bottom: -0.0625rem;
   letter-spacing: -0.005em;
 }
 
@@ -844,11 +844,11 @@
 
 .tabCount {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 0.6563rem;
   background: var(--surface-2);
   color: var(--muted);
-  padding: 1px 5px;
-  border-radius: 3px;
+  padding: 0.0625rem 0.3125rem;
+  border-radius: 0.1875rem;
   font-weight: 450;
 }
 
@@ -859,8 +859,8 @@
 
 .tabStack {
   display: grid;
-  gap: 14px;
-  margin-top: 22px;
+  gap: 0.875rem;
+  margin-top: 1.375rem;
 }
 
 .tabToolbar,
@@ -869,28 +869,28 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 0.625rem;
 }
 
 .scopeNotice {
-  padding: 12px 14px;
+  padding: 0.75rem 0.875rem;
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
   background: var(--surface-2);
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 /* locate (within-item) trigger */
 .locateBar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
   background: var(--card);
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
-  padding: 0 12px;
-  height: 36px;
+  padding: 0 0.75rem;
+  height: 2.25rem;
   cursor: pointer;
   transition: border-color var(--t-fast);
   width: 100%;
@@ -911,7 +911,7 @@
   outline: none;
   color: var(--ink);
   font: inherit;
-  font-size: 13px;
+  font-size: 0.8125rem;
   cursor: pointer;
 }
 
@@ -920,11 +920,11 @@
 .locateBarKbd {
   background: var(--surface-2);
   border: 1px solid var(--hairline);
-  border-radius: 3px;
-  padding: 1px 5px;
+  border-radius: 0.1875rem;
+  padding: 0.0625rem 0.3125rem;
   color: var(--muted);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 0.6563rem;
 }
 
 /* tree */
@@ -933,21 +933,21 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 0.75rem;
 }
 
 .treeSectionHead h3,
 .activityHead h3 {
   margin: 0;
   color: var(--ink);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
 }
 
 .treeSectionMeta,
 .activityHeadMeta {
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: 0.7188rem;
 }
 
 .treeList {
@@ -961,17 +961,17 @@
   position: relative;
 }
 
-.treeWrap[data-depth="1"] .treeRow { padding-left: 28px; }
+.treeWrap[data-depth="1"] .treeRow { padding-left: 1.75rem; }
 .treeWrap[data-depth="1"] .treeRow,
 .treeWrap[data-depth="1"] > .leafGroup .leafRow { background: var(--surface); }
 .treeWrap[data-depth="1"] .treeRow:hover { background: var(--surface-2); }
 
 .treeRow {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto;
+  grid-template-columns: 1.5rem minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
+  gap: 0.625rem;
+  padding: 0.625rem 0.875rem;
   border-bottom: 1px solid var(--hairline);
   cursor: pointer;
   transition: background var(--t-fast);
@@ -996,8 +996,8 @@
 }
 
 .treeCaret {
-  width: 24px;
-  height: 24px;
+  width: 1.5rem;
+  height: 1.5rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1016,7 +1016,7 @@
 .treeMain {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.625rem;
   min-width: 0;
   cursor: pointer;
   padding: 0;
@@ -1024,8 +1024,8 @@
 }
 
 .treeIcon {
-  width: 22px;
-  height: 22px;
+  width: 1.375rem;
+  height: 1.375rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1038,7 +1038,7 @@
 .treeName {
   display: block;
   color: var(--ink);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 500;
   letter-spacing: -0.005em;
   white-space: nowrap;
@@ -1047,10 +1047,10 @@
 }
 
 .treeCode {
-  margin-left: 8px;
+  margin-left: 0.5rem;
   color: var(--muted);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 0.6563rem;
   font-weight: 450;
   letter-spacing: 0.02em;
 }
@@ -1059,18 +1059,18 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  margin-top: 2px;
-  font-size: 11.5px;
+  gap: 0.375rem;
+  margin-top: 0.125rem;
+  font-size: 0.7188rem;
   color: var(--muted);
 }
 
 .treeMiniPill {
-  font-size: 10.5px;
+  font-size: 0.6563rem;
   background: var(--surface-2);
   border: 1px solid var(--hairline);
-  padding: 0 6px;
-  border-radius: 3px;
+  padding: 0 0.375rem;
+  border-radius: 0.1875rem;
   color: var(--muted);
 }
 
@@ -1095,14 +1095,14 @@
 .treeRight {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.625rem;
 }
 
 .treeBar {
-  width: 60px;
-  height: 4px;
+  width: 3.75rem;
+  height: 0.25rem;
   background: var(--surface-2);
-  border-radius: 2px;
+  border-radius: 0.125rem;
   overflow: hidden;
   position: relative;
 }
@@ -1113,12 +1113,12 @@
   top: 0;
   bottom: 0;
   background: var(--primary);
-  border-radius: 2px;
+  border-radius: 0.125rem;
 }
 
 .treeQty {
   font-family: var(--font-display);
-  font-size: 17px;
+  font-size: 1.0625rem;
   font-weight: 400;
   color: var(--ink);
   letter-spacing: -0.01em;
@@ -1126,8 +1126,8 @@
 }
 
 .treeJump {
-  width: 26px;
-  height: 26px;
+  width: 1.625rem;
+  height: 1.625rem;
   border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
@@ -1160,12 +1160,12 @@
 .leafRow {
   display: grid;
   grid-template-columns: auto 1fr auto;
-  gap: 12px;
+  gap: 0.75rem;
   align-items: center;
   width: 100%;
-  padding: 9px 14px 9px 56px;
+  padding: 0.5625rem 0.875rem 0.5625rem 3.5rem;
   border-bottom: 1px dashed var(--hairline);
-  font-size: 12px;
+  font-size: 0.75rem;
   cursor: pointer;
   text-align: left;
 }
@@ -1175,12 +1175,12 @@
 
 .leafTag {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--ink-2);
   background: var(--card);
   border: 1px solid var(--hairline);
-  padding: 1px 7px;
-  border-radius: 3px;
+  padding: 0.0625rem 0.4375rem;
+  border-radius: 0.1875rem;
   letter-spacing: 0.02em;
 }
 
@@ -1188,7 +1188,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
   min-width: 0;
   color: var(--muted);
 }
@@ -1196,23 +1196,23 @@
 .leafName {
   color: var(--ink-2);
   font-weight: 500;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .leafStatus {
-  font-size: 10.5px;
+  font-size: 0.6563rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-weight: 500;
-  padding: 1px 5px;
-  border-radius: 3px;
+  padding: 0.0625rem 0.3125rem;
+  border-radius: 0.1875rem;
   background: var(--success-weak);
   color: var(--success);
 }
 
 .leafRight {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--muted);
 }
 
@@ -1231,7 +1231,7 @@
   top: 0;
   right: 0;
   bottom: 0;
-  width: 540px;
+  width: 33.75rem;
   max-width: 92vw;
   z-index: 201;
   display: flex;
@@ -1250,32 +1250,32 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  padding: 18px 22px 14px 22px;
+  gap: 0.75rem;
+  padding: 1.125rem 1.375rem 0.875rem 1.375rem;
   border-bottom: 1px solid var(--hairline);
 }
 
-.slidePanelHead .eyebrow { margin-bottom: 4px; }
+.slidePanelHead .eyebrow { margin-bottom: 0.25rem; }
 
 .slidePanelTitle {
   margin: 0;
   font-family: var(--font-display);
   font-weight: 400;
-  font-size: 22px;
+  font-size: 1.375rem;
   line-height: 1.2;
   letter-spacing: -0.01em;
   color: var(--ink);
 }
 
 .slidePanelSub {
-  margin-top: 4px;
+  margin-top: 0.25rem;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .slidePanelClose {
-  width: 32px;
-  height: 32px;
+  width: 2rem;
+  height: 2rem;
   border: 1px solid transparent;
   background: transparent;
   border-radius: var(--radius);
@@ -1295,19 +1295,19 @@
 .slidePanelBody {
   flex: 1;
   overflow-y: auto;
-  padding: 18px 22px 24px 22px;
+  padding: 1.125rem 1.375rem 1.5rem 1.375rem;
   display: grid;
-  gap: 22px;
+  gap: 1.375rem;
 }
 
 .panelSection {
   display: grid;
-  gap: 10px;
+  gap: 0.625rem;
 }
 
 .panelSectionLabel {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -1321,11 +1321,11 @@
 
 .panelRow {
   display: grid;
-  grid-template-columns: 24px 1fr auto;
-  gap: 10px;
+  grid-template-columns: 1.5rem 1fr auto;
+  gap: 0.625rem;
   align-items: center;
   width: 100%;
-  padding: 12px 0;
+  padding: 0.75rem 0;
   border-bottom: 1px solid var(--hairline);
   cursor: pointer;
   text-align: left;
@@ -1334,8 +1334,8 @@
 .panelRow:last-child { border-bottom: 0; }
 
 .panelRowIcon {
-  width: 24px;
-  height: 24px;
+  width: 1.5rem;
+  height: 1.5rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1345,42 +1345,42 @@
 .panelRowText {
   min-width: 0;
   display: grid;
-  gap: 2px;
+  gap: 0.125rem;
 }
 
 .panelRowTitle {
   color: var(--ink);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 500;
 }
 
 .panelRowMeta {
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: 0.7188rem;
 }
 
 .panelRowValue {
   color: var(--ink);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .slidePanelActions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 /* ---------- info / activity tabs ---------- */
 .infoGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  gap: 1rem;
 }
 
 .infoCard,
 .activityCard {
-  padding: 16px 18px;
+  padding: 1rem 1.125rem;
   border: 1px solid var(--hairline);
   border-radius: var(--radius-md);
   background: var(--card);
@@ -1389,45 +1389,45 @@
 .infoKvs {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 24px;
-  margin-top: 10px;
+  gap: 0.625rem 1.5rem;
+  margin-top: 0.625rem;
 }
 
 /* 3-column compact variant — 6 items become 2 rows instead of 3 */
 .infoKvs3 {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px 16px;
-  margin-top: 10px;
+  gap: 0.5rem 1rem;
+  margin-top: 0.625rem;
 }
 
 .infoBodyText {
-  margin-top: 10px;
+  margin-top: 0.625rem;
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.6;
 }
 
 .activityList {
   display: grid;
-  margin-top: 10px;
+  margin-top: 0.625rem;
 }
 
 .activityRow {
   display: grid;
-  grid-template-columns: 28px 1fr auto;
-  gap: 10px;
+  grid-template-columns: 1.75rem 1fr auto;
+  gap: 0.625rem;
   align-items: center;
-  padding: 10px 0;
+  padding: 0.625rem 0;
   border-bottom: 1px dashed var(--hairline);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .activityRow:last-child { border-bottom: 0; }
 
 .activityIcon {
-  width: 28px;
-  height: 28px;
+  width: 1.75rem;
+  height: 1.75rem;
   border-radius: 999px;
   border: 1px solid var(--hairline);
   background: var(--surface-2);
@@ -1457,9 +1457,9 @@
 
 .activityText {
   display: grid;
-  gap: 2px;
+  gap: 0.125rem;
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .activityText strong {
@@ -1470,7 +1470,7 @@
 .activityMeta {
   color: var(--muted);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   white-space: nowrap;
 }
 
@@ -1489,7 +1489,7 @@
   top: 12vh;
   left: 50%;
   transform: translate(-50%, 0);
-  width: 640px;
+  width: 40rem;
   max-width: 92vw;
   background: var(--card);
   border: 1px solid var(--border);
@@ -1504,8 +1504,8 @@
 .locateSearch {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 18px;
+  gap: 0.625rem;
+  padding: 0.875rem 1.125rem;
   border-bottom: 1px solid var(--hairline);
 }
 
@@ -1517,7 +1517,7 @@
   background: transparent;
   outline: none;
   font-family: inherit;
-  font-size: 15px;
+  font-size: 0.9375rem;
   color: var(--ink);
 }
 
@@ -1526,25 +1526,25 @@
 .locateSearchEsc {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: 0.1875rem;
   font-family: var(--font-mono);
-  font-size: 10px;
-  padding: 1px 6px;
+  font-size: 0.625rem;
+  padding: 0.0625rem 0.375rem;
   color: var(--muted);
 }
 
 .locateResults {
-  max-height: 400px;
+  max-height: 25rem;
   overflow-y: auto;
 }
 
 .locateSectionH {
-  font-size: 10px;
+  font-size: 0.625rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
   font-weight: 500;
-  padding: 10px 18px 6px 18px;
+  padding: 0.625rem 1.125rem 0.375rem 1.125rem;
   background: var(--surface);
   border-bottom: 1px solid var(--hairline);
   position: sticky;
@@ -1555,10 +1555,10 @@
 
 .locateRow {
   display: grid;
-  grid-template-columns: 28px 1fr auto;
-  gap: 12px;
+  grid-template-columns: 1.75rem 1fr auto;
+  gap: 0.75rem;
   align-items: center;
-  padding: 10px 18px;
+  padding: 0.625rem 1.125rem;
   cursor: pointer;
   border: 0;
   background: transparent;
@@ -1575,8 +1575,8 @@
 }
 
 .locateRowIcon {
-  width: 28px;
-  height: 28px;
+  width: 1.75rem;
+  height: 1.75rem;
   border-radius: var(--radius);
   background: var(--surface-2);
   border: 1px solid var(--hairline);
@@ -1592,7 +1592,7 @@
 
 .locateRowName {
   display: block;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--ink);
   font-weight: 500;
   white-space: nowrap;
@@ -1602,9 +1602,9 @@
 
 .locateRowPath {
   display: block;
-  font-size: 11.5px;
+  font-size: 0.7188rem;
   color: var(--muted);
-  margin-top: 2px;
+  margin-top: 0.125rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1612,48 +1612,48 @@
 
 .locateRowQty {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
   white-space: nowrap;
 }
 
 .locateEmpty {
-  padding: 40px 0;
+  padding: 2.5rem 0;
   text-align: center;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .locateFoot {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 18px;
+  padding: 0.5rem 1.125rem;
   border-top: 1px solid var(--hairline);
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--muted);
   background: var(--surface);
 }
 
 .locateKeys {
   display: flex;
-  gap: 12px;
+  gap: 0.75rem;
 }
 
 .locateKeys span {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 0.25rem;
 }
 
 .locateKbd {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: 0.1875rem;
   font-family: var(--font-mono);
-  font-size: 10px;
-  padding: 0 5px;
-  line-height: 14px;
+  font-size: 0.625rem;
+  padding: 0 0.3125rem;
+  line-height: 0.875rem;
   color: var(--muted);
 }
 
@@ -1664,9 +1664,9 @@
 }
 
 /* ---------- responsive ---------- */
-@media (max-width: 1320px) {
+@media (max-width: 82.5rem) {
   .workspaceShell {
-    grid-template-columns: 410px minmax(0, 1fr);
+    grid-template-columns: 25.625rem minmax(0, 1fr);
   }
 
   .infoGrid {
@@ -1674,13 +1674,13 @@
   }
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 68.75rem) {
   .workspaceShell {
-    grid-template-columns: 380px minmax(0, 1fr);
+    grid-template-columns: 23.75rem minmax(0, 1fr);
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 56.25rem) {
   .workspaceShell {
     grid-template-columns: 1fr;
   }
@@ -1692,30 +1692,30 @@
   .workspaceShellMobileDetail .mobileBackRow { display: block; }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 45rem) {
   .detailStack {
-    padding: 18px 16px 72px 16px;
+    padding: 1.125rem 1rem 4.5rem 1rem;
   }
 
   .listHead {
-    padding: 16px 16px 0 16px;
+    padding: 1rem 1rem 0 1rem;
   }
 
   .listSummary {
     flex-wrap: wrap;
-    gap: 12px 16px;
+    gap: 0.75rem 1rem;
   }
 
   .listStatSep { display: none; }
 
   .itemRow {
-    grid-template-columns: 26px minmax(0, 1fr);
+    grid-template-columns: 1.625rem minmax(0, 1fr);
   }
 
   .itemRowSide {
     grid-column: 1 / -1;
     align-items: flex-start;
-    padding-left: 38px;
+    padding-left: 2.375rem;
   }
 
   .metricGrid,
@@ -1728,7 +1728,7 @@
   }
 
   .treeRow {
-    grid-template-columns: 24px minmax(0, 1fr);
+    grid-template-columns: 1.5rem minmax(0, 1fr);
   }
 
   .treeRight {

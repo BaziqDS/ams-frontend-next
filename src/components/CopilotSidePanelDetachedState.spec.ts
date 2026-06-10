@@ -92,7 +92,7 @@ describe("detached copilot mirrored state", () => {
     expect(source).toMatch(/onClick=\{openPanel\}/);
     expect(source).not.toMatch(/copilot-dock-unread/);
     expect(styles).toMatch(/\.copilot-dock-reply-pop \{[\s\S]*right: 0/);
-    expect(styles).toMatch(/\.copilot-dock-reply-pop \{[\s\S]*border-radius: 18px/);
+    expect(styles).toMatch(/\.copilot-dock-reply-pop \{[\s\S]*border-radius: 1\.125rem/);
     expect(styles).toMatch(/\.copilot-dock-reply-pop \{[\s\S]*#fef3c7/);
     expect(styles).toMatch(/\.copilot-dock-reply-pop \{[\s\S]*#78350f/);
     expect(styles).toMatch(/\.copilot-dock-reply-pop::after/);
@@ -106,13 +106,13 @@ describe("detached copilot mirrored state", () => {
 
   it("matches the chat panel composer corner radius in detached mode", () => {
     expect(styles).toMatch(
-      /\.copilot-search-overlay \{[^}]*border-radius: 18px/,
+      /\.copilot-search-overlay \{[^}]*border-radius: 1\.125rem/,
     );
     expect(styles).toMatch(
-      /\.copilot-search-active-task \{[^}]*border-radius: 18px 18px 0 0/,
+      /\.copilot-search-active-task \{[^}]*border-radius: 1\.125rem 1\.125rem 0 0/,
     );
     expect(styles).toMatch(
-      /\.copilot-search-approval-bubble \{[^}]*border-radius: 18px 18px 0 0/,
+      /\.copilot-search-approval-bubble \{[^}]*border-radius: 1\.125rem 1\.125rem 0 0/,
     );
   });
 
@@ -154,7 +154,8 @@ describe("detached copilot mirrored state", () => {
     expect(styles).toMatch(/\.copilot-launcher-message \{/);
     expect(styles).toMatch(/\.copilot-launcher-message \{[\s\S]*text-overflow: ellipsis/);
     expect(styles).toMatch(/\.copilot-launcher-cta \{/);
-    expect(styles).toMatch(/\.copilot-launcher-cta \{[\s\S]*#f59e0b/);
+    expect(styles).toMatch(/--copilot-launcher-cta-top: #3a3025/);
+    expect(styles).toMatch(/--copilot-launcher-cta-bottom: #221d18/);
     // Old bottom-attached shoulder pseudo-elements removed.
     expect(styles).not.toMatch(/\.copilot-launcher::before/);
     expect(styles).not.toMatch(/\.copilot-launcher::after/);
@@ -180,21 +181,28 @@ describe("detached copilot mirrored state", () => {
 
   it("records voice inline into the detached composer without an overlay", () => {
     const startVoiceStart = source.indexOf("const startVoiceFromSearch");
-    const startVoiceEnd = source.indexOf("// Inline speech-to-text") >= 0
-      ? source.indexOf("const startVoiceFromSearch", source.indexOf("// Inline speech-to-text"))
-      : startVoiceStart;
+    const startVoiceEnd = source.indexOf("useEffect(() => () => stopVoiceRecognition()", startVoiceStart);
+    const transcribeStart = source.indexOf("const transcribeRecording");
     const startVoiceFn =
-      startVoiceStart >= 0
-        ? source.slice(startVoiceStart, startVoiceStart + 2000)
+      startVoiceStart >= 0 && startVoiceEnd > startVoiceStart
+        ? source.slice(startVoiceStart, startVoiceEnd)
+        : "";
+    const transcribeFn =
+      transcribeStart >= 0
+        ? source.slice(transcribeStart, transcribeStart + 2000)
         : "";
 
     expect(source).not.toMatch(/COPILOT_START_VOICE_EVENT/);
-    expect(startVoiceFn).toMatch(/SpeechRecognition/);
-    expect(startVoiceFn).toMatch(/setQuickMessage/);
+    expect(startVoiceFn).toMatch(/navigator\.mediaDevices\.getUserMedia/);
+    expect(startVoiceFn).toMatch(/new MediaRecorder/);
+    expect(startVoiceFn).toMatch(/transcribeRecording/);
+    expect(transcribeFn).toMatch(/\/api\/copilot\/voice\/transcribe/);
+    expect(transcribeFn).toMatch(/setQuickMessage/);
     expect(startVoiceFn).not.toMatch(/setIsOpen\(true\)/);
     expect(startVoiceFn).not.toMatch(/START_VOICE_CAPTURE/);
     expect(startVoiceFn).not.toMatch(/postMessage/);
-    expect(startVoiceEnd).toBeGreaterThanOrEqual(0);
+    expect(startVoiceEnd).toBeGreaterThan(startVoiceStart);
+    expect(transcribeStart).toBeGreaterThanOrEqual(0);
   });
 
   it("does not mount the separate voice overlay in the dashboard shell", () => {
@@ -285,13 +293,13 @@ describe("detached approval bubble layout", () => {
       .map((match) => match[0])
       .join("\n");
     expect(styles).toMatch(
-      /\.copilot-search-overlay\.has-approval \{[\s\S]*width: min\(464px, calc\(100vw - 32px\)\)/,
+      /\.copilot-search-overlay\.has-approval \{[\s\S]*width: min\(29rem, calc\(100vw - 2rem\)\)/,
     );
     expect(approvalStyles).toMatch(/position: relative/);
-    expect(approvalStyles).toMatch(/width: calc\(100% \+ 18px\)/);
+    expect(approvalStyles).toMatch(/width: calc\(100% \+ 1\.125rem\)/);
     expect(approvalStyles).toMatch(/max-width: none/);
-    expect(approvalStyles).toMatch(/margin: -7px -9px 5px/);
-    expect(approvalStyles).toMatch(/min-height: 54px/);
+    expect(approvalStyles).toMatch(/margin: -0\.4375rem -0\.5625rem 0\.3125rem/);
+    expect(approvalStyles).toMatch(/min-height: 3\.375rem/);
     expect(styles).toMatch(/\.copilot-search-approval-bubble-main/);
     expect(styles).toMatch(
       /\.copilot-search-approval-bubble-text \{[\s\S]*display: none/,

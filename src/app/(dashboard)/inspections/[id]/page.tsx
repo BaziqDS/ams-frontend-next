@@ -333,10 +333,6 @@ function ItemsSummary({ inspection }: { inspection: InspectionRecord }) {
 function RegisterTrailCard({ inspection }: { inspection: InspectionRecord }) {
   const coverage = getInspectionRegisterCoverage(inspection);
   const rows = getInspectionRegisterDetailRows(inspection);
-  const acceptedCount = rows.length;
-  const stockCoveredCount = rows.filter(row => Boolean(row.stockRegisterRef)).length;
-  const centralCoveredCount = rows.filter(row => Boolean(row.centralRegisterRef)).length;
-  const fullyLinkedCount = rows.filter(row => coverage.requiresStockStage ? Boolean(row.stockRegisterRef && row.centralRegisterRef) : Boolean(row.centralRegisterRef)).length;
   const columnCount = coverage.requiresStockStage ? 5 : 3;
 
   return (
@@ -348,31 +344,6 @@ function RegisterTrailCard({ inspection }: { inspection: InspectionRecord }) {
         </div>
         <div className="detail-card-head-meta">{rows.length} accepted line{rows.length === 1 ? "" : "s"}</div>
       </header>
-      <div className="detail-card-body">
-        <div className="inspection-lines-foot">
-          <div className="inspection-lines-foot-meta">
-            {coverage.requiresStockStage
-              ? "Departmental stock details show the register, page number, and recording date captured before the certificate moved to central register review."
-              : "Root-level inspections skip departmental stock details and only require central register references."}
-          </div>
-          <div className="inspection-lines-foot-totals">
-            {coverage.requiresStockStage ? (
-              <div className="detail-total-block">
-                <div className="detail-total-label">Dept. coverage</div>
-                <div className="detail-total-value">{stockCoveredCount} / {acceptedCount}</div>
-              </div>
-            ) : null}
-            <div className="detail-total-block">
-              <div className="detail-total-label">Central coverage</div>
-              <div className="detail-total-value">{centralCoveredCount} / {acceptedCount}</div>
-            </div>
-            <div className="detail-total-block">
-              <div className="detail-total-label">Fully linked</div>
-              <div className="detail-total-value">{fullyLinkedCount} / {acceptedCount}</div>
-            </div>
-          </div>
-        </div>
-      </div>
       <div className="h-scroll">
         <table className="inspection-line-table inspection-line-table-review">
           <thead>

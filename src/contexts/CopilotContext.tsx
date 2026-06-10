@@ -1346,13 +1346,15 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         const callId = typeof event.data.callId === "string" ? event.data.callId : null;
         const audio = event.data.audio;
         const mimeType = typeof event.data.mimeType === "string" ? event.data.mimeType : "audio/webm";
-        const language = typeof event.data.language === "string" ? event.data.language : "ur";
+        // No default language: let Whisper auto-detect so mixed Urdu/English
+        // commands transcribe cleanly. Callers can still pin one explicitly.
+        const language = typeof event.data.language === "string" ? event.data.language : null;
         if (!callId || !(audio instanceof ArrayBuffer)) return;
         try {
           const blob = new Blob([audio], { type: mimeType });
           const form = new FormData();
           form.set("audio", blob, "voice-command.webm");
-          form.set("language", language);
+          if (language) form.set("language", language);
           const response = await fetch("/api/copilot/voice/transcribe", {
             method: "POST",
             body: form,

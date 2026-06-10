@@ -59,12 +59,14 @@ export async function POST(request: NextRequest) {
   );
   groqForm.set("response_format", "json");
   groqForm.set("temperature", "0");
-  groqForm.set(
-    "language",
-    readString(body.get("language")) ??
-      process.env.GROQ_STT_LANGUAGE ??
-      "ur",
-  );
+  // Only pin a language when explicitly requested. AMS voice commands mix
+  // Urdu and English ("stock register kholo"), and Whisper handles that
+  // code-switching far better with per-utterance auto-detection than with a
+  // forced language, which biases the decoder against the other language.
+  const language = readString(body.get("language")) ?? process.env.GROQ_STT_LANGUAGE;
+  if (language && language !== "auto") {
+    groqForm.set("language", language);
+  }
 
   const prompt =
     readString(body.get("prompt")) ??

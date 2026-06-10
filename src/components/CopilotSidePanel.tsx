@@ -588,7 +588,6 @@ export function CopilotSidePanel() {
       event.preventDefault();
       const text = quickMessage.trim();
       if (!text || quickMessagePending) return;
-      voiceInputRef.current = false;
 
       const sendText = (finalText: string) => {
         setQuickMessage(finalText);
@@ -643,129 +642,112 @@ export function CopilotSidePanel() {
     setQuickMessage("");
     lastSubmittedTextRef.current = null;
     userEditedSinceSubmitRef.current = false;
-    voiceInputRef.current = false;
     iframeRef.current?.contentWindow?.postMessage(
       { source: "ams-copilot", type: "STOP_RUN" },
       CHAT_ORIGIN,
     );
   }, [setPendingWithSafety]);
 
-  // Voice input via the browser's built-in SpeechRecognition. Live interim
-  // results stream straight into the composer as the user speaks. On submit,
-  // any Urdu/Arabic-script text is translated to English (Google Translate)
-  // before being handed to the agent.
+  // ── Voice input ────────────────────────────────────────────────────────
+  // MediaRecorder → server-side Whisper transcription (Groq whisper-large-v3
+  // with per-utterance language auto-detection via /api/copilot/voice/
+  // transcribe). Whisper handles the mixed Urdu/English of AMS commands far
+  // better than the browser's single-language SpeechRecognition did. There is
+  // no live interim preview — the transcript lands in the composer when the
+  // recording stops, ready to edit and send. Urdu-script transcripts are
+  // still translated to English at submit time (see submitQuickMessage).
   const [isRecording, setIsRecording] = useState(false);
-  const recognitionRef = useRef<{
-    stop: () => void;
-    abort: () => void;
-    onresult: ((event: unknown) => void) | null;
-    onerror: ((event: unknown) => void) | null;
-    onend: (() => void) | null;
-  } | null>(null);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
   const recordingBaseTextRef = useRef("");
-  const voiceInputRef = useRef(false);
 
   const stopVoiceRecognition = useCallback(() => {
-    const recognition = recognitionRef.current;
-    recognitionRef.current = null;
     setIsRecording(false);
-    if (recognition) {
-      // Detach handlers BEFORE stop() so any late onresult/onend events from
-      // the browser don't clobber the user's manual edits after they pressed
-      // stop. Once handlers are null, the transcript shown in the composer
-      // is the user's to edit freely.
-      recognition.onresult = null;
-      recognition.onerror = null;
-      recognition.onend = null;
+    const recorder = mediaRecorderRef.current;
+    mediaRecorderRef.current = null;
+    if (recorder && recorder.state !== "inactive") {
       try {
-        recognition.stop();
+        recorder.stop(); // onstop releases the stream and kicks off transcription
       } catch {
-        try {
-          recognition.abort();
-        } catch {
-          /* ignore */
-        }
+        /* ignore */
       }
+    } else {
+      mediaStreamRef.current?.getTracks().forEach(track => track.stop());
+      mediaStreamRef.current = null;
     }
-    // Focus the composer and put the cursor at the end so the user can
-    // immediately tweak any misheard words and hit Enter to send.
-    const textarea = searchTextareaRef.current;
-    if (textarea) {
-      requestAnimationFrame(() => {
-        textarea.focus();
-        const end = textarea.value.length;
-        try {
-          textarea.setSelectionRange(end, end);
-        } catch {
-          /* ignore */
-        }
-      });
+  }, []);
+
+  const transcribeRecording = useCallback(async (blob: Blob) => {
+    // Ignore accidental taps that produced no real audio.
+    if (blob.size < 1024) return;
+    setIsTranscribing(true);
+    try {
+      const form = new FormData();
+      form.set("audio", new File([blob], "voice-command.webm", { type: blob.type || "audio/webm" }));
+      const response = await fetch("/api/copilot/voice/transcribe", { method: "POST", body: form });
+      const payload = await response.json().catch(() => null);
+      const text =
+        response.ok && payload?.ok && typeof payload.text === "string"
+          ? payload.text.trim()
+          : "";
+      if (!text) {
+        if (!response.ok) console.warn("[CopilotSidePanel] transcription failed:", payload?.error);
+        return;
+      }
+      userEditedSinceSubmitRef.current = true;
+      setQuickMessage(`${recordingBaseTextRef.current}${text}`);
+      // Focus the composer with the cursor at the end so the user can fix
+      // any misheard words and hit Enter to send.
+      const textarea = searchTextareaRef.current;
+      if (textarea) {
+        requestAnimationFrame(() => {
+          textarea.focus();
+          const end = textarea.value.length;
+          try {
+            textarea.setSelectionRange(end, end);
+          } catch {
+            /* ignore */
+          }
+        });
+      }
+    } catch (err) {
+      console.warn("[CopilotSidePanel] transcription request threw:", err);
+    } finally {
+      setIsTranscribing(false);
     }
   }, []);
 
   const startVoiceFromSearch = useCallback(() => {
-    if (typeof window === "undefined") return;
-    if (recognitionRef.current) {
+    if (typeof window === "undefined" || isTranscribing) return;
+    if (mediaRecorderRef.current) {
       stopVoiceRecognition();
       return;
     }
-    type SpeechRecognitionLike = {
-      continuous: boolean;
-      interimResults: boolean;
-      lang: string;
-      onresult: ((event: unknown) => void) | null;
-      onerror: ((event: unknown) => void) | null;
-      onend: (() => void) | null;
-      start: () => void;
-      stop: () => void;
-      abort: () => void;
-    };
-    const win = window as typeof window & {
-      SpeechRecognition?: new () => SpeechRecognitionLike;
-      webkitSpeechRecognition?: new () => SpeechRecognitionLike;
-    };
-    const Recognition = win.SpeechRecognition ?? win.webkitSpeechRecognition;
-    if (!Recognition) {
-      console.warn("[CopilotSidePanel] SpeechRecognition not available");
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      console.warn("[CopilotSidePanel] audio recording not available in this browser");
       return;
     }
-    const recognition = new Recognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "ur-PK";
-    recordingBaseTextRef.current = quickMessage ? `${quickMessage} ` : "";
-    userEditedSinceSubmitRef.current = true;
-    recognition.onresult = (event: unknown) => {
-      const results = (event as {
-        results?: ArrayLike<ArrayLike<{ transcript?: string }>>;
-      }).results;
-      if (!results) return;
-      const parts: string[] = [];
-      for (let i = 0; i < results.length; i += 1) {
-        const item = results[i]?.[0]?.transcript;
-        if (item) parts.push(item);
-      }
-      const joined = parts.join(" ").replace(/\s+/g, " ").trim();
-      voiceInputRef.current = true;
-      setQuickMessage(`${recordingBaseTextRef.current}${joined}`);
-    };
-    recognition.onerror = () => {
-      recognitionRef.current = null;
-      setIsRecording(false);
-    };
-    recognition.onend = () => {
-      recognitionRef.current = null;
-      setIsRecording(false);
-    };
-    try {
-      recognition.start();
-      recognitionRef.current = recognition;
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      const recorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      mediaStreamRef.current = stream;
+      recordingBaseTextRef.current = quickMessage ? `${quickMessage} ` : "";
+      recorder.ondataavailable = event => {
+        if (event.data.size > 0) chunks.push(event.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach(track => track.stop());
+        mediaStreamRef.current = null;
+        void transcribeRecording(new Blob(chunks, { type: recorder.mimeType || "audio/webm" }));
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
       setIsRecording(true);
-    } catch {
-      recognitionRef.current = null;
-      setIsRecording(false);
-    }
-  }, [quickMessage, stopVoiceRecognition]);
+    }).catch(err => {
+      console.warn("[CopilotSidePanel] microphone access denied:", err);
+    });
+  }, [isTranscribing, quickMessage, stopVoiceRecognition, transcribeRecording]);
 
   useEffect(() => () => stopVoiceRecognition(), [stopVoiceRecognition]);
 
@@ -1196,9 +1178,6 @@ export function CopilotSidePanel() {
               if (lastSubmittedTextRef.current !== null) {
                 userEditedSinceSubmitRef.current = true;
               }
-              // User manually edited — no longer a pure voice draft, skip
-              // auto-translation on submit.
-              voiceInputRef.current = false;
               setQuickMessage(event.target.value);
             }}
             onKeyDown={(event) => {
@@ -1235,10 +1214,11 @@ export function CopilotSidePanel() {
                 variant="ghost"
                 size="icon-sm"
                 className="copilot-search-icon-btn"
-                aria-label={isRecording ? "Stop voice" : "Start voice"}
-                title={isRecording ? "Stop voice" : "Start voice"}
+                aria-label={isRecording ? "Stop recording and transcribe" : isTranscribing ? "Transcribing voice…" : "Start voice"}
+                title={isRecording ? "Stop recording and transcribe" : isTranscribing ? "Transcribing…" : "Start voice"}
                 onClick={startVoiceFromSearch}
-                style={isRecording ? { color: "var(--danger)" } : undefined}
+                disabled={isTranscribing}
+                style={isRecording ? { color: "var(--danger)" } : isTranscribing ? { color: "var(--primary)", opacity: 0.7 } : undefined}
               >
                 <Mic size={15} strokeWidth={1.9} />
               </Button>

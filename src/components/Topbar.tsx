@@ -36,6 +36,14 @@ function mediaUrl(value: string | null | undefined) {
   return /^(https?:|blob:|data:)/.test(value) ? value : `${API_BASE}${value}`;
 }
 
+/** Append a `?v=<timestamp>` so the browser refetches the image instead of
+ *  serving a cached copy. Used after avatar uploads where Django may reuse
+ *  the same path (and therefore the same URL) for a replaced image. */
+function appendCacheBuster(url: string): string {
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}v=${Date.now()}`;
+}
+
 function readProfilePreferences(storageKey: string): ProfileSettingsPreferences {
   if (typeof window === "undefined") return DEFAULT_PROFILE_PREFERENCES;
   try {
@@ -83,7 +91,19 @@ function UserAvatar({ src, initials, className }: { src?: string | null; initial
   const href = mediaUrl(src);
   return (
     <div className={className}>
-      {href ? <img src={href} alt="" /> : initials}
+      {href ? (
+        <img
+          src={href}
+          alt=""
+          /* Some uploads land on the same backend filename (Django adds a
+             hash for collisions, but identical re-uploads can collide).
+             onError clears the broken-image placeholder so we fall back
+             to initials instead of showing a torn-image icon. */
+          onError={event => { (event.currentTarget as HTMLImageElement).style.display = "none"; }}
+        />
+      ) : (
+        initials
+      )}
     </div>
   );
 }
@@ -269,7 +289,14 @@ function ProfileSettingsModal({
         method: "PATCH",
         body: formData,
       });
-      onSave({ user: saved, preferences: { notificationsEnabled } });
+      // Bust the browser's HTTP image cache when a new avatar was uploaded.
+      // Without this, re-uploading or replacing the avatar can show the OLD
+      // image because Django serves /media/ with a long cache lifetime and
+      // the URL doesn't always change (e.g. same filename, same upload path).
+      const userWithFreshAvatar: AuthUser = avatarFile && saved.avatar_url
+        ? { ...saved, avatar_url: appendCacheBuster(saved.avatar_url) }
+        : saved;
+      onSave({ user: userWithFreshAvatar, preferences: { notificationsEnabled } });
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Failed to save profile settings.");
     } finally {

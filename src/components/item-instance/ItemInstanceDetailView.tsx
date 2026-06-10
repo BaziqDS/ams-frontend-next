@@ -216,6 +216,7 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
   const [serialDraft, setSerialDraft] = useState("");
   const [serialSaveError, setSerialSaveError] = useState<string | null>(null);
   const [isSavingSerial, setIsSavingSerial] = useState(false);
+  const [qrImageFailed, setQrImageFailed] = useState(false);
   const serialInputRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
@@ -275,7 +276,8 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
     setSerialDraft(instance?.serial_number ?? "");
     setIsEditingSerial(false);
     setSerialSaveError(null);
-  }, [instance?.id, instance?.serial_number]);
+    setQrImageFailed(false);
+  }, [instance?.id, instance?.qr_code_image, instance?.serial_number]);
 
   useEffect(() => {
     if (!isEditingSerial) return;
@@ -324,6 +326,7 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
   }, [instance, serialDraft]);
 
   const qrHref = getMediaHref(instance?.qr_code_image);
+  const hasQrImage = Boolean(qrHref && !qrImageFailed);
   const itemName = item?.name ?? instance?.item_name ?? "Item";
   const primaryIdentifier = instance
     ? getPrimaryInstanceIdentifier({
@@ -409,7 +412,7 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
                     Edit Instance
                   </Button>
                 ) : null}
-                {qrHref ? (
+                {hasQrImage && qrHref ? (
                   <Button asChild variant="outline" size="sm"><a  href={qrHref} target="_blank" rel="noopener noreferrer">
                     <Icon d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z" size={14} />
                     Print Label
@@ -542,7 +545,7 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
                 {canViewMaintenance ? (
                   <SectionCard
                     title="Related Maintenance"
-                    icon={<Icon d="M14.7 6.3a4 4 0 0 1 5.4 5.4l-9.4 9.4-3.4 1.2 1.2-3.4 9.4-9.4-3.2-3.2" size={15} />}
+                    icon={<Icon d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" size={15} />}
                     meta={(
                       <Link className={styles.inlineLink} href={`/maintenance?instance=${instance.id}`}>
                         {openMaintenanceCount} open · view module
@@ -571,9 +574,7 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
                         ))}
                       </div>
                     ) : (
-                      <div className={styles.stateStack}>
-                        <DetailField label="History" value="No maintenance work orders recorded for this instance." />
-                      </div>
+                      <div className={styles.emptyPanel}>No maintenance work orders are linked to this instance.</div>
                     )}
                   </SectionCard>
                 ) : null}
@@ -600,16 +601,19 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
                 <SectionCard title="QR Label Preview" icon={<Icon d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z" size={15} />}>
                   <div className={styles.qrPanel}>
                     <div className={styles.qrCard}>
-                      {qrHref ? (
-                        <img className={styles.qrImage} src={qrHref} alt="QR label preview" />
+                      {hasQrImage && qrHref ? (
+                        <img className={styles.qrImage} src={qrHref} alt="QR label preview" onError={() => setQrImageFailed(true)} />
                       ) : (
-                        <div className={styles.qrPlaceholder}>No QR image</div>
+                        <div className={styles.qrPlaceholder}>
+                          <Icon d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z" size={30} />
+                          <span>{cleanValue(instance.qr_code) ?? "No QR image"}</span>
+                        </div>
                       )}
                     </div>
                     <div className={styles.qrPanelMeta}>
                       <DetailField label="Print size" value="40mm x 40mm" />
-                      <DetailField label="Format" value={qrHref ? "Image available" : "Not generated"} />
-                      {qrHref ? (
+                      <DetailField label="Format" value={hasQrImage ? "Image available" : cleanValue(instance.qr_code) ? "Code only" : "Not generated"} />
+                      {hasQrImage && qrHref ? (
                         <Button asChild variant="outline" size="sm"><a  href={qrHref} target="_blank" rel="noopener noreferrer" download>
                           Download
                         </a></Button>
@@ -636,21 +640,27 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
                           <strong>Maintenance Plans</strong>
                           <em>Active preventive maintenance plans</em>
                         </span>
-                        <b>{activePlans}</b>
+                        <b className={activePlans === 0 ? styles.relatedWorkCountZero : undefined}>
+                          {activePlans === 0 ? "—" : activePlans}
+                        </b>
                       </Link>
                       <Link className={styles.relatedWorkRow} href={`/maintenance?instance=${instance.id}`}>
                         <span>
                           <strong>Work Orders</strong>
                           <em>Open / in progress / closed</em>
                         </span>
-                        <b>{maintenanceOrders.length}</b>
+                        <b className={maintenanceOrders.length === 0 ? styles.relatedWorkCountZero : undefined}>
+                          {maintenanceOrders.length === 0 ? "—" : maintenanceOrders.length}
+                        </b>
                       </Link>
                       <Link className={styles.relatedWorkRow} href={`/maintenance?instance=${instance.id}`}>
                         <span>
                           <strong>Meter Readings</strong>
                           <em>{latestMeterReading ? `${latestMeterReading.reading_name}: ${latestMeterReading.value} ${latestMeterReading.unit ?? ""}` : "No readings recorded"}</em>
                         </span>
-                        <b>{meterReadings.length}</b>
+                        <b className={meterReadings.length === 0 ? styles.relatedWorkCountZero : undefined}>
+                          {meterReadings.length === 0 ? "—" : meterReadings.length}
+                        </b>
                       </Link>
                     </div>
                   </SectionCard>

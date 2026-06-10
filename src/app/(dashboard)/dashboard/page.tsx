@@ -334,18 +334,18 @@ function MetricCardView({ metric }: { metric: MetricCard }) {
 
   return (
     <section className={`${styles.metricCard} ${styles[`tone_${metric.tone}`]}`}>
-      <div className={styles.metricIcon}>
-        <Icon aria-hidden />
-      </div>
       <div className={styles.metricBody}>
         <div className={styles.metricLabel}>{metric.label}</div>
         <div className={styles.metricValue}>{metric.value}</div>
         <div className={styles.metricMeta}>
           {metric.trend ? <span className={styles.metricTrend}>{metric.trend}</span> : null}
           <span>{metric.hint}</span>
+          <span className={styles.scopeChip}>{metric.scope}</span>
         </div>
       </div>
-      <span className={styles.scopeChip}>{metric.scope}</span>
+      <div className={styles.metricIcon} aria-hidden="true">
+        <Icon />
+      </div>
     </section>
   );
 }
@@ -631,7 +631,7 @@ export default function DashboardPage() {
         <div className="page-head">
           <div className="page-title-group">
             <div className="eyebrow">Overview</div>
-            <h1 className="display">Dashboard</h1>
+            <h1>Dashboard</h1>
             <div className="page-sub">Role-aware operational summary for accessible assets and workflows.</div>
           </div>
           <div className="page-head-actions">
@@ -792,13 +792,15 @@ export default function DashboardPage() {
                     {activityRows.length > 0 ? activityRows.map(row => (
                       <tr key={`${row.kind}-${row.subject}-${row.time}`}>
                         <td className="col-user">
-                          <span className={`${styles.rowDot} ${styles[`tone_${row.tone}`]}`} />
-                          {row.kind}
+                          <span className={styles.activityKind}>
+                            <span className={`${styles.rowDot} ${styles[`tone_${row.tone}`]}`} />
+                            {row.kind}
+                          </span>
                         </td>
                         <td><Link href={row.href} className={styles.tableLink}>{row.subject}</Link></td>
                         <td>{row.location}</td>
                         <td>{row.actor}</td>
-                        <td className="mono">{row.time}</td>
+                        <td className={`mono ${styles.timeCell}`}>{row.time}</td>
                       </tr>
                     )) : (
                       <tr>

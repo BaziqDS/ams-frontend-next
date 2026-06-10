@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 
 import {
   buildStorePanelState,
@@ -65,6 +66,20 @@ describe("buildItemCategoryCopilotOption", () => {
       tracking_type: "INDIVIDUAL",
       notes: "Desktop and laptop CPUs",
     });
+  });
+});
+
+describe("ItemInstancesView serial import flow", () => {
+  const source = readFileSync("src/components/ItemModuleViews.tsx", "utf8");
+
+  it("exposes preview and apply endpoints for bulk serial imports", () => {
+    expect(source).toContain("/api/inventory/item-instances/serial-import-preview/");
+    expect(source).toContain("/api/inventory/item-instances/serial-import-apply/");
+    expect(source).toContain("Import serials");
+    expect(source).toContain("Inspection certificate / contract number");
+    expect(source).toContain("inspection_contract_no");
+    expect(source).toContain("serial-import-textarea");
+    expect(source).toContain("serial-import-file-card");
   });
 });
 

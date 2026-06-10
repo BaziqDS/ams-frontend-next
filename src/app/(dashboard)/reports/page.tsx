@@ -95,6 +95,7 @@ interface MovementLedgerFilters {
   location: string;
   batch: string;
   instanceSerial: string;
+  stockRegister: string;
 }
 
 interface CorrectionFilters {
@@ -153,6 +154,7 @@ interface StockRecord {
   location_tags?: number[];
   location_tags_display?: LocationTagSummary[];
   subcategory_name?: string | null;
+  low_stock_threshold?: number | string | null;
   source_inspection_contracts?: string[];
   quantity: number;
   allocated_quantity?: number | null;
@@ -245,6 +247,10 @@ interface MovementHistory {
   to_location?: number | null;
   to_location_name?: string | null;
   entry_number?: string | null;
+  stock_register?: number | null;
+  stock_register_name?: string | null;
+  ack_stock_register?: number | null;
+  ack_stock_register_name?: string | null;
   allocation?: number | null;
   allocation_target_type?: "PERSON" | "LOCATION" | null;
   allocation_target_name?: string | null;
@@ -422,10 +428,12 @@ function stockAllocated(row: StockRecord) {
   return row.allocated_quantity ?? Math.max(0, n(row.quantity) - n(row.available_quantity) - n(row.in_transit_quantity));
 }
 
-function stockStatus(row: { quantity: number | string | null | undefined; available_quantity: number | string | null | undefined }) {
-  if (n(row.quantity) <= 0 || n(row.available_quantity) <= 0) return "Out Of Stock";
-  if (n(row.available_quantity) <= Math.max(1, Math.floor(n(row.quantity) * 0.2))) return "Low Stock";
-  return "Healthy";
+function stockStatus(row: { quantity: number | string | null | undefined; available_quantity: number | string | null | undefined; low_stock_threshold?: number | string | null }) {
+  const total = n(row.quantity);
+  const threshold = n(row.low_stock_threshold);
+  if (total <= 0) return "Out Of Stock";
+  if (threshold > 0 && total < threshold) return "Low Stock";
+  return "In Stock";
 }
 
 function locationTagLabels(row: { location_tags_display?: LocationTagSummary[] }) {
@@ -655,6 +663,7 @@ interface InventoryPositionRow {
   item_code?: string | null;
   item_name?: string | null;
   subcategory_name?: string | null;
+  low_stock_threshold?: number | string | null;
   source_inspection_contracts?: string[];
   quantity: number;
   allocated_quantity: number;
@@ -663,10 +672,10 @@ interface InventoryPositionRow {
   last_updated?: string | null;
 }
 
-function collapseInventoryRows(rows: StockRecord[], inspectionWise = false): InventoryPositionRow[] {
+function collapseInventoryRows(rows: StockRecord[], inspectionWise = false, includeEmpty = false): InventoryPositionRow[] {
   if (inspectionWise) {
     return rows
-      .filter(row => n(row.quantity) > 0)
+      .filter(row => includeEmpty || n(row.quantity) > 0)
       .map(row => ({
         location: row.location,
         location_name: row.location_name,
@@ -676,6 +685,7 @@ function collapseInventoryRows(rows: StockRecord[], inspectionWise = false): Inv
         item_code: row.item_code,
         item_name: row.item_name,
         subcategory_name: row.subcategory_name,
+        low_stock_threshold: row.low_stock_threshold,
         source_inspection_contracts: row.source_inspection_contracts,
         quantity: n(row.quantity),
         allocated_quantity: stockAllocated(row),
@@ -687,7 +697,7 @@ function collapseInventoryRows(rows: StockRecord[], inspectionWise = false): Inv
 
   const grouped = new Map<string, InventoryPositionRow>();
   rows.forEach(row => {
-    if (n(row.quantity) <= 0) return;
+    if (!includeEmpty && n(row.quantity) <= 0) return;
     const key = `${row.location}:${row.item}`;
     const existing = grouped.get(key);
     if (!existing) {
@@ -700,6 +710,7 @@ function collapseInventoryRows(rows: StockRecord[], inspectionWise = false): Inv
         item_code: row.item_code,
         item_name: row.item_name,
         subcategory_name: row.subcategory_name,
+        low_stock_threshold: row.low_stock_threshold,
         source_inspection_contracts: [],
         quantity: n(row.quantity),
         allocated_quantity: stockAllocated(row),
@@ -767,20 +778,38 @@ async function inventoryPositionReport(filters?: InventoryReportFilters): Promis
 }
 
 async function lowStockReport(filters?: InventoryReportFilters): Promise<ReportView> {
-  const base = await inventoryPositionReport(filters);
-  const rowData = collapseInventoryRows(await fetchInventoryRows(filters), Boolean(filters?.inspectionWise));
-  const lowRows = rowData.filter(row => stockStatus(row) !== "Healthy");
+  const inspectionWise = Boolean(filters?.inspectionWise);
+  // includeEmpty keeps zero-quantity rows so items that are out of stock at a
+  // scoped location still surface (instead of being collapsed away).
+  const rowData = collapseInventoryRows(await fetchInventoryRows(filters), inspectionWise, true);
+  const lowRows = rowData.filter(row => stockStatus(row) !== "In Stock");
   const available = lowRows.reduce((sum, row) => sum + n(row.available_quantity), 0);
   const allocated = lowRows.reduce((sum, row) => sum + n(row.allocated_quantity), 0);
   return {
-    ...base,
     metrics: [
       { label: "Low-Stock Items", value: fmtNumber(lowRows.filter(row => stockStatus(row) === "Low Stock").length), hint: "computed from current balances", tone: "amber" },
       { label: "Out-of-Stock Rows", value: fmtNumber(lowRows.filter(row => stockStatus(row) === "Out Of Stock").length), hint: "available quantity is zero", tone: "red" },
       { label: "Available Quantity", value: fmtNumber(available), hint: "across low-risk rows", tone: "green" },
       { label: "Allocated Quantity", value: fmtNumber(allocated), hint: "currently allocated", tone: "violet" },
     ],
-    rows: base.rows.filter(row => row[row.length - 2] !== "Healthy"),
+    columns: inspectionWise
+      ? ["Store / Location", "Location Tags", "Item Code", "Item Name", "Subcategory", "Inspection Contract No.", "Total", "Allocated", "In Transit", "Available", "Low Stock Threshold", "Stock Status", "Last Updated"]
+      : ["Store / Location", "Location Tags", "Item Code", "Item Name", "Subcategory", "Total", "Allocated", "In Transit", "Available", "Low Stock Threshold", "Stock Status", "Last Updated"],
+    rows: lowRows.map(row => [
+      row.location_name ?? `Location ${row.location}`,
+      locationTagLabels(row) || "-",
+      row.item_code ?? `Item ${row.item}`,
+      row.item_name ?? "-",
+      row.subcategory_name ?? "-",
+      ...(inspectionWise ? [row.source_inspection_contracts?.length ? row.source_inspection_contracts.join(", ") : "-"] : []),
+      fmtNumber(row.quantity),
+      fmtNumber(row.allocated_quantity),
+      fmtNumber(row.in_transit_quantity),
+      fmtNumber(row.available_quantity),
+      n(row.low_stock_threshold) > 0 ? fmtNumber(row.low_stock_threshold) : "-",
+      stockStatus(row),
+      fmtDate(row.last_updated),
+    ]),
     note: "Live scoped low-stock rows. Filters are applied to backend-scoped stock records.",
   };
 }
@@ -969,8 +998,15 @@ function filterMovementRows(rows: MovementHistory[], filters?: MovementLedgerFil
   const instanceQuery = filters?.instanceSerial.trim().toLowerCase() ?? "";
   return rows.filter(row => {
     if (!withinDateRange(row.timestamp, filters?.dateFrom ?? "", filters?.dateTo ?? "")) return false;
-    if (filters?.location && String(row.from_location ?? row.to_location ?? "") !== filters.location && String(row.to_location ?? "") !== filters.location) return false;
+    if (filters?.location) {
+      // RECEIVE/RETURN are destination-side events (owned by the receiving store);
+      // every other action is owned by its source (from_location).
+      const destinationOwned = row.action === "RECEIVE" || row.action === "RETURN";
+      const ownerLocation = destinationOwned ? row.to_location : row.from_location;
+      if (String(ownerLocation ?? "") !== filters.location) return false;
+    }
     if (filters?.batch && String(row.batch ?? "") !== filters.batch) return false;
+    if (filters?.stockRegister && String(row.stock_register ?? "") !== filters.stockRegister && String(row.ack_stock_register ?? "") !== filters.stockRegister) return false;
     if (itemQuery && !`${row.item_name ?? ""} ${row.entry_number ?? ""}`.toLowerCase().includes(itemQuery)) return false;
     if (instanceQuery && !`${row.instance_serial ?? ""}`.toLowerCase().includes(instanceQuery)) return false;
     return true;
@@ -996,7 +1032,7 @@ async function movementLedgerReport(filters?: MovementLedgerFilters): Promise<Re
       { label: "Allocations", value: fmtNumber(rows.filter(row => row.action === "ALLOCATE").length), hint: "allocation events", tone: "green" },
       { label: "Returns", value: fmtNumber(rows.filter(row => row.action === "RETURN").length), hint: "return events", tone: "violet" },
     ],
-    columns: ["Timestamp", "Action", "Item", "Batch", "Instance / Serial", "From Location", "To Location", "Quantity", "Stock Entry", "Allocation", "Performed By", "Remarks"],
+    columns: ["Timestamp", "Action", "Item", "Batch", "Instance / Serial", "From Location", "To Location", "Quantity", "Stock Entry", "Stock Register", "Allocation", "Performed By", "Remarks"],
     rows: rows.map(row => [
       fmtDate(row.timestamp),
       row.action,
@@ -1007,6 +1043,7 @@ async function movementLedgerReport(filters?: MovementLedgerFilters): Promise<Re
       movementDestination(row),
       fmtNumber(row.quantity),
       row.entry_number ?? "-",
+      row.stock_register_name ?? row.ack_stock_register_name ?? "-",
       row.allocation ? String(row.allocation) : "-",
       row.performed_by_name ?? "-",
       row.remarks ?? "-",
@@ -1444,8 +1481,8 @@ const REPORTS: ReportDefinition[] = [
     family: "audit",
     title: "Stock Movement Ledger",
     description: "Complete audit trail of stock and allocation movements across stores, locations, employees, instances, and batches.",
-    schema: ["MovementHistory", "StockEntry", "StockAllocation", "Item", "ItemBatch", "ItemInstance", "Location"],
-    filters: ["Date Range", "Item", "Location", "Batch", "Instance / Serial"],
+    schema: ["MovementHistory", "StockEntry", "StockEntryItem", "StockRegister", "StockAllocation", "Item", "ItemBatch", "ItemInstance", "Location"],
+    filters: ["Date Range", "Item", "Location", "Batch", "Instance / Serial", "Stock Register"],
     loader: filters => movementLedgerReport(filters as MovementLedgerFilters | undefined),
   },
   {
@@ -1600,7 +1637,7 @@ export default function ReportsPage() {
     createdTo: "",
   });
   const [assetFilters, setAssetFilters] = useState<AssetCustodyFilters>({ sourceLocation: "", person: "", targetLocation: "", itemQuery: "", status: "", allocatedFrom: "", allocatedTo: "", inspectionWise: false });
-  const [movementFilters, setMovementFilters] = useState<MovementLedgerFilters>({ dateFrom: "", dateTo: "", itemQuery: "", location: "", batch: "", instanceSerial: "" });
+  const [movementFilters, setMovementFilters] = useState<MovementLedgerFilters>({ dateFrom: "", dateTo: "", itemQuery: "", location: "", batch: "", instanceSerial: "", stockRegister: "" });
   const [correctionFilters, setCorrectionFilters] = useState<CorrectionFilters>({ dateFrom: "", dateTo: "", status: "", resolutionType: "", requestedBy: "" });
   const [procurementFilters, setProcurementFilters] = useState<ProcurementTraceFilters>({ inspectionId: "" });
 
@@ -1636,6 +1673,11 @@ export default function ReportsPage() {
       meta: option.kind === "all" ? "All accessible locations" : option.kind,
     }));
   }, [scopeOptions.options]);
+
+  const selectedScopeIsStandalone = useMemo(
+    () => scopeOptions.options.some(option => option.id === inventoryFilters.scope && option.kind === "standalone"),
+    [scopeOptions.options, inventoryFilters.scope],
+  );
 
   const locationOptions = useMemo(() => {
     const map = new Map<number, string>();
@@ -1718,6 +1760,18 @@ export default function ReportsPage() {
     return Array.from(map, ([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label));
   }, [movementRowsForFilters]);
   const movementBatchOptions = useMemo(() => mapIdOptions(movementRowsForFilters, "batch", "batch_number"), [movementRowsForFilters]);
+  const movementRegisterOptions = useMemo(() => {
+    if (!movementFilters.location) return [];
+    const map = new Map<string, string>();
+    movementRowsForFilters.forEach(row => {
+      const destinationOwned = row.action === "RECEIVE" || row.action === "RETURN";
+      const ownerLocation = destinationOwned ? row.to_location : row.from_location;
+      if (String(ownerLocation ?? "") !== movementFilters.location) return;
+      if (row.stock_register) map.set(String(row.stock_register), row.stock_register_name ?? `Register ${row.stock_register}`);
+      if (row.ack_stock_register) map.set(String(row.ack_stock_register), row.ack_stock_register_name ?? `Register ${row.ack_stock_register}`);
+    });
+    return Array.from(map, ([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [movementRowsForFilters, movementFilters.location]);
   const correctionStatusOptions = useMemo(() => uniqueOptions(correctionRowsForFilters.map(row => row.status)), [correctionRowsForFilters]);
   const correctionResolutionOptions = useMemo(() => uniqueOptions(correctionRowsForFilters.map(row => row.resolution_type)), [correctionRowsForFilters]);
   const correctionRequesterOptions = useMemo(() => {
@@ -1986,16 +2040,18 @@ export default function ReportsPage() {
                       ariaLabel="Search standalone or scope"
                     />
                   </label>
-                  <label className="field">
-                    <span className="field-label">Store / Location</span>
-                    <ThemedSelect
-                      value={inventoryFilters.locationId}
-                      options={locationSelectOptions}
-                      onChange={value => setInventoryFilters(current => ({ ...current, locationId: value }))}
-                      placeholder="Search store or location"
-                      ariaLabel="Search store or location"
-                    />
-                  </label>
+                  {selectedScopeIsStandalone ? (
+                    <label className="field">
+                      <span className="field-label">Store / Location</span>
+                      <ThemedSelect
+                        value={inventoryFilters.locationId}
+                        options={locationSelectOptions}
+                        onChange={value => setInventoryFilters(current => ({ ...current, locationId: value }))}
+                        placeholder="Search store or location"
+                        ariaLabel="Search store or location"
+                      />
+                    </label>
+                  ) : null}
                   <label className="field">
                     <span className="field-label">Location Tag</span>
                     <ThemedSelect
@@ -2165,10 +2221,13 @@ export default function ReportsPage() {
                   <label className="field"><span className="field-label">Date From</span><input className="input" type="date" value={movementFilters.dateFrom} onChange={event => setMovementFilters(current => ({ ...current, dateFrom: event.target.value }))} /></label>
                   <label className="field"><span className="field-label">Date To</span><input className="input" type="date" value={movementFilters.dateTo} onChange={event => setMovementFilters(current => ({ ...current, dateTo: event.target.value }))} /></label>
                   <label className="field"><span className="field-label">Item</span><input className="input" value={movementFilters.itemQuery} onChange={event => setMovementFilters(current => ({ ...current, itemQuery: event.target.value }))} placeholder="Search item or entry" /></label>
-                  <label className="field"><span className="field-label">Location</span><select className="input" value={movementFilters.location} onChange={event => setMovementFilters(current => ({ ...current, location: event.target.value }))}><option value="">All locations</option>{movementLocationOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+                  <label className="field"><span className="field-label">Location</span><select className="input" value={movementFilters.location} onChange={event => setMovementFilters(current => ({ ...current, location: event.target.value, stockRegister: "" }))}><option value="">All locations</option>{movementLocationOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
                   <label className="field"><span className="field-label">Batch</span><select className="input" value={movementFilters.batch} onChange={event => setMovementFilters(current => ({ ...current, batch: event.target.value }))}><option value="">All batches</option>{movementBatchOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
                   <label className="field"><span className="field-label">Instance / Serial</span><input className="input" value={movementFilters.instanceSerial} onChange={event => setMovementFilters(current => ({ ...current, instanceSerial: event.target.value }))} placeholder="Search serial" /></label>
-                  <div className={styles.filterActions}><Button type="button" size="sm" onClick={loadReport} disabled={loading}>Apply Filters</Button><Button type="button" variant="outline" size="sm" onClick={() => setMovementFilters({ dateFrom: "", dateTo: "", itemQuery: "", location: "", batch: "", instanceSerial: "" })}>Clear</Button></div>
+                  {movementFilters.location ? (
+                    <label className="field"><span className="field-label">Stock Register</span><select className="input" value={movementFilters.stockRegister} onChange={event => setMovementFilters(current => ({ ...current, stockRegister: event.target.value }))}><option value="">All registers</option>{movementRegisterOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
+                  ) : null}
+                  <div className={styles.filterActions}><Button type="button" size="sm" onClick={loadReport} disabled={loading}>Apply Filters</Button><Button type="button" variant="outline" size="sm" onClick={() => setMovementFilters({ dateFrom: "", dateTo: "", itemQuery: "", location: "", batch: "", instanceSerial: "", stockRegister: "" })}>Clear</Button></div>
                 </div>
               ) : isCorrectionControl ? (
                 <div className={styles.filters}>

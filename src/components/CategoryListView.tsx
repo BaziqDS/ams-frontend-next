@@ -79,6 +79,12 @@ function trackingChipClass(trackingType: string | null | undefined) {
   return "chip chip-tracking chip-tracking-perishable";
 }
 
+function categoryTypeChipClass(categoryType: string | null | undefined) {
+  if (categoryType === "CONSUMABLE") return "chip chip-category-type chip-category-type-consumable";
+  if (categoryType === "FIXED_ASSET") return "chip chip-category-type chip-category-type-fixed-asset";
+  return "chip";
+}
+
 function SubcategorySummary({ names }: { names: string[] }) {
   if (names.length === 0) return <span className="muted-note">No subcategories</span>;
   const { shown, rest } = compactList(names, 1);
@@ -135,7 +141,7 @@ function CategoryRow({ category, isChildrenView, childCount, childNames, trackin
       <td><span className="chip chip-loc mono">{category.code}</span></td>
       <td>
         <div className="group-cell">
-          <span className="chip">{formatLabel(resolvedType)}</span>
+          <span className={categoryTypeChipClass(resolvedType)}>{formatLabel(resolvedType)}</span>
           {resolvedType !== category.category_type && <span className="muted-note mono">Raw: {formatLabel(category.category_type)}</span>}
         </div>
       </td>
@@ -180,7 +186,7 @@ function CategoryCard({ category, childCount, childNames, trackingSummary, canEd
       <div className="user-card-section">
         <div className="eyebrow">Classification</div>
         <div className="group-cell">
-          <span className="chip">{formatLabel(resolvedType)}</span>
+          <span className={categoryTypeChipClass(resolvedType)}>{formatLabel(resolvedType)}</span>
           {resolvedTracking ? <span className={trackingChipClass(resolvedTracking)}>{formatLabel(resolvedTracking)}</span> : <span className="chip">{trackingSummary}</span>}
         </div>
       </div>

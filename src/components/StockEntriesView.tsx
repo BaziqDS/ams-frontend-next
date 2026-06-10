@@ -1976,7 +1976,7 @@ export function StockEntriesView() {
                           <td><div className="user-cell"><div><div className="user-name">{row.entry.entry_number}</div><div className="user-username mono">{formatDate(row.entry.entry_date)}</div></div></div></td>
                           <td>{entrySource(row.entry)}</td>
                           <td>{entryTarget(row.entry)}</td>
-                          <td><div className="group-cell">{row.entry.items.slice(0, 2).map(item => <span key={`${row.entry.id}-${item.id ?? item.item}`} className="chip">{item.item_name ?? `Item ${item.item}`} × {item.quantity}</span>)}{row.entry.items.length > 2 && <span className="muted-note mono">+{row.entry.items.length - 2} more</span>}</div></td>
+                          <td><div className="group-cell">{row.entry.items.slice(0, 2).map(item => <span key={`${row.entry.id}-${item.id ?? item.item}`} className="chip chip-line-item" title={`${item.item_name ?? `Item ${item.item}`} × ${item.quantity}`}>{item.item_name ?? `Item ${item.item}`} × {item.quantity}</span>)}{row.entry.items.length > 2 && <span className="muted-note mono">+{row.entry.items.length - 2} more</span>}</div></td>
                           <td>
                             <div className="group-cell">
                               <StatusPill status={getStockEntryMovementStatus(row.entry, row.receipt) as EntryStatus} />
@@ -2013,7 +2013,7 @@ export function StockEntriesView() {
                 <div className="user-card-name">{row.entry.entry_number}</div>
                 <div className="user-card-meta mono">{formatDate(row.entry.entry_date)}</div>
                 <div className="user-card-section"><div className="eyebrow">Movement</div><div style={{ fontSize: 13, color: "var(--text-1)" }}>{entrySource(row.entry)} → {entryTarget(row.entry)}</div></div>
-                <div className="user-card-section"><div className="eyebrow">Line Items</div><div className="group-cell">{row.entry.items.slice(0, 3).map(item => <span key={`${row.entry.id}-card-${item.id ?? item.item}`} className="chip">{item.item_name ?? `Item ${item.item}`} × {item.quantity}</span>)}</div></div>
+                <div className="user-card-section"><div className="eyebrow">Line Items</div><div className="group-cell">{row.entry.items.slice(0, 3).map(item => <span key={`${row.entry.id}-card-${item.id ?? item.item}`} className="chip chip-line-item" title={`${item.item_name ?? `Item ${item.item}`} × ${item.quantity}`}>{item.item_name ?? `Item ${item.item}`} × {item.quantity}</span>)}</div></div>
                 <div className="user-card-foot"><div><div className="eyebrow">Updated</div><div className="user-card-last mono">{relTime(getStockEntryMovementUpdatedEntry(row.entry, row.receipt).updated_at ?? row.entry.created_at)}</div></div><RowActions entry={row.entry} acknowledgeEntry={row.receipt} canEdit={canManage} canDelete={canDelete} pageBusy={pageBusy} deleteBusy={deleteBusyId === row.entry.id} ackBusy={ackBusyId === row.actionEntry.id} onEdit={() => openEditModal(row.entry)} onDelete={() => handleDelete(row.entry)} onAcknowledge={handleAcknowledge} /></div>
               </div>
             ))}

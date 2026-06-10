@@ -221,7 +221,7 @@ function RowActions({
           disabled={toggleDisabled}
           style={toggleDisabled ? busyActionStyle : undefined}
         >
-          <Ic d="M18.36 6.64A9 9 0 015.64 19.36M23 12a11 11 0 11-22 0 11 11 0 0122 0z" size={13} />
+          <Ic d={<><circle cx="12" cy="12" r="10" /><path d="M4.93 4.93l14.14 14.14" /></>} size={13} />
           <span className="ra-label">{toggleBusy ? (active ? "Disabling…" : "Enabling…") : (active ? "Disable" : "Enable")}</span>
         </Button>
       )}

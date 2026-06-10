@@ -388,6 +388,35 @@ type ItemInstanceRecord = {
   depreciation_summary?: DepreciationSummary | null;
 };
 
+type SerialImportLine = {
+  row_number: number;
+  serial_number: string;
+  raw_text: string;
+  instance: number | null;
+  authority_store_id?: number | null;
+  authority_store_name?: string | null;
+  status: "MATCHED" | "DUPLICATE" | "NO_INSTANCE";
+  error?: string | null;
+};
+
+type SerialImportPreview = {
+  item: number;
+  inspection_certificate: number;
+  inspection_contract_no: string;
+  source: string;
+  extraction_mode: "line_split" | "llamaextract";
+  store_ids: number[];
+  serial_count: number;
+  available_instance_count: number;
+  available_by_store: { store_id: number; blank_count: number }[];
+  matched_count: number;
+  duplicate_count: number;
+  in_transit_count: number;
+  can_apply: boolean;
+  warnings: string[];
+  lines: SerialImportLine[];
+};
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 type ItemBatchRecord = {
@@ -543,7 +572,7 @@ function Field({ label, required, error, hint, children, span = 1, copilotField 
   copilotField?: string;
 }) {
   return (
-    <div className={"field" + (error ? " has-error" : "")} style={{ gridColumn: `span ${span}` }} data-copilot-field={copilotField}>
+    <div className={"field" + (error ? " has-error" : "")} style={span ? { gridColumn: `span ${span}` } : undefined} data-copilot-field={copilotField}>
       <div className="field-label">{label}{required && <span className="field-req">*</span>}</div>
       {children}
       {error ? <div className="field-error">{error}</div> : hint ? <div className="field-hint">{hint}</div> : null}
@@ -4102,6 +4131,477 @@ function useItemRelatedList<T>(itemId: string, path: string, fallback: string, e
   return { item, records, isLoading, fetchError, setFetchError, load };
 }
 
+function SerialImportModal({
+  open,
+  itemId,
+  initialStoreId,
+  onClose,
+  onApplied,
+}: {
+  open: boolean;
+  itemId: string;
+  initialStoreId?: string | null;
+  onClose: () => void;
+  onApplied: () => void | Promise<void>;
+}) {
+  const [availableStores, setAvailableStores] = useState<{ id: number; name: string; blank_count: number }[]>([]);
+  const [storesLoading, setStoresLoading] = useState(false);
+  const [contractNo, setContractNo] = useState("");
+  const [serialText, setSerialText] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<SerialImportPreview | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [rawTextDebug, setRawTextDebug] = useState<string | null>(null);
+  const [selectedStoreIds, setSelectedStoreIds] = useState<number[]>([]);
+  const [contractStatus, setContractStatus] = useState<"idle" | "checking" | "valid" | "invalid">("idle");
+  const [contractMatch, setContractMatch] = useState<{ id: number; contract_no: string; contractor_name?: string | null } | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setContractNo("");
+    setSerialText("");
+    setFile(null);
+    setPreview(null);
+    setBusy(false);
+    setError(null);
+    setContractStatus("idle");
+    setContractMatch(null);
+    setRawTextDebug(null);
+    let cancelled = false;
+    setStoresLoading(true);
+    apiFetch<{ stores: { id: number; name: string; blank_count: number }[] }>(
+      `/api/inventory/item-instances/serial-import-stores/?item=${encodeURIComponent(itemId)}`,
+    )
+      .then(result => {
+        if (cancelled) return;
+        setAvailableStores(result.stores);
+        const initialId = initialStoreId ? Number(initialStoreId) : NaN;
+        const initialMatch = result.stores.find(store => store.id === initialId);
+        setSelectedStoreIds(initialMatch ? [initialMatch.id] : result.stores.map(store => store.id));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAvailableStores([]);
+        setSelectedStoreIds([]);
+      })
+      .finally(() => {
+        if (!cancelled) setStoresLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, initialStoreId, itemId]);
+
+  useEffect(() => {
+    if (!open) return;
+    const trimmed = contractNo.trim();
+    if (!trimmed) {
+      setContractStatus("idle");
+      setContractMatch(null);
+      return;
+    }
+    setContractStatus("checking");
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await apiFetch<{ results: { id: number; contract_no: string; contractor_name?: string | null }[] }>(
+          `/api/inventory/inspections/?search=${encodeURIComponent(trimmed)}`,
+        );
+        if (cancelled) return;
+        const match = result.results?.find(
+          item => (item.contract_no ?? "").toLowerCase() === trimmed.toLowerCase(),
+        );
+        if (match) {
+          setContractStatus("valid");
+          setContractMatch(match);
+        } else {
+          setContractStatus("invalid");
+          setContractMatch(null);
+        }
+      } catch {
+        if (cancelled) return;
+        setContractStatus("invalid");
+        setContractMatch(null);
+      }
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [open, contractNo]);
+
+  const toggleStore = (id: number) => {
+    setSelectedStoreIds(current =>
+      current.includes(id) ? current.filter(value => value !== id) : [...current, id],
+    );
+    setPreview(null);
+  };
+
+  const storeNameById = useMemo(() => {
+    const map = new Map<number, string>();
+    availableStores.forEach(store => map.set(store.id, store.name));
+    return map;
+  }, [availableStores]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const previewSerials = async () => {
+    setBusy(true);
+    setError(null);
+    setRawTextDebug(null);
+    setPreview(null);
+    try {
+      const formData = new FormData();
+      formData.append("item", itemId);
+      formData.append("inspection_contract_no", contractNo.trim());
+      formData.append("store_ids", JSON.stringify(selectedStoreIds));
+      if (serialText.trim()) formData.append("serial_numbers", serialText);
+      if (file) formData.append("file", file);
+
+      const result = await apiFetch<SerialImportPreview>("/api/inventory/item-instances/serial-import-preview/", {
+        method: "POST",
+        body: formData,
+      });
+      setPreview(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to preview serial import.");
+      const body = (err as { body?: unknown } | null)?.body;
+      if (body && typeof body === "object" && "raw_text" in body) {
+        const raw = (body as { raw_text?: unknown }).raw_text;
+        if (typeof raw === "string") setRawTextDebug(raw);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applySerials = async () => {
+    if (!preview?.can_apply) return;
+    const assignments = preview.lines
+      .filter(line => line.status === "MATCHED" && line.instance != null)
+      .map(line => ({ instance: line.instance, serial_number: line.serial_number }));
+
+    setBusy(true);
+    setError(null);
+    try {
+      await apiFetch("/api/inventory/item-instances/serial-import-apply/", {
+        method: "POST",
+        body: JSON.stringify({
+          item: Number(itemId),
+          inspection_contract_no: preview.inspection_contract_no,
+          store_ids: selectedStoreIds,
+          assignments,
+        }),
+      });
+      await onApplied();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to apply serial numbers.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const matchedAssignments = preview?.lines.filter(line => line.status === "MATCHED").length ?? 0;
+
+  return (
+    <div className="modal-backdrop" onMouseDown={onClose}>
+      <div className="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="serial-import-title" onMouseDown={event => event.stopPropagation()}>
+        <header className="modal-head">
+          <div>
+            <div className="eyebrow">Bulk import</div>
+            <h2 id="serial-import-title">Import serial numbers</h2>
+          </div>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
+            <Ic d="M18 6 6 18M6 6l12 12" size={16} />
+          </button>
+        </header>
+
+        <div className="modal-body">
+          {error ? <Alert onDismiss={() => setError(null)}>{error}</Alert> : null}
+          {rawTextDebug ? (
+            <details style={{ marginBottom: 12, fontSize: 12, border: "1px solid var(--border, #d4d4d8)", borderRadius: 6, padding: 8 }}>
+              <summary style={{ cursor: "pointer", color: "var(--text-2)" }}>Show raw OCR/parser output ({rawTextDebug.length} chars)</summary>
+              <pre style={{ marginTop: 8, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 240, overflow: "auto", background: "var(--surface-2, #f4f4f5)", padding: 8, borderRadius: 4 }}>
+                {rawTextDebug}
+              </pre>
+            </details>
+          ) : null}
+          {!storesLoading && availableStores.length === 0 ? (
+            <div className="notice notice-warn" style={{ marginBottom: 16 }}>
+              <div className="notice-body">
+                <div className="notice-title">No stores hold this item under your custody</div>
+                <div className="notice-text">This item has no instances in any store within your scope.</div>
+              </div>
+            </div>
+          ) : null}
+
+          <Section n={1} title="Target certificate" sub="Serials will only apply to blank item instances created from this inspection certificate.">
+            <Field label="Inspection certificate / contract number" required hint="Example: CN-34343422">
+              <div style={{ position: "relative" }}>
+                <input
+                  className="input mono"
+                  placeholder="Contract number"
+                  value={contractNo}
+                  onChange={event => setContractNo(event.target.value)}
+                  style={{
+                    paddingRight: 36,
+                    borderColor:
+                      contractStatus === "valid"
+                        ? "var(--success, #16a34a)"
+                        : contractStatus === "invalid"
+                          ? "var(--danger, #dc2626)"
+                          : undefined,
+                  }}
+                />
+                <span
+                  aria-hidden="true"
+                  style={{
+                    position: "absolute",
+                    right: 10,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    pointerEvents: "none",
+                  }}
+                >
+                  {contractStatus === "checking" ? (
+                    <span style={{ fontSize: 11, color: "var(--text-2)" }}>checking…</span>
+                  ) : contractStatus === "valid" ? (
+                    <span style={{ color: "var(--success, #16a34a)", display: "inline-flex" }}>
+                      <Ic d="M20 6 9 17l-5-5" size={16} />
+                    </span>
+                  ) : contractStatus === "invalid" ? (
+                    <span style={{ color: "var(--danger, #dc2626)", display: "inline-flex" }}>
+                      <Ic d="M18 6 6 18M6 6l12 12" size={16} />
+                    </span>
+                  ) : null}
+                </span>
+              </div>
+              {contractStatus === "valid" && contractMatch?.contractor_name ? (
+                <div style={{ marginTop: 4, fontSize: 12, color: "var(--success, #16a34a)" }}>
+                  Matched: {contractMatch.contractor_name}
+                </div>
+              ) : contractStatus === "invalid" ? (
+                <div style={{ marginTop: 4, fontSize: 12, color: "var(--danger, #dc2626)" }}>
+                  No inspection certificate matches this contract number.
+                </div>
+              ) : null}
+            </Field>
+          </Section>
+
+          <Section n={2} title="Stores under your custody" sub="Only stores where this item is currently split. Serials fill blank instances owned by any selected store, regardless of whether the instance is in transit, allocated, or sitting in a room.">
+            {storesLoading ? (
+              <div style={{ fontSize: 12, color: "var(--text-2)" }}>Loading stores…</div>
+            ) : (
+              <>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {availableStores.map(store => {
+                    const checked = selectedStoreIds.includes(store.id);
+                    return (
+                      <label
+                        key={store.id}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "6px 10px",
+                          border: "1px solid var(--border, #d4d4d8)",
+                          borderRadius: 6,
+                          background: checked ? "var(--accent-soft, #eef2ff)" : "transparent",
+                          cursor: "pointer",
+                          fontSize: 13,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleStore(store.id)}
+                        />
+                        {store.name}
+                        <span style={{ fontSize: 11, color: "var(--text-2)" }}>· {store.blank_count} blank</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {availableStores.length > 0 && selectedStoreIds.length === 0 ? (
+                  <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-2)" }}>
+                    Select at least one store.
+                  </div>
+                ) : null}
+              </>
+            )}
+          </Section>
+
+          <Section n={3} title="Source" sub="Paste one serial per line, or upload a text/CSV/PDF/image for parsing.">
+            {busy && file ? (
+              <div
+                role="status"
+                aria-live="polite"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "8px 12px",
+                  marginBottom: 12,
+                  border: "1px solid var(--border, #d4d4d8)",
+                  borderRadius: 6,
+                  background: "var(--surface-2, #f4f4f5)",
+                  fontSize: 13,
+                  color: "var(--text-2)",
+                }}
+              >
+                <svg
+                  className="copilot-search-send-spin"
+                  width={16}
+                  height={16}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                </svg>
+                <span>Extracting serial numbers from <strong style={{ color: "var(--text-1)" }}>{file.name}</strong>…</span>
+              </div>
+            ) : null}
+            <div className="serial-import-source-grid">
+              <Field label="Serial numbers">
+                <textarea
+                  className="input textarea-field serial-import-textarea"
+                  rows={5}
+                  placeholder={"1. SN-001\n2. SN-002\n3. SN-003"}
+                  value={serialText}
+                  onChange={event => setSerialText(event.target.value)}
+                />
+              </Field>
+              <Field label="Upload file" hint="Text and CSV parse directly. PDF, image, and DOCX uploads run schema-driven extraction via LlamaExtract — only values labeled Serial No. / S/N / Asset Tag are returned.">
+                <label className="serial-import-file-card">
+                  <span className="serial-import-file-icon" aria-hidden="true">
+                    <Ic d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" size={18} />
+                  </span>
+                  <span className="serial-import-file-copy">
+                    <span className="serial-import-file-title">{file ? file.name : "Choose a file to parse"}</span>
+                    <span className="serial-import-file-sub">TXT, CSV, PDF, image, or DOCX</span>
+                  </span>
+                  <span className="serial-import-file-action">Browse</span>
+                  <input
+                    className="serial-import-file-input"
+                    type="file"
+                    accept=".txt,.csv,.tsv,.pdf,.jpg,.jpeg,.png,.gif,.webp,.docx"
+                    onChange={event => setFile(event.target.files?.[0] ?? null)}
+                  />
+                </label>
+              </Field>
+            </div>
+          </Section>
+
+          {preview ? (
+            <Section n={4} title="Preview" sub={`${preview.inspection_contract_no} / ${preview.matched_count} matched / ${preview.serial_count} extracted / ${preview.available_instance_count} blank instances available · extractor: ${preview.extraction_mode}`}>
+              {preview.available_by_store.length ? (
+                <div style={{ marginBottom: 12, display: "flex", flexWrap: "wrap", gap: 8, fontSize: 12, color: "var(--text-2)" }}>
+                  {preview.available_by_store.map(entry => (
+                    <span key={entry.store_id} className="pill">
+                      {storeNameById.get(entry.store_id) ?? `Store #${entry.store_id}`}: {entry.blank_count} blank
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              {preview.warnings.length ? (
+                <div className="notice notice-warn" style={{ marginBottom: 12 }}>
+                  <div className="notice-body">
+                    <div className="notice-title">Review warning</div>
+                    <div className="notice-text">{preview.warnings.join(" ")}</div>
+                  </div>
+                </div>
+              ) : null}
+              <div className="h-scroll">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Row</th>
+                      <th>Serial number</th>
+                      <th>Target instance</th>
+                      <th>Authority store</th>
+                      <th>Status</th>
+                      <th>Note</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.lines.map(line => (
+                      <tr key={`${line.row_number}-${line.serial_number}`}>
+                        <td className="mono">{line.row_number}</td>
+                        <td className="mono">{line.serial_number}</td>
+                        <td>{line.instance ? <span className="mono">#{line.instance}</span> : "-"}</td>
+                        <td>{line.authority_store_name ?? (line.authority_store_id ? `#${line.authority_store_id}` : "-")}</td>
+                        <td>
+                          <span className={line.status === "MATCHED" ? "pill pill-success" : "pill pill-warning"}>
+                            {formatItemLabel(line.status)}
+                          </span>
+                        </td>
+                        <td>{line.error ?? line.raw_text}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Section>
+          ) : null}
+        </div>
+
+        <footer className="modal-foot">
+          <div className="modal-foot-meta mono">
+            {preview ? `${matchedAssignments} ready to apply` : "Preview required before applying"}
+          </div>
+          <div className="modal-foot-actions">
+            <Button type="button" variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={previewSerials} disabled={busy || contractStatus !== "valid" || selectedStoreIds.length === 0 || (!serialText.trim() && !file)}>
+              {busy ? (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <svg
+                    className="copilot-search-send-spin"
+                    width={14}
+                    height={14}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                  </svg>
+                  {file ? "Extracting…" : "Working…"}
+                </span>
+              ) : (
+                "Preview"
+              )}
+            </Button>
+            <Button type="button" onClick={applySerials} disabled={busy || !preview?.can_apply}>
+              Apply serials
+            </Button>
+          </div>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
 export function ItemInstancesView({ itemId }: { itemId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -4114,6 +4614,7 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
   const [density, setDensity] = useState<Density>("balanced");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [serialImportOpen, setSerialImportOpen] = useState(false);
 
   useEffect(() => {
     if (capsLoading) return;
@@ -4181,6 +4682,12 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
             <div className="page-sub">{item ? `${item.code} / ${formatItemLabel(String(item.tracking_type ?? ""))}` : "Loading tracked item instances."}</div>
           </div>
           <div className="page-head-actions">
+            {showInstances ? (
+              <Button type="button" variant="outline" size="sm" onClick={() => setSerialImportOpen(true)}>
+                <Ic d={<><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></>} size={14} />
+                Import serials
+              </Button>
+            ) : null}
             <Button asChild variant="outline" size="sm"><Link  href={`/items/${itemId}`}>
               <Ic d="M15 18l-6-6 6-6" size={14} />
               Distribution
@@ -4313,6 +4820,15 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
           </>
         )}
       </div>
+      <SerialImportModal
+        open={serialImportOpen}
+        itemId={itemId}
+        initialStoreId={locationId}
+        onClose={() => setSerialImportOpen(false)}
+        onApplied={async () => {
+          await load({ showLoading: false });
+        }}
+      />
     </div>
   );
 }

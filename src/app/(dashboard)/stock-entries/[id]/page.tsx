@@ -1,12 +1,16 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { Topbar } from "@/components/Topbar";
+import { Button } from "@/components/ui/button";
 import { apiFetch, type Page } from "@/lib/api";
 import { useCan, useCapabilities } from "@/contexts/CapabilitiesContext";
+import { useCopilotAction } from "@/hooks/useCopilotAction";
+import { useCopilotReadable } from "@/hooks/useCopilotReadable";
+import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
 import { getStockEntryAcknowledgeTarget } from "@/lib/stockEntryMovementRows";
 import {
   buildFullReversalPayload,
@@ -818,23 +822,33 @@ function StockVoucherHead({ entry, related }: { entry: StockEntryRecord; related
     <div className="page-head-detail stock-voucher-head">
       <div className="page-title-group">
         <div className="eyebrow">Stock Entry · {formatLabel(entry.entry_type)} voucher</div>
-        <h1 className="display">{voucherTitle(entry)}</h1>
+        <h1>{voucherTitle(entry)}</h1>
         <div className="page-sub">
           {summary.sourceLabel} <strong>{source}</strong> to <strong>{target}</strong>.
           {" "}{summary.stripNote}
         </div>
-        <div className="page-id-row">
+        <div className="page-id-row stock-voucher-meta-row">
           <span className={`pill ${entry.status === "PENDING_ACK" ? "pill-info" : statusTone(entry.status)} pill-lg`}>
             <span className={`status-dot ${entry.status === "COMPLETED" ? "active" : "inactive"}`} />
             {entry.status === "PENDING_ACK" ? "In transit · Awaiting acknowledgment" : formatLabel(entry.status)}
           </span>
-          <span className="doc-meta">
-            <span className="dot-sep">·</span>
+          <span className="doc-meta stock-voucher-meta-item">
+            <Ic d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 012 2v13a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2" size={14} />
             <span>{entryDateVerb(entry)} {entryAt}</span>
-            <span className="dot-sep">·</span>
+          </span>
+          <span className="doc-meta stock-voucher-meta-item">
+            <Ic d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M8 13h8M8 17h5" size={14} />
             <span>Register {register}</span>
           </span>
         </div>
+      </div>
+      <div className="page-head-actions">
+        <Button asChild variant="outline" size="sm" className="page-head-back">
+          <Link href="/stock-entries">
+            <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
+            Back to Stock Entries
+          </Link>
+        </Button>
       </div>
     </div>
   );
@@ -859,7 +873,8 @@ function AcknowledgementNotice({ entry, related, onAcknowledge }: { entry: Stock
       <div className="notice-icon"><Ic d={<><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /><path d="M12 9v4M12 17h.01" /></>} size={18} /></div>
       <div className="notice-body">
         <div className="notice-title">{title}</div>
-        <div className="notice-text">{text} <strong>{actionText}</strong></div>
+        <div className="notice-text">{text}</div>
+        <div className="notice-hint">{actionText}</div>
       </div>
       {acknowledgeEntry?.can_acknowledge ? (
         <div className="notice-actions">
@@ -873,23 +888,38 @@ function AcknowledgementNotice({ entry, related, onAcknowledge }: { entry: Stock
 function RoutingPanel({ entry, related }: { entry: StockEntryRecord; related: RelatedEntries }) {
   const sourcePerson = entry.created_by_name ?? "Unknown";
   const ack = acknowledgementMeta(entry, related);
+  const isPersonTarget = entry.entry_type === "ISSUE" && Boolean(entry.issued_to_name);
 
   return (
     <div className="routing">
       <div className="routing-end">
-        <div className="role">From · {entry.entry_type === "RECEIPT" ? "Source" : "Source store"}</div>
-        <div className="name">{entrySource(entry)}</div>
-        <div className="sub">{entry.entry_type === "ISSUE" ? firstRegisterRef(entry) : "Source register not shown on receipt voucher"}</div>
-        <div className="person">Issued by {sourcePerson}</div>
+        <span className="routing-icon routing-icon-source">
+          <Ic d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-7h6v7M9 11h.01M15 11h.01" size={18} />
+        </span>
+        <div className="routing-copy">
+          <div className="role">From · {entry.entry_type === "RECEIPT" ? "Source" : "Source store"}</div>
+          <div className="name">{entrySource(entry)}</div>
+          <div className="sub">{entry.entry_type === "ISSUE" ? firstRegisterRef(entry) : "Source register not shown on receipt voucher"}</div>
+          <div className="person">Issued by {sourcePerson}</div>
+        </div>
       </div>
       <div className="routing-arrow">
-        <span className="arrow">{formatLabel(entry.entry_type)} <Ic d="M5 12h14M13 5l7 7-7 7" size={15} /></span>
+        <span className="routing-arrow-icon">
+          <Ic d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.3 7L12 12l8.7-5M12 22V12" size={18} />
+        </span>
+        <span className="arrow">{formatLabel(entry.entry_type)}</span>
+        <Ic d="M5 12h14M13 5l7 7-7 7" size={16} />
       </div>
       <div className="routing-end">
-        <div className="role">To · {entryTargetRole(entry)}</div>
-        <div className="name">{entryTarget(entry)}</div>
-        <div className="sub">{entry.entry_type === "ISSUE" ? "Destination register captured on receipt voucher" : firstAckRegisterRef(entry, related)}</div>
-        <div className="person">Recipient: {ack.by ?? entryTarget(entry)}</div>
+        <span className="routing-icon routing-icon-target">
+          <Ic d={isPersonTarget ? "M20 21a8 8 0 10-16 0M12 11a4 4 0 100-8 4 4 0 000 8" : "M3 21h18M5 21V9l7-5 7 5v12M9 21v-7h6v7M9 11h.01M15 11h.01"} size={18} />
+        </span>
+        <div className="routing-copy">
+          <div className="role">To · {entryTargetRole(entry)}</div>
+          <div className="name">{entryTarget(entry)}</div>
+          <div className="sub">{entry.entry_type === "ISSUE" ? "Destination register captured on receipt voucher" : firstAckRegisterRef(entry, related)}</div>
+          <div className="person">Recipient: {ack.by ?? entryTarget(entry)}</div>
+        </div>
       </div>
     </div>
   );
@@ -1324,7 +1354,13 @@ function LineItemDetailModal({
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <div className="modal modal-lg stock-line-modal" role="dialog" aria-modal="true" aria-labelledby="stock-line-detail-title" onMouseDown={event => event.stopPropagation()}>
+      <div
+        className={`modal modal-lg stock-line-modal ${hasInstances ? "stock-line-modal-instances" : "stock-line-modal-batch"}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="stock-line-detail-title"
+        onMouseDown={event => event.stopPropagation()}
+      >
         <div className="modal-head">
           <div>
             <div className="eyebrow">{hasInstances ? "View instances" : "View batch"}</div>
@@ -1484,7 +1520,7 @@ function AckForm({ entry, related, registers, instances, onDone, onCancel }: { e
     setValues(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }));
   };
 
-  const submit = async () => {
+  const submit = async (): Promise<{ ok: boolean; message?: string }> => {
     setBusy(true);
     setError(null);
     try {
@@ -1502,8 +1538,11 @@ function AckForm({ entry, related, registers, instances, onDone, onCancel }: { e
       });
       await onDone();
       onCancel?.();
+      return { ok: true };
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to acknowledge stock entry");
+      const message = err instanceof Error ? err.message : "Failed to acknowledge stock entry";
+      setError(message);
+      return { ok: false, message };
     } finally {
       setBusy(false);
     }
@@ -1515,6 +1554,118 @@ function AckForm({ entry, related, registers, instances, onDone, onCancel }: { e
     values[item.id].quantity >= 1 &&
     values[item.id].quantity <= item.quantity
   ));
+
+  // ── Copilot surface: the agent can fill and (with HITL approval) submit
+  // this acknowledgement form just like the create-entry form.
+  const copilotAckFields = useMemo<CopilotFormField[]>(() => [
+    {
+      name: "items",
+      label: "Acknowledgement lines",
+      type: "array",
+      required: true,
+      description:
+        "One row per dispatched line, same order as the voucher. Patch rows by index; id, item_name, and sent_quantity are read-only.",
+      arrayItemFields: [
+        { name: "id", label: "Line id", type: "number", readOnly: true },
+        { name: "item_name", label: "Item", type: "string", readOnly: true },
+        { name: "sent_quantity", label: "Sent quantity", type: "number", readOnly: true },
+        {
+          name: "quantity",
+          label: isReturn ? "Received quantity" : "Accepted quantity",
+          type: "number",
+          required: true,
+          description: "Must be between 1 and sent_quantity. For instance-tracked lines it follows the selected instances.",
+        },
+        {
+          name: "ack_stock_register",
+          label: "Receiving register",
+          type: "select",
+          required: true,
+          options: ackRegisters.map(register => ({
+            label: register.register_number,
+            value: String(register.id),
+          })),
+        },
+        { name: "ack_page_number", label: "Register page", type: "number", required: true },
+        {
+          name: "instances",
+          label: "Accepted instance ids",
+          type: "array",
+          arrayItemType: "number",
+          description: "Only for instance-tracked lines: ids of the instances physically received.",
+        },
+      ],
+    },
+  ], [ackRegisters, isReturn]);
+
+  const copilotAckValues = useMemo(() => ({
+    items: entry.items.map(item => ({
+      id: item.id,
+      item_name: item.item_name ?? `Item ${item.item}`,
+      sent_quantity: item.quantity,
+      quantity: values[item.id]?.quantity ?? item.quantity,
+      ack_stock_register: values[item.id]?.ack_stock_register ?? "",
+      ack_page_number: values[item.id]?.ack_page_number ?? "",
+      instances: (values[item.id]?.instances ?? []).map(Number),
+    })),
+  }), [entry.items, values]);
+
+  useCopilotForm({
+    formId: "stock_entry_acknowledge",
+    title: `Acknowledge ${entry.entry_number}`,
+    description:
+      "Receiver acknowledgement for a pending stock movement. Capture the receiving register and accepted quantity for every line, then request submit.",
+    active: true,
+    fields: copilotAckFields,
+    values: copilotAckValues,
+    canSubmit: canSubmit && !busy,
+    setValues: patch => {
+      const rows = (patch as { items?: unknown }).items;
+      if (!Array.isArray(rows)) {
+        return { ok: false, reason: "Patch items as an array of row objects." };
+      }
+      const applied: string[] = [];
+      rows.forEach((row, index) => {
+        if (!row || typeof row !== "object" || Array.isArray(row)) return;
+        const incoming = row as Record<string, unknown>;
+        const byId = typeof incoming.id === "number"
+          ? entry.items.find(item => item.id === incoming.id)
+          : undefined;
+        const target = byId ?? entry.items[index];
+        if (!target) return;
+        const patchForRow: Partial<{ quantity: number; instances: string[]; ack_stock_register: string; ack_page_number: string }> = {};
+        if (typeof incoming.quantity === "number" && Number.isFinite(incoming.quantity)) {
+          patchForRow.quantity = incoming.quantity;
+        }
+        if (incoming.ack_stock_register !== undefined && incoming.ack_stock_register !== null) {
+          patchForRow.ack_stock_register = String(incoming.ack_stock_register);
+        }
+        if (incoming.ack_page_number !== undefined && incoming.ack_page_number !== null) {
+          patchForRow.ack_page_number = String(incoming.ack_page_number);
+        }
+        if (Array.isArray(incoming.instances)) {
+          const ids = incoming.instances.map(String);
+          patchForRow.instances = ids;
+          if (ids.length > 0) patchForRow.quantity = ids.length;
+        }
+        if (Object.keys(patchForRow).length > 0) {
+          update(target.id, patchForRow);
+          applied.push(`items.${entry.items.indexOf(target)}`);
+        }
+      });
+      return { ok: applied.length > 0, applied };
+    },
+    submit: async () => {
+      if (busy) return { ok: false, message: "Acknowledgement is already submitting." };
+      if (!canSubmit) {
+        return {
+          ok: false,
+          message: "Every line needs a receiving register, page number, and an accepted quantity between 1 and the sent quantity.",
+        };
+      }
+      return submit();
+    },
+  });
 
   return (
     <div className="stock-ack-form">
@@ -1625,6 +1776,78 @@ function AckModal({ entry, related, registers, instances, onDone, onClose }: { e
   );
 }
 
+function ReasonModal({
+  title,
+  eyebrow,
+  description,
+  label,
+  placeholder,
+  confirmLabel,
+  busyLabel,
+  busy,
+  onConfirm,
+  onClose,
+  value,
+  onChange,
+}: {
+  title: string;
+  eyebrow: string;
+  description: string;
+  label: string;
+  placeholder: string;
+  confirmLabel: string;
+  busyLabel: string;
+  busy: boolean;
+  onConfirm: (reason: string) => void;
+  onClose: () => void;
+  /** Controlled mode — lets the page share the reason with the copilot form. */
+  value?: string;
+  onChange?: (value: string) => void;
+}) {
+  const [internalReason, setInternalReason] = useState("");
+  const reason = value ?? internalReason;
+  const setReason = onChange ?? setInternalReason;
+  const trimmed = reason.trim();
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!trimmed || busy) return;
+    onConfirm(trimmed);
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={busy ? undefined : onClose}>
+      <div className="modal stock-reason-modal" role="dialog" aria-modal="true" aria-labelledby="stock-reason-title" onMouseDown={event => event.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <div className="eyebrow">{eyebrow}</div>
+            <h2 id="stock-reason-title">{title}</h2>
+            <div className="stock-ack-modal-sub">{description}</div>
+          </div>
+          <button type="button" className="modal-close" aria-label="Close" onClick={onClose} disabled={busy}>×</button>
+        </div>
+        <form className="modal-body" onSubmit={submit}>
+          <label className="field">
+            <span className="field-label">{label}</span>
+            <textarea
+              className="input"
+              rows={3}
+              value={reason}
+              autoFocus
+              placeholder={placeholder}
+              onChange={event => setReason(event.target.value)}
+            />
+          </label>
+          <div className="stock-ack-actions">
+            <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>Keep Entry</Button>
+            <Button type="submit" variant="destructive" disabled={busy || !trimmed}>{busy ? busyLabel : confirmLabel}</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function CorrectionActionsPanel({
   entry,
   canApproveCorrections,
@@ -1669,10 +1892,9 @@ function CorrectionActionsPanel({
   if (!hasActions) return null;
 
   return (
-    <Panel eyebrow="Controls" title="Entry correction actions">
-      <div style={{ display: "grid", gap: 12 }}>
+    <div className="stock-action-bar" aria-label="Entry correction actions">
         {activeCorrection ? (
-          <div className="notice notice-warn">
+          <div className="notice notice-warn stock-correction-alert">
             <div className="notice-body">
               <div className="notice-title">Correction {formatLabel(activeCorrection.status)}</div>
               <div className="notice-text">
@@ -1708,42 +1930,50 @@ function CorrectionActionsPanel({
           </div>
         ) : null}
 
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        <div className="stock-action-bar-row">
+          <div className="stock-action-bar-label">Entry actions</div>
+          <div className="stock-action-bar-buttons">
           {entry.can_cancel ? (
             <button type="button" className="btn btn-sm" onClick={onCancelEntry}>
+              <Ic d="M18 6L6 18M6 6l12 12" size={14} />
               Cancel Entry
             </button>
           ) : null}
           {canStartNewCorrection && entry.can_correct ? (
             <button type="button" className="btn btn-sm btn-primary" onClick={onResolveDifference}>
+              <Ic d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z" size={14} />
               {differenceCopy.actionLabel}
             </button>
           ) : null}
           {canStartNewCorrection && entry.can_request_reversal ? (
             <button type="button" className="btn btn-sm" onClick={onRequestReversal}>
+              <Ic d="M3 12a9 9 0 019-9 9.75 9.75 0 016.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 01-9 9 9.75 9.75 0 01-6.74-2.74L3 16M3 21v-5h5" size={14} />
               {reversalCopy.actionLabel}
             </button>
           ) : null}
           {canCreateReplacement ? (
             <Link className="btn btn-sm" href={`/stock-entries?replacement_for=${entry.id}`}>
+              <Ic d="M12 5v14M5 12h14" size={14} />
               Create Replacement Entry
             </Link>
           ) : null}
+          </div>
         </div>
 
         {entry.generated_correction_entries?.length ? (
-          <div style={{ display: "grid", gap: 6 }}>
+          <div className="stock-action-generated">
             <div className="eyebrow">Generated Records</div>
-            {entry.generated_correction_entries.map(generated => (
-              <Link key={generated.id} href={`/stock-entries/${generated.id}`} className="chip" style={{ justifyContent: "space-between", textDecoration: "none" }}>
-                <span>{generated.entry_number}</span>
-                <span>{formatLabel(generated.reference_purpose ?? generated.entry_type)}</span>
-              </Link>
-            ))}
+            <div className="stock-action-generated-list">
+              {entry.generated_correction_entries.map(generated => (
+                <Link key={generated.id} href={`/stock-entries/${generated.id}`} className="chip">
+                  <span>{generated.entry_number}</span>
+                  <span className="chip-sub">{formatLabel(generated.reference_purpose ?? generated.entry_type)}</span>
+                </Link>
+              ))}
+            </div>
           </div>
         ) : null}
-      </div>
-    </Panel>
+    </div>
   );
 }
 
@@ -2152,6 +2382,9 @@ export default function StockEntryDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [ackModalOpen, setAckModalOpen] = useState(false);
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelBusy, setCancelBusy] = useState(false);
   const [correctionModalOpen, setCorrectionModalOpen] = useState(false);
   const [correctionMode, setCorrectionMode] = useState<CorrectionMode>("difference");
   const [correctionActionBusy, setCorrectionActionBusy] = useState<"approve" | "apply" | "reject" | null>(null);
@@ -2199,18 +2432,31 @@ export default function StockEntryDetailPage() {
     load();
   }, [canView, capsLoading, load, router]);
 
-  const cancelEntry = useCallback(async () => {
+  const cancelEntry = useCallback(() => {
     if (!entry) return;
-    const reason = window.prompt("Enter a cancellation reason.");
-    if (!reason?.trim()) return;
+    setCancelReason("");
+    setCancelModalOpen(true);
+  }, [entry]);
+
+  const submitCancel = useCallback(async (reason: string): Promise<{ ok: boolean; message?: string }> => {
+    if (!entry) return { ok: false, message: "No stock entry loaded." };
+    setCancelBusy(true);
+    setError(null);
     try {
       await apiFetch(`/api/inventory/stock-entries/${entry.id}/cancel/`, {
         method: "POST",
         body: JSON.stringify({ reason }),
       });
+      setCancelModalOpen(false);
+      setCancelReason("");
       await load();
+      return { ok: true };
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to cancel stock entry");
+      const message = err instanceof Error ? err.message : "Failed to cancel stock entry";
+      setError(message);
+      return { ok: false, message };
+    } finally {
+      setCancelBusy(false);
     }
   }, [entry, load]);
 
@@ -2298,6 +2544,122 @@ export default function StockEntryDetailPage() {
     };
   }, [acknowledgementEntry, allEntries, entry, related]);
 
+  // ── Copilot surface ────────────────────────────────────────────────────────
+  // Readable: live snapshot of this voucher so the agent reasons from current
+  // state. Actions: open the acknowledge / cancel flows; the actual writes go
+  // through copilot forms (HITL-approved request_form_submit), never directly.
+  const canAcknowledgeHere = Boolean(
+    acknowledgementEntry?.can_acknowledge && acknowledgementEntry.status === "PENDING_ACK",
+  );
+
+  const detailReadable = useMemo(() => ({
+    page: "stock_entry_detail",
+    entry: entry ? {
+      id: entry.id,
+      entry_number: entry.entry_number,
+      entry_type: entry.entry_type,
+      status: entry.status,
+      entry_date: entry.entry_date,
+      from_location: entry.from_location,
+      from_location_name: entry.from_location_name ?? null,
+      to_location: entry.to_location,
+      to_location_name: entry.to_location_name ?? null,
+      issued_to_name: entry.issued_to_name ?? null,
+      purpose: entry.purpose ?? null,
+      remarks: entry.remarks ?? null,
+      cancellation_reason: entry.cancellation_reason ?? null,
+      active_correction_status: entry.active_correction?.status ?? null,
+      items: entry.items.map(item => ({
+        id: item.id,
+        item: item.item,
+        item_name: item.item_name ?? null,
+        batch_number: item.batch_number ?? null,
+        quantity: item.quantity,
+        accepted_quantity: item.accepted_quantity ?? null,
+        stock_register_name: item.stock_register_name ?? null,
+        page_number: item.page_number ?? null,
+        ack_stock_register_name: item.ack_stock_register_name ?? null,
+        ack_page_number: item.ack_page_number ?? null,
+      })),
+      available_actions: {
+        acknowledge: canAcknowledgeHere,
+        cancel: Boolean(entry.can_cancel),
+        correct: Boolean(entry.can_correct && !entry.active_correction),
+        request_reversal: Boolean(entry.can_request_reversal && !entry.active_correction),
+      },
+    } : null,
+  }), [canAcknowledgeHere, entry]);
+
+  useCopilotReadable({
+    description:
+      "Stock entry voucher detail. available_actions shows what the current user can do here. To acknowledge, call open_acknowledge_stock_entry then fill the stock_entry_acknowledge form. To cancel, call open_cancel_stock_entry then fill the stock_entry_cancel form. Both submits require human approval.",
+    value: detailReadable,
+  });
+
+  useCopilotAction({
+    name: "open_acknowledge_stock_entry",
+    description:
+      "Open the acknowledgement form for this pending stock entry. After opening, fill the stock_entry_acknowledge form (receiving register, page, accepted quantities) and request submit.",
+    parameters: {},
+    allowed: canAcknowledgeHere,
+    enabled: Boolean(entry) && canAcknowledgeHere,
+    handler: () => {
+      setAckModalOpen(true);
+      return { ok: true, opened_form: "stock_entry_acknowledge" };
+    },
+  });
+
+  useCopilotAction({
+    name: "open_cancel_stock_entry",
+    description:
+      "Open the cancellation dialog for this stock entry. After opening, set the reason on the stock_entry_cancel form and request submit. Cancellation is irreversible and requires human approval.",
+    parameters: {},
+    allowed: Boolean(entry?.can_cancel),
+    enabled: Boolean(entry?.can_cancel),
+    handler: () => {
+      setCancelReason("");
+      setCancelModalOpen(true);
+      return { ok: true, opened_form: "stock_entry_cancel" };
+    },
+  });
+
+  // Memoized: useCopilotForm re-syncs its runtime state when the `values`
+  // identity changes, so inline literals here would loop renders forever.
+  const cancelFormFields = useMemo<CopilotFormField[]>(() => [
+    {
+      name: "reason",
+      label: "Cancellation reason",
+      type: "string",
+      required: true,
+      description: "Why this entry is being cancelled. Shown on the voucher and in audit history.",
+    },
+  ], []);
+  const cancelFormValues = useMemo(() => ({ reason: cancelReason }), [cancelReason]);
+
+  useCopilotForm({
+    formId: "stock_entry_cancel",
+    title: entry ? `Cancel ${entry.entry_number}` : "Cancel stock entry",
+    description:
+      "Cancels this stock entry permanently. A cancellation reason is mandatory and is stored on the voucher for audit.",
+    active: cancelModalOpen && Boolean(entry),
+    fields: cancelFormFields,
+    values: cancelFormValues,
+    canSubmit: !cancelBusy && cancelReason.trim().length > 0,
+    setValues: patch => {
+      const reason = (patch as { reason?: unknown }).reason;
+      if (typeof reason !== "string") {
+        return { ok: false, reason: "reason must be a string." };
+      }
+      setCancelReason(reason);
+      return { ok: true, applied: ["reason"] };
+    },
+    submit: async () => {
+      const trimmed = cancelReason.trim();
+      if (!trimmed) return { ok: false, message: "A cancellation reason is required." };
+      return submitCancel(trimmed);
+    },
+  });
+
   return (
     <div>
       <Topbar breadcrumb={["Operations", "Stock Entries", entry?.entry_number ?? "Detail"]} />
@@ -2319,10 +2681,6 @@ export default function StockEntryDetailPage() {
           <div className="table-card" style={{ padding: 32, color: "var(--muted)", textAlign: "center" }}>Loading stock entry...</div>
         ) : entry ? (
           <>
-            <Link className="page-back stock-page-back-inline" href="/stock-entries">
-              <Ic d="M19 12H5M12 19l-7-7 7-7" size={12} />
-              Back to Stock Entries
-            </Link>
             <StockVoucherHead entry={entry} related={related} />
             <CorrectionActionsPanel
               entry={entry}
@@ -2347,15 +2705,34 @@ export default function StockEntryDetailPage() {
 
             <div className="detail-grid">
               <div className="detail-main">
-                <WorkflowHistoryCard entry={entry} related={related} />
+                <StatusAsideCard entry={entry} related={related} />
               </div>
               <aside className="detail-aside">
-                <StatusAsideCard entry={entry} related={related} />
                 <RelatedRecordsCard entry={entry} related={related} />
+                <WorkflowHistoryCard entry={entry} related={related} />
               </aside>
             </div>
             {ackModalOpen && acknowledgementEntry?.can_acknowledge && acknowledgementEntry.status === "PENDING_ACK" && (
               <AckModal entry={acknowledgementEntry} related={acknowledgementRelated} registers={registers} instances={instances} onDone={load} onClose={() => setAckModalOpen(false)} />
+            )}
+            {cancelModalOpen && (
+              <ReasonModal
+                eyebrow="Cancel stock entry"
+                title={`Cancel ${entry.entry_number}?`}
+                description="This stops the movement and marks the entry as cancelled. This cannot be undone."
+                label="Cancellation reason"
+                placeholder="Explain why this entry is being cancelled…"
+                confirmLabel="Cancel Entry"
+                busyLabel="Cancelling…"
+                busy={cancelBusy}
+                value={cancelReason}
+                onChange={setCancelReason}
+                onConfirm={reason => void submitCancel(reason)}
+                onClose={() => {
+                  setCancelModalOpen(false);
+                  setCancelReason("");
+                }}
+              />
             )}
             {correctionModalOpen && correctionMode === "difference" && entry.can_correct && (
               <CorrectionModal entry={entry} related={related} instances={instances} onDone={handleCorrectionDone} onClose={() => setCorrectionModalOpen(false)} />
