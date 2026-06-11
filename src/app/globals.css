@@ -899,182 +899,34 @@ kbd {
   width: min(29rem, calc(100vw - 2rem));
 }
 
-/* =============================================================================
-   Copilot launcher — bottom-attached iOS-style tab (resting state)
-   Dynamic-Island feel: flush to the bottom edge, rounded top, frosted glass.
-   ========================================================================= */
-/* ── Copilot launcher pill ─────────────────────────────────────────────────
- * Floating bottom-center card. Sparkle icon + conversational message
- * + filled amber CTA chip on the right. Modelled on the in-app banner
- * pattern (e.g. "AI search preview is live for Team plans — Try it").
- * The whole pill is one button so clicking anywhere opens the composer. */
-.copilot-launcher {
-  --copilot-launcher-surface: color-mix(in oklch, #fffaf0 88%, white);
-  --copilot-launcher-border: color-mix(in oklch, #c9aa72 34%, var(--hairline));
-  --copilot-launcher-text: #151922;
-  --copilot-launcher-accent: #b9852e;
-  --copilot-launcher-accent-bg: color-mix(in oklch, #f5d28c 34%, white);
-  --copilot-launcher-cta-top: #3a3025;
-  --copilot-launcher-cta-bottom: #221d18;
-  --copilot-launcher-cta-shadow: rgba(58, 48, 37, 0.34);
-  position: fixed;
-  left: 50%;
-  bottom: 0.875rem;
-  z-index: 1099;
-  transform: translateX(-50%);
+.copilot-eq {
   display: inline-flex;
   align-items: center;
-  gap: 0.625rem;
-  height: 2.5rem;
-  padding: 0.3125rem 0.375rem 0.3125rem 0.5rem;
-  border: 1px solid var(--copilot-launcher-border);
-  border-radius: 999px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 248, 234, 0.86) 100%),
-    var(--copilot-launcher-surface);
-  backdrop-filter: blur(16px) saturate(1.16);
-  -webkit-backdrop-filter: blur(16px) saturate(1.16);
-  color: var(--copilot-launcher-text);
-  font-family: var(--font-sans);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  letter-spacing: 0;
-  cursor: pointer;
-  box-shadow:
-    0 0.0625rem 0 rgba(255, 255, 255, 0.94) inset,
-    0 0 0 0.0625rem rgba(255, 255, 255, 0.55),
-    0 1.125rem 2.5rem -1.25rem rgba(30, 25, 15, 0.34),
-    0 0.1875rem 0.5rem rgba(58, 43, 21, 0.08);
-  transition:
-    transform var(--t-fast),
-    box-shadow var(--t-fast),
-    border-color var(--t-fast),
-    background var(--t-fast);
+  gap: 2px;
+  height: 0.875rem;
 }
-
-.copilot-launcher:hover {
-  transform: translate(-50%, -0.125rem);
-  border-color: color-mix(in oklch, #c28a32 42%, var(--hairline));
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 247, 231, 0.94) 100%),
-    var(--copilot-launcher-surface);
-  box-shadow:
-    0 0.0625rem 0 rgba(255, 255, 255, 0.98) inset,
-    0 1.25rem 2.5rem -1rem rgba(36, 45, 68, 0.3),
-    0 0.25rem 0.625rem rgba(72, 50, 20, 0.08);
+.copilot-eq span {
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  background: currentColor;
+  transform-origin: center;
+  animation: copilot-eq-bar 0.8s ease-in-out infinite;
 }
-
-.copilot-launcher-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  flex: 0 0 auto;
-  border-radius: 999px;
-  background:
-    radial-gradient(circle at 36% 28%, rgba(255, 255, 255, 0.92) 0%, transparent 42%),
-    var(--copilot-launcher-accent-bg);
-  color: var(--copilot-launcher-accent);
-  box-shadow:
-    0 0.0625rem 0 rgba(255, 255, 255, 0.82) inset,
-    0 0.375rem 0.875rem -0.625rem rgba(185, 133, 46, 0.7);
+.copilot-eq span:nth-child(2) {
+  animation-duration: 0.6s;
+  animation-delay: 0.1s;
 }
-
-.copilot-launcher-message {
-  color: var(--copilot-launcher-text);
-  font-weight: 540;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 17.5rem;
+.copilot-eq span:nth-child(3) {
+  animation-duration: 0.9s;
+  animation-delay: 0.2s;
 }
-
-/* Right-side filled amber CTA — visual style of the "Try it" button in the
- * reference banner. Lives inside the same <button>, so it's a span styled
- * to look like a button. The whole pill is the click target. */
-.copilot-launcher-cta {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 1.875rem;
-  padding: 0 0.9375rem;
-  flex: 0 0 auto;
-  border-radius: 999px;
-  background: linear-gradient(180deg,
-    var(--copilot-launcher-cta-top) 0%,
-    var(--copilot-launcher-cta-bottom) 100%);
-  color: white;
-  font-weight: 600;
-  font-size: 0.75rem;
-  letter-spacing: 0;
-  box-shadow:
-    0 0.0625rem 0 rgba(255, 255, 255, 0.28) inset,
-    0 0.375rem 1rem -0.375rem var(--copilot-launcher-cta-shadow);
-  transition: filter var(--t-fast), box-shadow var(--t-fast);
+@keyframes copilot-eq-bar {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
 }
-
-.copilot-launcher:hover .copilot-launcher-cta {
-  filter: brightness(1.04) saturate(1.05);
-  box-shadow:
-    0 0.0625rem 0 rgba(255, 255, 255, 0.42) inset,
-    0 0.5rem 1.125rem -0.375rem var(--copilot-launcher-cta-shadow);
-}
-
-/* State-aware accents.
- *   idle     → neutral icon, default CTA
- *   working  → amber-tinted sparkle, CTA stays amber (consistent)
- *   unread   → emerald sparkle (matches assistant new-reply hint)
- *   approval → red sparkle + red CTA, slight border accent (urgent) */
-.copilot-launcher--working .copilot-launcher-icon {
-  --copilot-launcher-accent: #b17313;
-  --copilot-launcher-accent-bg: color-mix(in oklch, var(--warn) 18%, white);
-}
-
-.copilot-launcher--unread .copilot-launcher-icon {
-  --copilot-launcher-accent: #047857;
-  --copilot-launcher-accent-bg: color-mix(in oklch, var(--success) 16%, white);
-}
-.copilot-launcher--unread .copilot-launcher-cta {
-  --copilot-launcher-cta-shadow: color-mix(in oklch, var(--success) 42%, transparent);
-  background: linear-gradient(180deg,
-    color-mix(in oklch, var(--success) 86%, white) 0%,
-    var(--success) 100%);
-  color: white;
-  box-shadow:
-    0 0.0625rem 0 rgba(255, 255, 255, 0.22) inset,
-    0 0.25rem 0.75rem -0.25rem color-mix(in oklch, var(--success) 55%, transparent);
-}
-
-.copilot-launcher--approval {
-  border-color: color-mix(in oklch, var(--danger) 38%, transparent);
-}
-.copilot-launcher--approval .copilot-launcher-icon {
-  --copilot-launcher-accent: var(--danger);
-  --copilot-launcher-accent-bg: color-mix(in oklch, var(--danger) 12%, white);
-}
-.copilot-launcher--approval .copilot-launcher-cta {
-  --copilot-launcher-cta-shadow: color-mix(in oklch, var(--danger) 45%, transparent);
-  background: linear-gradient(180deg,
-    color-mix(in oklch, var(--danger) 88%, white) 0%,
-    var(--danger) 100%);
-  color: white;
-  box-shadow:
-    0 0.0625rem 0 rgba(255, 255, 255, 0.22) inset,
-    0 0.25rem 0.75rem -0.25rem color-mix(in oklch, var(--danger) 55%, transparent);
-}
-
-@media (max-width: 32.5rem) {
-  .copilot-launcher {
-    max-width: calc(100vw - 1.375rem);
-  }
-  .copilot-launcher-message {
-    max-width: 9.375rem;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .copilot-launcher { transition: none; }
+  .copilot-eq span { animation: none; }
 }
 
 .copilot-search-input {
@@ -1513,6 +1365,54 @@ kbd {
   color: var(--ink);
 }
 
+.copilot-search-mic-select {
+  width: min(9.5rem, 26vw);
+  max-width: 9.5rem;
+  height: 1.75rem;
+  border: 1px solid color-mix(in oklch, var(--hairline) 88%, var(--ink));
+  border-radius: 0.5rem;
+  background: color-mix(in oklch, var(--surface) 92%, white);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.7188rem;
+  line-height: 1;
+  padding: 0 1.35rem 0 0.5rem;
+  outline: none;
+}
+
+.copilot-search-mic-select:focus {
+  border-color: color-mix(in oklch, var(--primary) 42%, var(--hairline));
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 12%, transparent);
+}
+
+.copilot-search-mic-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.copilot-search-voice-meter {
+  position: relative;
+  display: inline-flex;
+  width: 2.75rem;
+  height: 0.375rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--muted) 16%, transparent);
+}
+
+.copilot-search-voice-meter > span {
+  display: block;
+  height: 100%;
+  min-width: 0.375rem;
+  border-radius: inherit;
+  background: color-mix(in oklch, var(--primary) 72%, white);
+  transition: width 80ms linear;
+}
+
+.copilot-search-voice-meter.is-live > span {
+  background: color-mix(in oklch, var(--danger) 76%, white);
+}
+
 .copilot-search-expand-btn {
   padding: 0;
   border: 0;
@@ -1610,69 +1510,6 @@ kbd {
   }
 }
 
-.copilot-dock-reply-pop {
-  position: absolute;
-  top: -3rem;
-  right: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5625rem;
-  max-width: min(17.5rem, calc(100vw - 3.5rem));
-  height: 2.25rem;
-  padding: 0 0.9375rem 0 0.8125rem;
-  border: 1px solid #fcd34d;
-  border-radius: 1.125rem;
-  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 58%, #fde68a 100%);
-  color: #78350f;
-  box-shadow:
-    0 0.875rem 1.875rem -1.125rem rgba(180, 83, 9, 0.42),
-    0 0.0625rem 0 rgba(255, 255, 255, 0.92) inset;
-  font: inherit;
-  font-size: 0.7813rem;
-  font-weight: 700;
-  letter-spacing: 0.005em;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: transform var(--t-fast), border-color var(--t-fast), box-shadow var(--t-fast), background var(--t-fast);
-  animation: copilot-reply-pop-in 0.24s ease-out both;
-}
-
-.copilot-dock-reply-pop::after {
-  content: "";
-  position: absolute;
-  right: 1.75rem;
-  bottom: -0.3125rem;
-  width: 0.5625rem;
-  height: 0.5625rem;
-  background: #fef3c7;
-  border-right: 1px solid #fcd34d;
-  border-bottom: 1px solid #fcd34d;
-  transform: rotate(45deg);
-}
-
-.copilot-dock-reply-pop:hover {
-  border-color: #f59e0b;
-  background: linear-gradient(135deg, #fff7ed 0%, #fde68a 58%, #fcd34d 100%);
-  box-shadow:
-    0 1.125rem 2.25rem -1.125rem rgba(180, 83, 9, 0.5),
-    0 0.0625rem 0 rgba(255, 255, 255, 0.94) inset,
-    0 0 0 0.0625rem rgba(245, 158, 11, 0.14);
-  transform: translateY(-0.0625rem);
-}
-
-.copilot-dock-reply-dot {
-  width: 0.4375rem;
-  height: 0.4375rem;
-  flex-shrink: 0;
-  display: inline-flex;
-  border-radius: 999px;
-  background: #f59e0b;
-  box-shadow:
-    0 0 0 0.1875rem rgba(245, 158, 11, 0.16),
-    0 0 0.5rem rgba(245, 158, 11, 0.42);
-  animation: copilot-reply-dot-pulse 1.6s ease-in-out infinite;
-}
-
 @keyframes copilot-reply-pop-in {
   from {
     opacity: 0;
@@ -1684,22 +1521,62 @@ kbd {
   }
 }
 
-@keyframes copilot-reply-spark-spin {
-  to {
-    transform: rotate(360deg);
-  }
+
+/* Spoken-reply toast: appears above the detached composer (with a gap) when
+   the agent finishes a run that carries a voice narration line. Shows the
+   narrated text; the ✕ dismisses it like a notification and stops playback. */
+.copilot-voice-toast {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 0.625rem);
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.625rem 0.6875rem 0.625rem 0.75rem;
+  border: 1px solid var(--hairline);
+  border-radius: 0.875rem;
+  background: var(--card);
+  color: var(--ink-2);
+  box-shadow: 0 0.5rem 1.25rem -0.75rem rgba(15, 23, 42, 0.26);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  animation: copilot-reply-pop-in 0.2s ease-out both;
 }
 
-@keyframes copilot-reply-dot-pulse {
-  0%,
-  100% {
-    transform: scale(0.86);
-    box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 10%, transparent);
-  }
-  50% {
-    transform: scale(1);
-    box-shadow: 0 0 0 7px color-mix(in oklch, var(--primary) 4%, transparent);
-  }
+.copilot-voice-toast-icon {
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+  color: var(--primary);
+}
+
+.copilot-voice-toast-text {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.copilot-voice-toast-close {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  margin: -0.0625rem -0.125rem 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+
+.copilot-voice-toast-close:hover {
+  background: color-mix(in oklch, var(--ink) 8%, transparent);
+  color: var(--ink);
 }
 
 .copilot-dock-panel {
@@ -3948,6 +3825,36 @@ kbd {
 .eid-groups { display: flex; gap: 0.25rem; flex-wrap: wrap; }
 
 .loc-chips { display: flex; gap: 0.25rem; flex-wrap: wrap; align-items: center; }
+/* Issued-items column: count toggle + collapsible detail row (employees list) */
+.issued-items-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--ink-2);
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  padding: 0.1875rem 0.5rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+.issued-items-toggle:hover { background: var(--surface-2); }
+.issued-items-toggle svg { transition: transform var(--t-fast); }
+.issued-items-toggle.is-open svg { transform: rotate(180deg); }
+.data-table tbody tr.issued-items-row td {
+  background: color-mix(in oklch, var(--surface-2) 55%, transparent);
+  height: auto;
+  padding: 0.5rem 1rem;
+  text-align: left;
+}
+.issued-items-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  align-items: center;
+}
 .users-location-cell {
   text-align: center;
 }

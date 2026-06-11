@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
 import { LocationScopePicker } from "@/components/AddUserModal";
@@ -43,6 +43,13 @@ interface ApiLocation {
   is_store: boolean;
 }
 
+interface IssuedItem {
+  item_id: number;
+  name: string;
+  code: string | null;
+  quantity: number;
+}
+
 interface Employee {
   id: number;
   perse_number: string | null;
@@ -51,6 +58,7 @@ interface Employee {
   department: string | null;
   standalone_locations: number[];
   standalone_locations_display: string[];
+  issued_items?: IssuedItem[];
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -167,7 +175,7 @@ function StatusPill({ active }: { active: boolean }) {
 }
 
 function LocationChips({ labels, max = 2 }: { labels: string[]; max?: number }) {
-  if (!labels.length) return <span className="muted-note">No assigned unit</span>;
+  if (!labels.length) return <span className="muted-note">No assigned location</span>;
   const shown = labels.slice(0, max);
   const rest = labels.length - shown.length;
   return (
@@ -313,6 +321,16 @@ export default function EmployeesPage() {
   const [statusFilter, setStatusFilter] = useState("active");
   const [density, setDensity] = useState<Density>("balanced");
   const [viewMode, setViewMode] = useState<ViewMode>("table");
+  const [expandedItemRows, setExpandedItemRows] = useState<Set<number>>(() => new Set());
+
+  const toggleItemRow = (id: number) => {
+    setExpandedItemRows(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (!authLoading && !canView) router.replace("/403");
@@ -346,19 +364,20 @@ export default function EmployeesPage() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return employees.filter(employee => {
-      if (statusFilter === "active" && !employee.is_active) return false;
-      if (statusFilter === "inactive" && employee.is_active) return false;
-      if (!q) return true;
-      const hay = [
-        employee.name,
-        employee.perse_number,
-        employee.designation,
-        employee.department,
-        ...(employee.standalone_locations_display ?? []),
-      ].filter(Boolean).join(" ").toLowerCase();
-      return hay.includes(q);
-    });
+    return employees
+      .filter(employee => {
+        if (statusFilter === "active" && !employee.is_active) return false;
+        if (statusFilter === "inactive" && employee.is_active) return false;
+        if (!q) return true;
+        const hay = [
+          employee.name,
+          employee.perse_number,
+          employee.designation,
+          ...(employee.standalone_locations_display ?? []),
+        ].filter(Boolean).join(" ").toLowerCase();
+        return hay.includes(q);
+      })
+      .sort((a, b) => a.id - b.id);
   }, [employees, search, statusFilter]);
 
   const pager = useClientPagination(filtered, PAGE_SIZE);
@@ -523,8 +542,8 @@ export default function EmployeesPage() {
                     <th>Employee</th>
                     <th>PERSE Number</th>
                     <th>Designation</th>
-                    <th>Department</th>
-                    <th>Assigned Units</th>
+                    <th>Assigned Location</th>
+                    <th>Issued Items</th>
                     <th>Status</th>
                     <th style={{ textAlign: "right" }}>Actions</th>
                   </tr>
@@ -535,7 +554,8 @@ export default function EmployeesPage() {
                   ) : pager.pageItems.length === 0 ? (
                     <tr><td colSpan={7}><div className="empty-state">No employees found.</div></td></tr>
                   ) : pager.pageItems.map(employee => (
-                    <tr key={employee.id}>
+                    <Fragment key={employee.id}>
+                    <tr>
                       <td className="col-user">
                         <div className="user-cell">
                           <div>
@@ -546,8 +566,23 @@ export default function EmployeesPage() {
                       </td>
                       <td className="mono">{employee.perse_number || <span className="muted-note">Missing</span>}</td>
                       <td>{employee.designation || <span className="muted-note">Not set</span>}</td>
-                      <td>{employee.department || <span className="muted-note">Not set</span>}</td>
-                      <td><LocationChips labels={employee.standalone_locations_display ?? []} /></td>
+                      <td className="users-location-cell"><LocationChips labels={employee.standalone_locations_display ?? []} /></td>
+                      <td>
+                        {(employee.issued_items?.length ?? 0) === 0 ? (
+                          <span className="muted-note">None</span>
+                        ) : (
+                          <button
+                            type="button"
+                            className={`issued-items-toggle${expandedItemRows.has(employee.id) ? " is-open" : ""}`}
+                            onClick={() => toggleItemRow(employee.id)}
+                            aria-expanded={expandedItemRows.has(employee.id)}
+                            aria-label={`${expandedItemRows.has(employee.id) ? "Hide" : "Show"} items issued to ${employee.name}`}
+                          >
+                            {employee.issued_items!.length} item{employee.issued_items!.length === 1 ? "" : "s"}
+                            <Ic d="M6 9l6 6 6-6" size={12} />
+                          </button>
+                        )}
+                      </td>
                       <td><StatusPill active={employee.is_active} /></td>
                       <td className="col-actions">
                         <div className="row-actions">
@@ -573,6 +608,24 @@ export default function EmployeesPage() {
                         </div>
                       </td>
                     </tr>
+                    {expandedItemRows.has(employee.id) && (employee.issued_items?.length ?? 0) > 0 ? (
+                      <tr className="issued-items-row">
+                        <td colSpan={7}>
+                          <div className="issued-items-detail">
+                            {employee.issued_items!.map(item => (
+                              <span
+                                key={item.item_id}
+                                className="chip chip-loc"
+                                title={item.code ? `${item.name} (${item.code})` : item.name}
+                              >
+                                {item.name} ×{item.quantity}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -599,12 +652,26 @@ export default function EmployeesPage() {
                   <StatusPill active={employee.is_active} />
                 </div>
                 <div className="user-card-section">
-                  <div className="eyebrow">Department</div>
-                  <div className="user-card-last">{employee.department || "No department recorded"}</div>
+                  <div className="eyebrow">Assigned location</div>
+                  <LocationChips labels={employee.standalone_locations_display ?? []} max={3} />
                 </div>
                 <div className="user-card-section">
-                  <div className="eyebrow">Assigned units</div>
-                  <LocationChips labels={employee.standalone_locations_display ?? []} max={3} />
+                  <div className="eyebrow">Issued items</div>
+                  {(employee.issued_items?.length ?? 0) === 0 ? (
+                    <span className="muted-note">None</span>
+                  ) : (
+                    <div className="loc-chips">
+                      {employee.issued_items!.map(item => (
+                        <span
+                          key={item.item_id}
+                          className="chip chip-loc"
+                          title={item.code ? `${item.name} (${item.code})` : item.name}
+                        >
+                          {item.name} ×{item.quantity}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="user-card-foot">
                   <div className="muted-note mono">{employee.designation || "No designation"}</div>

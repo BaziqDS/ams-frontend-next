@@ -12,16 +12,15 @@ import {
 import {
   ArrowUpIcon,
   Check,
-  ChevronDown,
-  ChevronUp,
   Clock3,
   LoaderCircle,
   MessageCircle,
   Mic,
   Maximize2,
-  Sparkles,
   SquarePen,
   UserRound,
+  Volume2,
+  VolumeX,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -32,7 +31,9 @@ import {
 } from "@/contexts/CopilotContext";
 import { CopilotOpenUiPreviewModal } from "@/components/CopilotOpenUiPreviewModal";
 import { buildDetachedApprovalReview } from "@/lib/copilotDetachedApproval";
-import { translateText } from "@/lib/voiceTranslate";
+// TEMP: translation disabled in submitQuickMessage to test raw Urdu/English
+// mix against the model. Restore this import when re-enabling translation.
+// import { translateText } from "@/lib/voiceTranslate";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNotifications } from "@/contexts/NotificationsContext";
 import {
@@ -53,8 +54,8 @@ const CHAT_URL = process.env.NEXT_PUBLIC_COPILOT_URL ?? "http://localhost:3001";
 const CHAT_ORIGIN = CHAT_URL.replace(/\/$/, "");
 const DOCK_STORAGE_KEY = "ams-copilot-open";
 const DOCK_POS_KEY = "ams-copilot-pos";
-const DETACHED_COMPOSER_OPEN_KEY = "ams-copilot-detached-open";
 const DETACHED_PENDING_KEY = "ams-copilot-detached-pending";
+const VOICE_REPLIES_KEY = "ams-copilot-voice-replies";
 const DETACHED_PENDING_TTL_MS = 10 * 60 * 1000;
 // After the user clicks stop, ignore any straggler ASSISTANT_LOADING=true /
 // HUMAN_MESSAGE events from the iframe for this many milliseconds. The
@@ -63,8 +64,97 @@ const DETACHED_PENDING_TTL_MS = 10 * 60 * 1000;
 const STOP_GUARD_MS = 2000;
 // Safety net: if the parent thinks the agent is still running but no events
 // arrive for this long, auto-unlock the composer. Prevents the textarea from
-// being permanently stuck if a postMessage is missed.
-const PENDING_SAFETY_TIMEOUT_MS = 45 * 1000;
+// being permanently stuck if a postMessage is missed. Pending now covers the
+// WHOLE run (it is no longer dropped on the first streamed token), so this
+// window must survive quiet stretches between iframe events — each
+// ASSISTANT_MESSAGE / TODO_STATE event re-arms it as an activity heartbeat.
+const PENDING_SAFETY_TIMEOUT_MS = 120 * 1000;
+const VOICE_AUDIO_CONSTRAINTS: MediaStreamConstraints = {
+  audio: {
+    channelCount: { ideal: 1 },
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: false,
+    sampleRate: { ideal: 48000 },
+    sampleSize: { ideal: 16 },
+  },
+};
+const DEFAULT_AUDIO_DEVICE_ID = "default";
+
+type AudioInputDevice = {
+  deviceId: string;
+  label: string;
+};
+
+type SpeechRecognitionLike = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionResultEventLike) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+};
+
+type SpeechRecognitionResultEventLike = {
+  resultIndex: number;
+  results: {
+    length: number;
+    [index: number]: {
+      isFinal: boolean;
+      length: number;
+      [index: number]: { transcript: string };
+    };
+  };
+};
+
+type SpeechRecognitionWindow = typeof window & {
+  SpeechRecognition?: new () => SpeechRecognitionLike;
+  webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+};
+
+function buildVoiceAudioConstraints(deviceId: string): MediaStreamConstraints {
+  const audio =
+    typeof VOICE_AUDIO_CONSTRAINTS.audio === "object"
+      ? { ...VOICE_AUDIO_CONSTRAINTS.audio }
+      : {};
+  return {
+    audio: {
+      ...audio,
+      ...(deviceId && deviceId !== DEFAULT_AUDIO_DEVICE_ID
+        ? { deviceId: { exact: deviceId } }
+        : {}),
+    },
+  };
+}
+
+function normalizeUrduVoicePreview(text: string): string {
+  return text
+    .replace(/\binspections?\b/gi, "انسپیکشن")
+    .replace(/\bitems?\b/gi, "آئٹم")
+    .replace(/\blocations?\b/gi, "لوکیشن")
+    .replace(/\bstores?\b/gi, "اسٹور")
+    .replace(/\bstock\b/gi, "اسٹاک")
+    .replace(/\bentries\b/gi, "انٹریز")
+    .replace(/\bentry\b/gi, "انٹری")
+    .replace(/\bregisters?\b/gi, "رجسٹر")
+    .replace(/\bcategories?\b/gi, "کیٹیگری")
+    .replace(/\bserials?\b/gi, "سیریل")
+    .replace(/\bnumbers?\b/gi, "نمبر")
+    .replace(/\bapproval\b/gi, "اپروول")
+    .replace(/\bapprove\b/gi, "اپروو")
+    .replace(/\breject\b/gi, "ریجیکٹ")
+    .replace(/\bfinance\b/gi, "فنانس")
+    .replace(/\bmaintenance\b/gi, "مینٹیننس")
+    .replace(/\bemployee\b/gi, "ایمپلائی")
+    .replace(/\bemployees\b/gi, "ایمپلائز")
+    .replace(/\bdepartment\b/gi, "ڈیپارٹمنٹ")
+    .replace(/\bdepartments\b/gi, "ڈیپارٹمنٹس")
+    .replace(/\bCSIT\b/g, "سی ایس آئی ٹی")
+    .replace(/\bAMS\b/g, "اے ایم ایس");
+}
 
 const PLACEHOLDER_PHRASES = [
   "Ask about inspections...",
@@ -134,7 +224,6 @@ export function CopilotSidePanel() {
       typeof window !== "undefined" &&
       window.localStorage.getItem(DOCK_STORAGE_KEY) === "true",
   );
-  const [unreadCount, setUnreadCount] = useState(0);
   const [quickMessage, setQuickMessage] = useState(
     () => restoredPendingRef.current?.text ?? "",
   );
@@ -161,18 +250,9 @@ export function CopilotSidePanel() {
     code: string;
     isStreaming: boolean;
   } | null>(null);
-  // Detached composer: collapsed launcher pill by default, expands to the
-  // existing compact detached composer on click. Persisted across sessions so
-  // the user's preference sticks.
-  const [composerOpen, setComposerOpen] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem(DETACHED_COMPOSER_OPEN_KEY) === "true";
-  });
-
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const composerFormRef = useRef<HTMLFormElement>(null);
-  const launcherRef = useRef<HTMLButtonElement>(null);
   const searchTextareaRef = useRef<HTMLTextAreaElement>(null);
   const loadingStartedRef = useRef(false);
   const iframeReadyRef = useRef(false);
@@ -233,10 +313,6 @@ export function CopilotSidePanel() {
 
   const closePanel = useCallback(() => {
     setIsOpen(false);
-    setComposerOpen(true);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(DETACHED_COMPOSER_OPEN_KEY, "true");
-    }
   }, []);
 
   useEffect(
@@ -258,7 +334,6 @@ export function CopilotSidePanel() {
     if (typeof document === "undefined") return;
     document.documentElement.classList.toggle("ams-copilot-docked", isOpen);
     window.localStorage.setItem(DOCK_STORAGE_KEY, isOpen ? "true" : "false");
-    if (isOpen) setUnreadCount(0);
     return () => {
       document.documentElement.classList.remove("ams-copilot-docked");
     };
@@ -284,6 +359,103 @@ export function CopilotSidePanel() {
     document.addEventListener("mousedown", onPointerDown, true);
     return () => document.removeEventListener("mousedown", onPointerDown, true);
   }, [closePanel, isOpen]);
+
+  // ── Voice replies (Uplift AI TTS) ──────────────────────────────────────
+  // The chat iframe posts SPEAK_TEXT once per completed agent run with the
+  // reply's speakable text. The parent owns playback so narration works even
+  // when the chat panel is closed (detached/hands-free use). Synthesis goes
+  // through /api/copilot/voice/speak (translate to Urdu → Uplift Orator).
+  const [voiceRepliesEnabled, setVoiceRepliesEnabled] = useState(true);
+  const [isSpeakingReply, setIsSpeakingReply] = useState(false);
+  // Notification-style block above the detached composer showing the reply
+  // text being narrated. Dismissed with its ✕ (which also stops playback),
+  // replaced by the next spoken reply, or cleared when the panel opens.
+  const [voiceToast, setVoiceToast] = useState<string | null>(null);
+  const voiceRepliesEnabledRef = useRef(true);
+  const replyAudioRef = useRef<HTMLAudioElement | null>(null);
+  const replyAudioUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (window.localStorage.getItem(VOICE_REPLIES_KEY) === "0") {
+      setVoiceRepliesEnabled(false);
+      voiceRepliesEnabledRef.current = false;
+    }
+  }, []);
+
+  const stopReplyPlayback = useCallback(() => {
+    setIsSpeakingReply(false);
+    const audio = replyAudioRef.current;
+    replyAudioRef.current = null;
+    if (audio) {
+      try {
+        audio.pause();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (replyAudioUrlRef.current) {
+      URL.revokeObjectURL(replyAudioUrlRef.current);
+      replyAudioUrlRef.current = null;
+    }
+  }, []);
+
+  const dismissVoiceToast = useCallback(() => {
+    setVoiceToast(null);
+    stopReplyPlayback();
+  }, [stopReplyPlayback]);
+
+  const toggleVoiceReplies = useCallback(() => {
+    setVoiceRepliesEnabled(prev => {
+      const next = !prev;
+      voiceRepliesEnabledRef.current = next;
+      window.localStorage.setItem(VOICE_REPLIES_KEY, next ? "1" : "0");
+      if (!next) stopReplyPlayback();
+      return next;
+    });
+  }, [stopReplyPlayback]);
+
+  const speakReplyText = useCallback(
+    async (text: string) => {
+      if (!voiceRepliesEnabledRef.current) return;
+      try {
+        const response = await fetch("/api/copilot/voice/speak", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+        if (!response.ok) {
+          console.warn("[CopilotSidePanel] voice reply synthesis failed:", response.status);
+          return;
+        }
+        const blob = await response.blob();
+        // The user may have muted while synthesis was in flight.
+        if (!voiceRepliesEnabledRef.current) return;
+        stopReplyPlayback();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        replyAudioRef.current = audio;
+        replyAudioUrlRef.current = url;
+        audio.onended = () => {
+          // Only clean up if a newer reply hasn't replaced this audio.
+          if (replyAudioRef.current === audio) stopReplyPlayback();
+        };
+        audio
+          .play()
+          .then(() => {
+            if (replyAudioRef.current === audio) setIsSpeakingReply(true);
+          })
+          .catch(err => {
+            console.warn("[CopilotSidePanel] voice reply playback blocked:", err);
+            if (replyAudioRef.current === audio) stopReplyPlayback();
+          });
+      } catch (err) {
+        console.warn("[CopilotSidePanel] voice reply failed:", err);
+      }
+    },
+    [stopReplyPlayback],
+  );
+
+  useEffect(() => () => stopReplyPlayback(), [stopReplyPlayback]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -376,6 +548,14 @@ export function CopilotSidePanel() {
       if (event.data?.type === "TODO_STATE") {
         const current = event.data.current;
         setCurrentTodo(current && typeof current === "object" ? current : null);
+        // Mid-run activity heartbeat: re-arm the pending safety timer so a
+        // long run is not auto-unlocked while the iframe is clearly alive.
+        if (
+          loadingStartedRef.current &&
+          Date.now() >= stopGuardUntilRef.current
+        ) {
+          setPendingWithSafety(true);
+        }
         return;
       }
       if (event.data?.type === "HITL_INTERRUPT") {
@@ -397,20 +577,49 @@ export function CopilotSidePanel() {
         showApprovalInterrupt(null);
         return;
       }
+      if (event.data?.type === "SPEAK_TEXT") {
+        const speakText =
+          typeof event.data.text === "string" ? event.data.text.trim() : "";
+        if (speakText) {
+          void speakReplyText(speakText);
+          // Detached mode: surface the narrated reply as a dismissable
+          // notification-style block above the composer so the user can
+          // read along (or catch what they missed) without opening the
+          // panel. When the panel is open the reply is already visible
+          // in the chat thread, so no toast.
+          if (!isOpen) setVoiceToast(speakText);
+        }
+        return;
+      }
       if (event.data?.type !== "ASSISTANT_MESSAGE") return;
-      loadingStartedRef.current = false;
       queuedQuickMessageRef.current = null;
       clearDetachedPending();
-      setPendingWithSafety(false);
-      // Do NOT clear quickMessage here. This event fires on the FIRST
-      // assistant token (mid-stream), and the user may already be typing
-      // the next message — clearing would wipe their draft. The input was
-      // already cleared at submit time.
-      setUnreadCount((c) => (isOpen ? 0 : Math.min(99, c + 1)));
+      // This event fires on the FIRST assistant token (mid-stream) — the
+      // agent is still working. Do NOT unlock the composer here: dropping
+      // pending at this point flipped the stop/spinner button back to an
+      // idle send arrow while the run continued (most visible on
+      // voice-initiated runs, where the user is watching the detached
+      // composer hands-free). The true end-of-run signal is the
+      // ASSISTANT_LOADING=false branch above. Re-arm the safety timer
+      // instead — streaming is proof the run is alive.
+      if (
+        loadingStartedRef.current &&
+        Date.now() >= stopGuardUntilRef.current
+      ) {
+        setPendingWithSafety(true);
+      }
+      // Do NOT clear quickMessage here either: the user may already be
+      // typing the next message — clearing would wipe their draft. The
+      // input was already cleared at submit time.
+      //
+      // The "new reply" badge is NOT raised here: this fires on the first
+      // streamed token while the agent is still working, so showing it now
+      // reads as "done" prematurely. It is raised in the ASSISTANT_LOADING=
+      // false branch above, which marks the true end of the run.
     };
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [isOpen, setPendingWithSafety, showApprovalInterrupt]);
+  }, [isOpen, setPendingWithSafety, showApprovalInterrupt, speakReplyText]);
 
   useEffect(() => {
     const onHitlInterrupt = (event: Event) => {
@@ -526,7 +735,9 @@ export function CopilotSidePanel() {
   // ────────────────────────────────────────────────────────────────────────────
 
   const openPanel = useCallback(() => {
-    setUnreadCount(0);
+    // The reply is visible in the chat thread once the panel opens — drop
+    // the toast so it doesn't reappear stale when the panel closes later.
+    setVoiceToast(null);
     setIsOpen(true);
   }, []);
 
@@ -593,38 +804,49 @@ export function CopilotSidePanel() {
         setQuickMessage(finalText);
         lastSubmittedTextRef.current = finalText;
         userEditedSinceSubmitRef.current = false;
+        // A new run supersedes the previous reply's spoken-text toast.
+        setVoiceToast(null);
         setPendingWithSafety(true);
         loadingStartedRef.current = true;
         saveDetachedPending(finalText);
         postQuickMessage(finalText);
       };
 
-      // Translate to English whenever the message contains Urdu/Arabic script
-      // (U+0600..U+06FF). This works whether the text came from the mic, a
-      // paste, or a manual type — the agent always receives English.
-      const hasUrdu = /[؀-ۿ]/.test(text);
-      if (!hasUrdu) {
-        sendText(text);
-        return;
-      }
+      // TEMP: translation disabled — send the raw Urdu/English mix straight to
+      // the model to observe how it handles code-switching without a pre-pass.
+      // Re-enable the block below to restore English-only input to the agent.
+      sendText(text);
 
-      setPendingWithSafety(true);
-      lastSubmittedTextRef.current = text;
-      userEditedSinceSubmitRef.current = false;
-      translateText(text, "en", "ur")
-        .then((result) => {
-          if (!result.ok || !result.translatedText.trim()) {
-            console.warn("[CopilotSidePanel] translate failed, sending original:", result.error);
-            sendText(text);
-            return;
-          }
-          console.info("[CopilotSidePanel] translated:", text, "→", result.translatedText);
-          sendText(result.translatedText.trim());
-        })
-        .catch((err) => {
-          console.warn("[CopilotSidePanel] translate threw, sending original:", err);
-          sendText(text);
-        });
+      // Translate to English whenever the message contains Urdu/Arabic script
+      // (U+0600..U+06FF) or Devanagari (U+0900..U+097F). Whisper's language
+      // auto-detection often labels spoken Urdu as Hindi and emits Devanagari,
+      // so both scripts must hit the translate path — the agent always
+      // receives English whether the text came from the mic, a paste, or a
+      // manual type.
+      // const hasUrduScript = /[؀-ۿ]/.test(text);
+      // const hasDevanagari = /[ऀ-ॿ]/.test(text);
+      // if (!hasUrduScript && !hasDevanagari) {
+      //   sendText(text);
+      //   return;
+      // }
+
+      // setPendingWithSafety(true);
+      // lastSubmittedTextRef.current = text;
+      // userEditedSinceSubmitRef.current = false;
+      // translateText(text, "en", hasUrduScript ? "ur" : "hi")
+      //   .then((result) => {
+      //     if (!result.ok || !result.translatedText.trim()) {
+      //       console.warn("[CopilotSidePanel] translate failed, sending original:", result.error);
+      //       sendText(text);
+      //       return;
+      //     }
+      //     console.info("[CopilotSidePanel] translated:", text, "→", result.translatedText);
+      //     sendText(result.translatedText.trim());
+      //   })
+      //   .catch((err) => {
+      //     console.warn("[CopilotSidePanel] translate threw, sending original:", err);
+      //     sendText(text);
+      //   });
     },
     [postQuickMessage, quickMessage, quickMessagePending, setPendingWithSafety],
   );
@@ -649,105 +871,251 @@ export function CopilotSidePanel() {
   }, [setPendingWithSafety]);
 
   // ── Voice input ────────────────────────────────────────────────────────
-  // MediaRecorder → server-side Whisper transcription (Groq whisper-large-v3
-  // with per-utterance language auto-detection via /api/copilot/voice/
-  // transcribe). Whisper handles the mixed Urdu/English of AMS commands far
-  // better than the browser's single-language SpeechRecognition did. There is
-  // no live interim preview — the transcript lands in the composer when the
-  // recording stops, ready to edit and send. Urdu-script transcripts are
-  // still translated to English at submit time (see submitQuickMessage).
+  // Pure browser SpeechRecognition. While the mic is live the recognizer
+  // streams its interim transcript straight into the composer textarea, and
+  // whatever is shown when the user stops simply stays — there is no separate
+  // audio recording and no server round-trip, so the text never changes out
+  // from under the user on stop. A short-lived getUserMedia stream is opened
+  // only to drive the on-screen mic-level meter (it is not recorded anywhere).
   const [isRecording, setIsRecording] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const [isStartingVoice, setIsStartingVoice] = useState(false);
+  const [audioInputDevices, setAudioInputDevices] = useState<AudioInputDevice[]>([]);
+  const [selectedAudioDeviceId, setSelectedAudioDeviceId] = useState(DEFAULT_AUDIO_DEVICE_ID);
+  const [voiceLevel, setVoiceLevel] = useState(0);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const pendingMicStreamRef = useRef<Promise<MediaStream> | null>(null);
+  const voiceStartCancelledRef = useRef(false);
   const recordingBaseTextRef = useRef("");
+  const speechRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const speechRecognitionFinalRef = useRef("");
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const voiceMeterFrameRef = useRef<number | null>(null);
+
+  const refreshAudioInputDevices = useCallback(async () => {
+    if (typeof window === "undefined" || !navigator.mediaDevices?.enumerateDevices) return;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const inputs = devices
+        .filter(device => device.kind === "audioinput")
+        .map((device, index) => ({
+          deviceId: device.deviceId || DEFAULT_AUDIO_DEVICE_ID,
+          label: device.label || `Microphone ${index + 1}`,
+        }));
+      setAudioInputDevices(inputs);
+      setSelectedAudioDeviceId(current =>
+        current === DEFAULT_AUDIO_DEVICE_ID || inputs.some(device => device.deviceId === current)
+          ? current
+          : DEFAULT_AUDIO_DEVICE_ID,
+      );
+    } catch (err) {
+      console.warn("[CopilotSidePanel] could not enumerate audio devices:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshAudioInputDevices();
+    if (typeof window === "undefined" || !navigator.mediaDevices?.addEventListener) return;
+    navigator.mediaDevices.addEventListener("devicechange", refreshAudioInputDevices);
+    return () => navigator.mediaDevices.removeEventListener("devicechange", refreshAudioInputDevices);
+  }, [refreshAudioInputDevices]);
+
+  const stopVoiceMeter = useCallback(() => {
+    if (voiceMeterFrameRef.current !== null) {
+      cancelAnimationFrame(voiceMeterFrameRef.current);
+      voiceMeterFrameRef.current = null;
+    }
+    analyserRef.current = null;
+    const context = audioContextRef.current;
+    audioContextRef.current = null;
+    if (context && context.state !== "closed") {
+      void context.close().catch(() => undefined);
+    }
+    setVoiceLevel(0);
+  }, []);
+
+  const startVoiceMeter = useCallback((stream: MediaStream) => {
+    stopVoiceMeter();
+    const AudioContextCtor =
+      window.AudioContext ??
+      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextCtor) return;
+    try {
+      const context = new AudioContextCtor();
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.72;
+      const source = context.createMediaStreamSource(stream);
+      source.connect(analyser);
+      const samples = new Uint8Array(analyser.fftSize);
+      audioContextRef.current = context;
+      analyserRef.current = analyser;
+      const tick = () => {
+        analyser.getByteTimeDomainData(samples);
+        let sum = 0;
+        for (const value of samples) {
+          const normalized = (value - 128) / 128;
+          sum += normalized * normalized;
+        }
+        const rms = Math.sqrt(sum / samples.length);
+        setVoiceLevel(Math.min(1, rms * 4.5));
+        voiceMeterFrameRef.current = requestAnimationFrame(tick);
+      };
+      tick();
+    } catch (err) {
+      console.warn("[CopilotSidePanel] could not start voice meter:", err);
+    }
+  }, [stopVoiceMeter]);
+
+  const stopRealtimeTranscriptPreview = useCallback(() => {
+    const recognition = speechRecognitionRef.current;
+    speechRecognitionRef.current = null;
+    if (recognition) {
+      recognition.onend = null;
+      recognition.onerror = null;
+      recognition.onresult = null;
+      try {
+        recognition.stop();
+      } catch {
+        try {
+          recognition.abort();
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    speechRecognitionFinalRef.current = "";
+  }, []);
+
+  const startRealtimeTranscriptPreview = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const Recognition =
+      (window as SpeechRecognitionWindow).SpeechRecognition ??
+      (window as SpeechRecognitionWindow).webkitSpeechRecognition;
+    if (!Recognition) return;
+    stopRealtimeTranscriptPreview();
+    try {
+      const recognition = new Recognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = "ur-PK";
+      speechRecognitionFinalRef.current = "";
+      recognition.onresult = (event) => {
+        let interim = "";
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+          const result = event.results[index];
+          const transcript = result[0]?.transcript?.trim() ?? "";
+          if (!transcript) continue;
+          if (result.isFinal) {
+            speechRecognitionFinalRef.current = `${speechRecognitionFinalRef.current} ${transcript}`.trim();
+          } else {
+            interim = `${interim} ${transcript}`.trim();
+          }
+        }
+        // Stream the interim transcript straight into the composer textarea
+        // so it shows in the same spot (and expands/scrolls the same way) as
+        // typed text. recordingBaseTextRef holds whatever was already typed
+        // before recording started, so we always rebuild from that base
+        // rather than appending to the growing preview.
+        const preview = normalizeUrduVoicePreview(`${speechRecognitionFinalRef.current} ${interim}`.trim());
+        setQuickMessage(`${recordingBaseTextRef.current}${preview}`);
+      };
+      recognition.onerror = () => {
+        speechRecognitionRef.current = null;
+      };
+      recognition.onend = () => {
+        speechRecognitionRef.current = null;
+      };
+      recognition.start();
+      speechRecognitionRef.current = recognition;
+    } catch (err) {
+      console.warn("[CopilotSidePanel] realtime speech preview unavailable:", err);
+    }
+  }, [stopRealtimeTranscriptPreview]);
 
   const stopVoiceRecognition = useCallback(() => {
+    voiceStartCancelledRef.current = true;
     setIsRecording(false);
-    const recorder = mediaRecorderRef.current;
-    mediaRecorderRef.current = null;
-    if (recorder && recorder.state !== "inactive") {
-      try {
-        recorder.stop(); // onstop releases the stream and kicks off transcription
-      } catch {
-        /* ignore */
-      }
-    } else {
-      mediaStreamRef.current?.getTracks().forEach(track => track.stop());
-      mediaStreamRef.current = null;
+    setIsStartingVoice(false);
+    stopVoiceMeter();
+    // Whatever the recognizer last streamed into the composer simply stays —
+    // we just stop listening and release the mic stream used for the meter.
+    stopRealtimeTranscriptPreview();
+    mediaStreamRef.current?.getTracks().forEach(track => track.stop());
+    mediaStreamRef.current = null;
+    // Put the cursor at the end of the captured text so the user can edit it.
+    const textarea = searchTextareaRef.current;
+    if (textarea) {
+      requestAnimationFrame(() => {
+        textarea.focus();
+        const end = textarea.value.length;
+        try {
+          textarea.setSelectionRange(end, end);
+        } catch {
+          /* ignore */
+        }
+      });
     }
-  }, []);
+  }, [stopRealtimeTranscriptPreview, stopVoiceMeter]);
 
-  const transcribeRecording = useCallback(async (blob: Blob) => {
-    // Ignore accidental taps that produced no real audio.
-    if (blob.size < 1024) return;
-    setIsTranscribing(true);
-    try {
-      const form = new FormData();
-      form.set("audio", new File([blob], "voice-command.webm", { type: blob.type || "audio/webm" }));
-      const response = await fetch("/api/copilot/voice/transcribe", { method: "POST", body: form });
-      const payload = await response.json().catch(() => null);
-      const text =
-        response.ok && payload?.ok && typeof payload.text === "string"
-          ? payload.text.trim()
-          : "";
-      if (!text) {
-        if (!response.ok) console.warn("[CopilotSidePanel] transcription failed:", payload?.error);
-        return;
-      }
-      userEditedSinceSubmitRef.current = true;
-      setQuickMessage(`${recordingBaseTextRef.current}${text}`);
-      // Focus the composer with the cursor at the end so the user can fix
-      // any misheard words and hit Enter to send.
-      const textarea = searchTextareaRef.current;
-      if (textarea) {
-        requestAnimationFrame(() => {
-          textarea.focus();
-          const end = textarea.value.length;
-          try {
-            textarea.setSelectionRange(end, end);
-          } catch {
-            /* ignore */
-          }
-        });
-      }
-    } catch (err) {
-      console.warn("[CopilotSidePanel] transcription request threw:", err);
-    } finally {
-      setIsTranscribing(false);
-    }
-  }, []);
+  // Opening the capture device adds 100–500ms latency (longer on Bluetooth
+  // headsets). Kick getUserMedia off on pointerdown so the mic-level meter is
+  // ready by the time the click handler runs.
+  const prewarmMicrophone = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (mediaStreamRef.current || pendingMicStreamRef.current) return;
+    if (!navigator.mediaDevices?.getUserMedia) return;
+    const promise = navigator.mediaDevices.getUserMedia(buildVoiceAudioConstraints(selectedAudioDeviceId));
+    pendingMicStreamRef.current = promise;
+    promise.then(stream => {
+      void refreshAudioInputDevices();
+      // If the press never became a click (pointer dragged away), don't hold
+      // the mic open in the background.
+      setTimeout(() => {
+        if (pendingMicStreamRef.current === promise && !mediaStreamRef.current) {
+          pendingMicStreamRef.current = null;
+          stream.getTracks().forEach(track => track.stop());
+        }
+      }, 10_000);
+    }).catch(() => {
+      if (pendingMicStreamRef.current === promise) pendingMicStreamRef.current = null;
+    });
+  }, [refreshAudioInputDevices, selectedAudioDeviceId]);
 
   const startVoiceFromSearch = useCallback(() => {
-    if (typeof window === "undefined" || isTranscribing) return;
-    if (mediaRecorderRef.current) {
+    if (typeof window === "undefined") return;
+    if (mediaStreamRef.current || isStartingVoice) {
       stopVoiceRecognition();
       return;
     }
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      console.warn("[CopilotSidePanel] audio recording not available in this browser");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      console.warn("[CopilotSidePanel] microphone not available in this browser");
       return;
     }
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-      const recorder = new MediaRecorder(stream);
-      const chunks: Blob[] = [];
-      mediaStreamRef.current = stream;
-      recordingBaseTextRef.current = quickMessage ? `${quickMessage} ` : "";
-      recorder.ondataavailable = event => {
-        if (event.data.size > 0) chunks.push(event.data);
-      };
-      recorder.onstop = () => {
+    voiceStartCancelledRef.current = false;
+    setIsStartingVoice(true);
+    const streamPromise =
+      pendingMicStreamRef.current ?? navigator.mediaDevices.getUserMedia(buildVoiceAudioConstraints(selectedAudioDeviceId));
+    pendingMicStreamRef.current = null;
+    streamPromise.then(stream => {
+      if (voiceStartCancelledRef.current) {
         stream.getTracks().forEach(track => track.stop());
-        mediaStreamRef.current = null;
-        void transcribeRecording(new Blob(chunks, { type: recorder.mimeType || "audio/webm" }));
-      };
-      recorder.start();
-      mediaRecorderRef.current = recorder;
+        return;
+      }
+      mediaStreamRef.current = stream;
+      startVoiceMeter(stream);
+      void refreshAudioInputDevices();
+      // Remember whatever was already typed so the live transcript appends to
+      // it rather than replacing it.
+      recordingBaseTextRef.current = quickMessage ? `${quickMessage} ` : "";
+      setIsStartingVoice(false);
       setIsRecording(true);
+      startRealtimeTranscriptPreview();
     }).catch(err => {
+      setIsStartingVoice(false);
       console.warn("[CopilotSidePanel] microphone access denied:", err);
     });
-  }, [isTranscribing, quickMessage, stopVoiceRecognition, transcribeRecording]);
+  }, [isStartingVoice, quickMessage, refreshAudioInputDevices, selectedAudioDeviceId, startRealtimeTranscriptPreview, startVoiceMeter, stopVoiceRecognition]);
 
   useEffect(() => () => stopVoiceRecognition(), [stopVoiceRecognition]);
 
@@ -934,54 +1302,13 @@ export function CopilotSidePanel() {
     userEditedSinceSubmitRef.current = false;
     setPendingWithSafety(false);
     setCurrentTodo(null);
+    setVoiceToast(null);
     showApprovalInterrupt(null);
     iframeRef.current?.contentWindow?.postMessage(
       { source: "ams-copilot", type: "START_NEW_THREAD" },
       CHAT_ORIGIN,
     );
   }, [setPendingWithSafety, showApprovalInterrupt]);
-
-  // ── Detached composer open/close ───────────────────────────────────────────
-  const persistComposerOpen = useCallback((next: boolean) => {
-    setComposerOpen(next);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(DETACHED_COMPOSER_OPEN_KEY, next ? "true" : "false");
-    }
-  }, []);
-  const openComposer = useCallback(() => persistComposerOpen(true), [persistComposerOpen]);
-  const closeComposer = useCallback(() => persistComposerOpen(false), [persistComposerOpen]);
-
-  // Auto-open when a human-in-the-loop approval arrives so the user can't miss
-  // it, but do not force it open again after the user manually collapses it.
-  useEffect(() => {
-    if (approvalInterrupt?.actionRequests?.length) {
-      persistComposerOpen(true);
-    }
-  }, [approvalInterrupt, persistComposerOpen]);
-
-  // Esc closes the composer when it's open.
-  useEffect(() => {
-    if (!composerOpen) return;
-    const handle = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      closeComposer();
-    };
-    window.addEventListener("keydown", handle);
-    return () => window.removeEventListener("keydown", handle);
-  }, [closeComposer, composerOpen]);
-
-  // NOTE: the detached composer is intentionally STICKY — it stays on screen
-  // until the user explicitly collapses it via the ChevronDown button (or
-  // Esc, handled above). Clicking outside is no longer a dismiss path.
-  //
-  // Two reasons:
-  // 1. The composer doubles as a persistent assistant entry point. If a user
-  //    just closed the chat panel, they almost always want the composer
-  //    available without a second click to re-summon it from the pill.
-  // 2. A previous click-outside handler raced with the panel's own
-  //    click-outside (which calls closePanel → composerOpen=true). Both
-  //    fired on the same click and net-effect was "land on the pill", not
-  //    on the detached composer. Removing this handler is what fixes that.
 
   // ── Computed styles ─────────────────────────────────────────────────────────
   // Panel: when dragged, override the CSS-based centering with exact left/top.
@@ -1027,58 +1354,9 @@ export function CopilotSidePanel() {
     : undefined;
   // ────────────────────────────────────────────────────────────────────────────
 
-  const launcherStatus: "idle" | "working" | "approval" | "unread" =
-    hasApproval
-      ? "approval"
-      : quickMessagePending
-        ? "working"
-        : unreadCount > 0
-          ? "unread"
-          : "idle";
-  const launcherStatusLabel =
-    launcherStatus === "approval"
-      ? "Approval needed"
-      : launcherStatus === "working"
-        ? "Working…"
-        : launcherStatus === "unread"
-          ? `${unreadCount} new repl${unreadCount === 1 ? "y" : "ies"}`
-          : "Idle";
-  // Conversational pill copy. Shorter than a status label, written so the
-  // line reads naturally end-to-end ("AMS Copilot is ready — Open"). Kept
-  // separate from launcherStatusLabel so the longer status word stays
-  // available for the aria-label.
-  const launcherMessage =
-    launcherStatus === "approval"
-      ? "AMS Copilot needs your approval"
-      : launcherStatus === "working"
-        ? "AMS Copilot is working…"
-        : launcherStatus === "unread"
-          ? unreadCount === 1
-            ? "AMS Copilot has a new reply"
-            : `AMS Copilot has ${unreadCount} new replies`
-          : "Ask AMS Copilot anything";
-  const launcherCtaLabel = launcherStatus === "approval" ? "Review" : "Open";
-
   return (
     <>
-      {!isOpen && !composerOpen ? (
-        <button
-          ref={launcherRef}
-          type="button"
-          className={`copilot-launcher copilot-launcher--${launcherStatus}`}
-          onClick={openComposer}
-          aria-label={`Open AMS Copilot (${launcherStatusLabel})`}
-          title="Open AMS Copilot"
-        >
-          <span className="copilot-launcher-icon" aria-hidden="true">
-            <Sparkles size={14} strokeWidth={1.9} />
-          </span>
-          <span className="copilot-launcher-message">{launcherMessage}</span>
-          <span className="copilot-launcher-cta" aria-hidden="true">{launcherCtaLabel}</span>
-        </button>
-      ) : null}
-
-      {!isOpen && composerOpen ? (
+      {!isOpen ? (
         <form
           ref={composerFormRef}
           className={`copilot-search-overlay${hasApproval ? " has-approval" : ""}`}
@@ -1195,30 +1473,96 @@ export function CopilotSidePanel() {
             className="copilot-search-input"
             placeholder={placeholder}
             aria-label="Ask AMS assistant"
+            // dir="auto" lets the browser pick direction from the first strong
+            // character: Urdu/Arabic text anchors to the right (RTL), English
+            // stays left (LTR). Keeps the mic transcript and typed English in
+            // their natural reading direction without forcing one on both.
+            dir="auto"
             rows={1}
           />
           <div className="copilot-search-actions">
             <div className="copilot-search-right-actions">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                className="copilot-search-icon-btn copilot-search-collapse-btn"
-                aria-label="Collapse AMS Copilot"
-                title="Collapse"
-                onClick={closeComposer}
-              >
-                <ChevronDown size={15} strokeWidth={2.1} />
-              </Button>
+              {isSpeakingReply ? (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="copilot-search-icon-btn"
+                  aria-label="Stop voice reply"
+                  title="Stop speaking"
+                  onClick={stopReplyPlayback}
+                  style={{ color: "var(--primary)" }}
+                >
+                  <span className="copilot-eq" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                </Button>
+              ) : null}
               <Button
                 variant="ghost"
                 size="icon-sm"
                 className="copilot-search-icon-btn"
-                aria-label={isRecording ? "Stop recording and transcribe" : isTranscribing ? "Transcribing voice…" : "Start voice"}
-                title={isRecording ? "Stop recording and transcribe" : isTranscribing ? "Transcribing…" : "Start voice"}
+                aria-label={voiceRepliesEnabled ? "Turn off spoken replies" : "Turn on spoken replies"}
+                title={voiceRepliesEnabled ? "Spoken replies: on" : "Spoken replies: off"}
+                onClick={toggleVoiceReplies}
+                style={voiceRepliesEnabled ? { color: "var(--primary)" } : undefined}
+              >
+                {voiceRepliesEnabled ? (
+                  <Volume2 size={15} strokeWidth={1.9} />
+                ) : (
+                  <VolumeX size={15} strokeWidth={1.9} />
+                )}
+              </Button>
+              {audioInputDevices.length > 1 ? (
+                <select
+                  className="copilot-search-mic-select"
+                  aria-label="Voice input microphone"
+                  value={selectedAudioDeviceId}
+                  disabled={isRecording || isStartingVoice}
+                  onChange={(event) => {
+                    pendingMicStreamRef.current = null;
+                    setSelectedAudioDeviceId(event.target.value);
+                  }}
+                  title="Voice input microphone"
+                >
+                  <option value={DEFAULT_AUDIO_DEVICE_ID}>Default mic</option>
+                  {audioInputDevices.map(device => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {device.label}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+              {(isRecording || isStartingVoice) ? (
+                <span
+                  className={
+                    "copilot-search-voice-meter" +
+                    (isRecording ? " is-live" : "")
+                  }
+                  aria-label={
+                    isRecording
+                      ? `Voice input level ${Math.round(voiceLevel * 100)} percent`
+                      : "Starting microphone"
+                  }
+                  title={
+                    isRecording
+                      ? "Listening…"
+                      : "Opening microphone"
+                  }
+                >
+                  <span style={{ width: `${Math.max(6, Math.round(voiceLevel * 100))}%` }} />
+                </span>
+              ) : null}
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="copilot-search-icon-btn"
+                aria-label={isRecording ? "Stop listening" : isStartingVoice ? "Starting microphone…" : "Start voice"}
+                title={isRecording ? "Stop listening" : isStartingVoice ? "Starting microphone…" : "Start voice"}
+                onPointerDown={prewarmMicrophone}
                 onClick={startVoiceFromSearch}
-                disabled={isTranscribing}
-                style={isRecording ? { color: "var(--danger)" } : isTranscribing ? { color: "var(--primary)", opacity: 0.7 } : undefined}
+                style={isRecording ? { color: "var(--danger)" } : isStartingVoice ? { color: "var(--primary)", opacity: 0.7 } : undefined}
               >
                 <Mic size={15} strokeWidth={1.9} />
               </Button>
@@ -1265,16 +1609,44 @@ export function CopilotSidePanel() {
               </Button>
             </div>
           </div>
-          {unreadCount > 0 && !hasApproval ? (
-            <button
-              type="button"
-              className="copilot-dock-reply-pop"
-              aria-label={`${unreadCount} unread assistant message${unreadCount === 1 ? "" : "s"}. Open chat panel.`}
-              onClick={openPanel}
+          {voiceToast ? (
+            <section
+              className="copilot-voice-toast"
+              role="status"
+              aria-live="polite"
+              aria-label="Spoken reply"
             >
-              <span className="copilot-dock-reply-dot" aria-hidden="true" />
-              <span>Assistant has a new reply</span>
-            </button>
+              {isSpeakingReply ? (
+                <span
+                  className="copilot-eq copilot-voice-toast-icon"
+                  aria-hidden="true"
+                >
+                  <span />
+                  <span />
+                  <span />
+                </span>
+              ) : (
+                <Volume2
+                  size={15}
+                  strokeWidth={1.9}
+                  className="copilot-voice-toast-icon"
+                  aria-hidden="true"
+                />
+              )}
+              {/* dir="auto" anchors Urdu narration RTL, English LTR. */}
+              <span className="copilot-voice-toast-text" dir="auto">
+                {voiceToast}
+              </span>
+              <button
+                type="button"
+                className="copilot-voice-toast-close"
+                aria-label="Dismiss spoken reply"
+                title="Dismiss"
+                onClick={dismissVoiceToast}
+              >
+                <X size={13} strokeWidth={2.1} />
+              </button>
+            </section>
           ) : null}
         </form>
       ) : null}

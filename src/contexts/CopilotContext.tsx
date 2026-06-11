@@ -1342,47 +1342,6 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (event.data.type === "TRANSCRIBE_REQUEST") {
-        const callId = typeof event.data.callId === "string" ? event.data.callId : null;
-        const audio = event.data.audio;
-        const mimeType = typeof event.data.mimeType === "string" ? event.data.mimeType : "audio/webm";
-        // No default language: let Whisper auto-detect so mixed Urdu/English
-        // commands transcribe cleanly. Callers can still pin one explicitly.
-        const language = typeof event.data.language === "string" ? event.data.language : null;
-        if (!callId || !(audio instanceof ArrayBuffer)) return;
-        try {
-          const blob = new Blob([audio], { type: mimeType });
-          const form = new FormData();
-          form.set("audio", blob, "voice-command.webm");
-          if (language) form.set("language", language);
-          const response = await fetch("/api/copilot/voice/transcribe", {
-            method: "POST",
-            body: form,
-          });
-          const payload = await response.json().catch(() => ({}));
-          if (!response.ok || !payload?.ok) {
-            post({
-              type: "TRANSCRIBE_RESULT",
-              callId,
-              error: payload?.error || `transcribe ${response.status}`,
-            });
-          } else {
-            post({
-              type: "TRANSCRIBE_RESULT",
-              callId,
-              text: String(payload.text ?? ""),
-            });
-          }
-        } catch (err) {
-          post({
-            type: "TRANSCRIBE_RESULT",
-            callId,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-        return;
-      }
-
       if (event.data.type === "TRANSLATE_REQUEST") {
         const callId = typeof event.data.callId === "string" ? event.data.callId : null;
         const text = typeof event.data.text === "string" ? event.data.text : "";

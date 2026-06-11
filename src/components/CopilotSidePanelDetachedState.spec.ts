@@ -39,9 +39,61 @@ describe("detached copilot mirrored state", () => {
     // typing the next message.
     const assistantHandler =
       source.match(
-        /event\.data\?\.type !== "ASSISTANT_MESSAGE"[\s\S]*?setUnreadCount/,
+        /event\.data\?\.type !== "ASSISTANT_MESSAGE"[\s\S]*?\n {4}\};/,
       )?.[0] ?? "";
     expect(assistantHandler).not.toMatch(/setQuickMessage\(""\)/);
+  });
+
+  it("keeps the composer pending for the whole run — the first streamed token must not unlock it", () => {
+    // ASSISTANT_MESSAGE fires on the FIRST streamed token while the agent is
+    // still working. Unlocking here flipped the stop/spinner button back to
+    // an idle send arrow mid-run (most visible on voice-initiated runs).
+    // The only unlock signals are ASSISTANT_LOADING=false, HITL_INTERRUPT,
+    // stop, and the safety timeout.
+    const assistantHandler =
+      source.match(
+        /event\.data\?\.type !== "ASSISTANT_MESSAGE"[\s\S]*?\n {4}\};/,
+      )?.[0] ?? "";
+    expect(assistantHandler).not.toMatch(/setPendingWithSafety\(false\)/);
+    expect(assistantHandler).not.toMatch(/loadingStartedRef\.current = false/);
+    // Instead it re-arms the safety timer — streaming proves the run is alive.
+    expect(assistantHandler).toMatch(/setPendingWithSafety\(true\)/);
+    // TODO_STATE acts as a heartbeat too, so long tool-heavy runs with no
+    // streamed text don't hit the safety timeout either.
+    const todoHandler =
+      source.match(
+        /event\.data\?\.type === "TODO_STATE"[\s\S]*?return;\s*\}/,
+      )?.[0] ?? "";
+    expect(todoHandler).toMatch(/setPendingWithSafety\(true\)/);
+  });
+
+  it("shows a dismissable spoken-reply toast above the detached composer", () => {
+    // SPEAK_TEXT (run complete + voice narration) raises a notification-style
+    // block above the composer in detached mode only — when the panel is
+    // open the reply is already visible in the chat thread.
+    const speakHandler =
+      source.match(
+        /event\.data\?\.type === "SPEAK_TEXT"[\s\S]*?return;\s*\}/,
+      )?.[0] ?? "";
+    expect(speakHandler).toMatch(/if \(!isOpen\) setVoiceToast\(speakText\)/);
+    // The ✕ removes the toast AND stops Uplift playback.
+    const dismissFn =
+      source.match(
+        /const dismissVoiceToast = useCallback\([\s\S]*?\}, \[stopReplyPlayback\]\)/,
+      )?.[0] ?? "";
+    expect(dismissFn).toMatch(/setVoiceToast\(null\)/);
+    expect(dismissFn).toMatch(/stopReplyPlayback\(\)/);
+    expect(source).toMatch(/onClick=\{dismissVoiceToast\}/);
+    // Urdu narration text renders in its natural reading direction.
+    expect(source).toMatch(/className="copilot-voice-toast-text" dir="auto"/);
+    // Stale-toast hygiene: cleared when the panel opens, when a new message
+    // is sent, and on new chat.
+    expect(source.match(/setVoiceToast\(null\)/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
+    // Positioned above the composer with a gap, like a notification.
+    expect(styles).toMatch(
+      /\.copilot-voice-toast \{[\s\S]*?bottom: calc\(100% \+ 0\.625rem\)/,
+    );
+    expect(styles).toMatch(/\.copilot-voice-toast-close/);
   });
 
   it("keeps the sent text in the composer as a visual receipt while the run is in flight", () => {
@@ -86,21 +138,20 @@ describe("detached copilot mirrored state", () => {
     );
   });
 
-  it("shows an amber rounded reply popover with a pointed notch", () => {
-    expect(source).toMatch(/copilot-dock-reply-pop/);
-    expect(source).toMatch(/Assistant has a new reply/);
-    expect(source).toMatch(/onClick=\{openPanel\}/);
+  it("does not render the 'new reply' pill in detached mode", () => {
+    // The pill ("Assistant has a new reply") was removed by request — the
+    // spoken-reply toast and the chat thread itself are the only reply
+    // surfaces. Keep the component and styles free of it.
+    expect(source).not.toMatch(/copilot-dock-reply-pop/);
+    expect(source).not.toMatch(/Assistant has a new reply/);
+    expect(source).not.toMatch(/unreadCount/);
     expect(source).not.toMatch(/copilot-dock-unread/);
-    expect(styles).toMatch(/\.copilot-dock-reply-pop \{[\s\S]*right: 0/);
-    expect(styles).toMatch(/\.copilot-dock-reply-pop \{[\s\S]*border-radius: 1\.125rem/);
-    expect(styles).toMatch(/\.copilot-dock-reply-pop \{[\s\S]*#fef3c7/);
-    expect(styles).toMatch(/\.copilot-dock-reply-pop \{[\s\S]*#78350f/);
-    expect(styles).toMatch(/\.copilot-dock-reply-pop::after/);
-    expect(styles).toMatch(/\.copilot-dock-reply-pop::after \{[\s\S]*transform: rotate\(45deg\)/);
-    expect(styles).toMatch(/\.copilot-dock-reply-pop::after \{[\s\S]*#fef3c7/);
-    expect(styles).toMatch(/copilot-reply-dot-pulse/);
-    expect(styles).not.toMatch(
-      /\.copilot-dock-unread \{[\s\S]*var\(--danger\)/,
+    expect(styles).not.toMatch(/\.copilot-dock-reply-pop/);
+    expect(styles).not.toMatch(/copilot-reply-dot-pulse/);
+    // The pop-in keyframe survives — the spoken-reply toast animates with it.
+    expect(styles).toMatch(/@keyframes copilot-reply-pop-in/);
+    expect(styles).toMatch(
+      /\.copilot-voice-toast \{[\s\S]*?animation: copilot-reply-pop-in/,
     );
   });
 
@@ -115,52 +166,18 @@ describe("detached copilot mirrored state", () => {
       /\.copilot-search-approval-bubble \{[^}]*border-radius: 1\.125rem 1\.125rem 0 0/,
     );
   });
-
-  it("keeps the collapsed launcher from restyling the opened detached composer", () => {
-    expect(source).toMatch(/copilot-launcher/);
-    expect(source).toMatch(/copilot-launcher-icon/);
-    expect(source).toMatch(/copilot-launcher-message/);
-    expect(source).toMatch(/copilot-launcher-cta/);
-    expect(source).toMatch(/<Sparkles size=\{14\}/);
-    expect(source).toMatch(
-      /const closePanel = useCallback\(\(\) => \{[\s\S]*setIsOpen\(false\);[\s\S]*setComposerOpen\(true\);[\s\S]*DETACHED_COMPOSER_OPEN_KEY/,
-    );
+  it("removes the collapsed launcher and keeps the detached composer as the closed-panel entry point", () => {
+    expect(source).not.toMatch(/copilot-launcher/);
+    expect(source).not.toMatch(/launcherStatus/);
+    expect(source).not.toMatch(/composerOpen/);
+    expect(source).not.toMatch(/DETACHED_COMPOSER_OPEN_KEY/);
+    expect(source).not.toMatch(/<Sparkles size=\{14\}/);
+    expect(source).not.toMatch(/aria-label="Collapse AMS Copilot"/);
+    expect(source).toMatch(/!isOpen \? \(/);
+    expect(source).toMatch(/className=\{`copilot-search-overlay\$\{hasApproval \? " has-approval" : ""\}`\}/);
     expect(source).toMatch(/e\.key === "Escape" && isOpen\) closePanel\(\)/);
-    expect(source).toMatch(
-      /if \(target && panelRef\.current\?\.contains\(target\)\) return;[\s\S]*closePanel\(\);/,
-    );
-    expect(source).toMatch(/composerOpen/);
-    expect(source).toMatch(/aria-label="Collapse AMS Copilot"/);
-    expect(source).toMatch(/onClick=\{closeComposer\}/);
-    expect(source).toMatch(/ChevronDown/);
-    expect(source).toMatch(
-      /it, but do not force it open again after the user manually collapses it/,
-    );
-    expect(source).not.toMatch(
-      /approvalInterrupt, composerOpen, persistComposerOpen/,
-    );
-    expect(source).toMatch(
-      /className=\{`copilot-search-overlay\$\{hasApproval \? " has-approval" : ""\}`\}/,
-    );
-    expect(source).not.toMatch(/actionRequests\?\.length\) return;\s+closeComposer/);
-    expect(source).not.toMatch(/copilot-search-overlay--drawer/);
-    expect(source).not.toMatch(/copilot-drawer-/);
-    // Launcher pill — new floating rounded design (pulsing dot + uppercase
-    // label + mono status text + chevron). Asserts the structural pieces
-    // exist; exact pixel/radius values are implementation detail.
-    expect(styles).toMatch(/\.copilot-launcher \{/);
-    expect(styles).toMatch(/\.copilot-launcher \{[\s\S]*border-radius: 999px/);
-    expect(styles).toMatch(/\.copilot-launcher-icon \{/);
-    expect(styles).toMatch(/\.copilot-launcher-message \{/);
-    expect(styles).toMatch(/\.copilot-launcher-message \{[\s\S]*text-overflow: ellipsis/);
-    expect(styles).toMatch(/\.copilot-launcher-cta \{/);
-    expect(styles).toMatch(/--copilot-launcher-cta-top: #3a3025/);
-    expect(styles).toMatch(/--copilot-launcher-cta-bottom: #221d18/);
-    // Old bottom-attached shoulder pseudo-elements removed.
-    expect(styles).not.toMatch(/\.copilot-launcher::before/);
-    expect(styles).not.toMatch(/\.copilot-launcher::after/);
-    // Old "AI" badge mark removed.
-    expect(styles).not.toMatch(/\.copilot-launcher-mark \{/);
+    expect(source).toMatch(/if \(target && panelRef\.current\?\.contains\(target\)\) return;[\s\S]*closePanel\(\);/);
+    expect(styles).not.toMatch(/\.copilot-launcher/);
     expect(styles).not.toMatch(/\.copilot-search-overlay--drawer/);
     expect(styles).not.toMatch(/\.copilot-drawer-/);
   });
@@ -179,30 +196,68 @@ describe("detached copilot mirrored state", () => {
     );
   });
 
-  it("records voice inline into the detached composer without an overlay", () => {
+  it("captures voice via browser SpeechRecognition only — no audio recording or server transcription", () => {
     const startVoiceStart = source.indexOf("const startVoiceFromSearch");
     const startVoiceEnd = source.indexOf("useEffect(() => () => stopVoiceRecognition()", startVoiceStart);
-    const transcribeStart = source.indexOf("const transcribeRecording");
     const startVoiceFn =
       startVoiceStart >= 0 && startVoiceEnd > startVoiceStart
         ? source.slice(startVoiceStart, startVoiceEnd)
         : "";
-    const transcribeFn =
-      transcribeStart >= 0
-        ? source.slice(transcribeStart, transcribeStart + 2000)
-        : "";
 
     expect(source).not.toMatch(/COPILOT_START_VOICE_EVENT/);
+    // getUserMedia + constraints are kept ONLY to drive the on-screen mic
+    // meter — not to record audio.
+    expect(source).toMatch(/const VOICE_AUDIO_CONSTRAINTS/);
+    expect(source).toMatch(/channelCount: \{ ideal: 1 \}/);
+    expect(source).toMatch(/echoCancellation: true/);
+    expect(source).toMatch(/function buildVoiceAudioConstraints/);
+    expect(source).toMatch(/enumerateDevices/);
+    expect(source).toMatch(/setAudioInputDevices/);
+    expect(source).toMatch(/startVoiceMeter\(stream\)/);
+    expect(source).toMatch(/copilot-search-voice-meter/);
+    // The text comes purely from the browser recognizer.
+    expect(source).toMatch(/SpeechRecognition/);
+    expect(source).toMatch(/webkitSpeechRecognition/);
+    expect(source).toMatch(/recognition\.lang = "ur-PK"/);
+    expect(source).toMatch(/normalizeUrduVoicePreview/);
+    // The interim transcript streams straight into the composer textarea and
+    // simply stays there on stop (same element/style/position), so nothing is
+    // rewritten after the user stops talking.
+    expect(source).toMatch(/const preview = normalizeUrduVoicePreview/);
+    expect(source).toMatch(/setQuickMessage\(`\$\{recordingBaseTextRef\.current\}\$\{preview\}`\)/);
+    expect(source).not.toMatch(/copilot-search-live-transcript/);
+    expect(source).not.toMatch(/setLiveTranscriptPreview/);
+    // The detached composer must stay editable — never read-only.
+    expect(source).not.toMatch(/readOnly=\{isRecording\}/);
+    // No audio recording and no server-side Whisper transcription anywhere.
+    expect(source).not.toMatch(/MediaRecorder/);
+    expect(source).not.toMatch(/transcribeRecording/);
+    expect(source).not.toMatch(/VOICE_RECORDER_MIME_TYPES/);
+    expect(source).not.toMatch(/getVoiceRecorderOptions/);
+    expect(source).not.toMatch(/isTranscribing/);
+    expect(source).not.toMatch(/\/api\/copilot\/voice\/transcribe/);
+    // startVoiceFromSearch opens the mic for the meter and starts the
+    // recognizer directly — no recorder, no postMessage, no panel open.
     expect(startVoiceFn).toMatch(/navigator\.mediaDevices\.getUserMedia/);
-    expect(startVoiceFn).toMatch(/new MediaRecorder/);
-    expect(startVoiceFn).toMatch(/transcribeRecording/);
-    expect(transcribeFn).toMatch(/\/api\/copilot\/voice\/transcribe/);
-    expect(transcribeFn).toMatch(/setQuickMessage/);
+    expect(startVoiceFn).toMatch(/getUserMedia\(buildVoiceAudioConstraints\(selectedAudioDeviceId\)\)/);
+    expect(startVoiceFn).toMatch(/startRealtimeTranscriptPreview\(\)/);
+    expect(startVoiceFn).toMatch(/setIsRecording\(true\)/);
+    expect(startVoiceFn).not.toMatch(/new MediaRecorder/);
     expect(startVoiceFn).not.toMatch(/setIsOpen\(true\)/);
     expect(startVoiceFn).not.toMatch(/START_VOICE_CAPTURE/);
     expect(startVoiceFn).not.toMatch(/postMessage/);
     expect(startVoiceEnd).toBeGreaterThan(startVoiceStart);
-    expect(transcribeStart).toBeGreaterThanOrEqual(0);
+  });
+
+  it("plays iframe voice replies from the detached parent shell", () => {
+    expect(source).toMatch(/VOICE_REPLIES_KEY/);
+    expect(source).toMatch(/event\.data\?\.type === "SPEAK_TEXT"/);
+    expect(source).toMatch(/speakReplyText\(speakText\)/);
+    expect(source).toMatch(/fetch\("\/api\/copilot\/voice\/speak"/);
+    expect(source).toMatch(/new Audio\(url\)/);
+    expect(source).toMatch(/voiceRepliesEnabled/);
+    expect(source).toMatch(/toggleVoiceReplies/);
+    expect(source).toMatch(/stopReplyPlayback/);
   });
 
   it("does not mount the separate voice overlay in the dashboard shell", () => {
@@ -268,7 +323,6 @@ describe("detached approval bubble layout", () => {
     expect(source).toMatch(/handleDetachedApproval\("reject"\)/);
     expect(source).toMatch(/handleDetachedApproval\("approve"\)/);
     expect(source).toMatch(/copilot-search-overlay.*has-approval/);
-    expect(source).toMatch(/unreadCount > 0 && !hasApproval/);
     expect(source).not.toMatch(/approvalReviewTab/);
     expect(source).not.toMatch(/copilot-search-approval-tabs/);
     expect(source).not.toMatch(/copilot-search-approval-meta/);
