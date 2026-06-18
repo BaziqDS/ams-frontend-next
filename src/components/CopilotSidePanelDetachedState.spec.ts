@@ -182,6 +182,21 @@ describe("detached copilot mirrored state", () => {
     expect(styles).not.toMatch(/\.copilot-drawer-/);
   });
 
+  it("clamps saved detached dock positions before applying them to the panel", () => {
+    expect(source).toMatch(/function clampDockPos/);
+    expect(source).toMatch(/function readStoredPos/);
+    expect(source).toMatch(/return pos \? clampDockPos\(pos\) : null/);
+    expect(source).toMatch(/const clampSavedDragPos = useCallback/);
+    expect(source).toMatch(
+      /window\.addEventListener\("resize", clampSavedDragPos\)/,
+    );
+    expect(source).toMatch(/saveDockPos\(next\)/);
+    expect(source).toMatch(
+      /const panelSize = \{ width: r\.width, height: r\.height \}/,
+    );
+    expect(source).toMatch(/clampDockPos\([\s\S]*panelSize/);
+  });
+
   it("lets the detached composer stop a pending agent run", () => {
     expect(source).toMatch(/const stopDetachedRun = useCallback/);
     expect(source).toMatch(/type: "STOP_RUN"/);

@@ -224,6 +224,7 @@ function ProfileSettingsModal({
   avatarUrl,
   firstName,
   lastName,
+  aiEnabled,
   preferences,
   onClose,
   onSave,
@@ -237,12 +238,14 @@ function ProfileSettingsModal({
   avatarUrl?: string | null;
   firstName: string;
   lastName: string;
+  aiEnabled: boolean;
   preferences: ProfileSettingsPreferences;
   onClose: () => void;
   onSave: (result: ProfileSettingsResult) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(preferences.notificationsEnabled);
+  const [draftAiEnabled, setDraftAiEnabled] = useState(aiEnabled);
   const [draftFirstName, setDraftFirstName] = useState(firstName);
   const [draftLastName, setDraftLastName] = useState(lastName);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
@@ -254,13 +257,14 @@ function ProfileSettingsModal({
   useEffect(() => {
     if (!open) return;
     setNotificationsEnabled(preferences.notificationsEnabled);
+    setDraftAiEnabled(aiEnabled);
     setDraftFirstName(firstName);
     setDraftLastName(lastName);
     setPasswordModalOpen(false);
     setAvatarFile(null);
     setAvatarPreview(null);
     setSubmitError(null);
-  }, [firstName, lastName, open, preferences]);
+  }, [aiEnabled, firstName, lastName, open, preferences]);
 
   useEffect(() => {
     if (!open) return;
@@ -284,6 +288,7 @@ function ProfileSettingsModal({
       const formData = new FormData();
       formData.set("first_name", draftFirstName.trim());
       formData.set("last_name", draftLastName.trim());
+      formData.set("ai_enabled", String(draftAiEnabled));
       if (avatarFile) formData.set("avatar", avatarFile);
       const saved = await apiFetch<AuthUser>(`/api/users/management/${userId}/`, {
         method: "PATCH",
@@ -392,6 +397,24 @@ function ProfileSettingsModal({
               <section className="form-section profile-settings-section">
                 <header className="form-section-head">
                   <div className="form-section-n mono">02</div>
+                  <div>
+                    <h3>AI assistant</h3>
+                    <div className="form-section-sub">Control whether the detached AMS AI assistant appears in your workspace.</div>
+                  </div>
+                </header>
+                <div className="form-section-body">
+                  <ToggleRow
+                    title="Enable AI assistant"
+                    description="Show the detached AI assistant panel for this account."
+                    checked={draftAiEnabled}
+                    onChange={setDraftAiEnabled}
+                  />
+                </div>
+              </section>
+
+              <section className="form-section profile-settings-section">
+                <header className="form-section-head">
+                  <div className="form-section-n mono">03</div>
                   <div>
                     <h3>Notification preferences</h3>
                     <div className="form-section-sub">Control how much activity the topbar surfaces for this browser.</div>
@@ -713,6 +736,7 @@ export function Topbar({ breadcrumb }: TopbarProps) {
         avatarUrl={user?.avatar_url}
         firstName={user?.first_name || ""}
         lastName={user?.last_name || ""}
+        aiEnabled={Boolean(user?.ai_enabled)}
         preferences={profilePreferences}
         onClose={() => setProfileOpen(false)}
         onSave={handleSaveProfileSettings}

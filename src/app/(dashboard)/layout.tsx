@@ -11,8 +11,9 @@ import { CopilotProvider } from "@/contexts/CopilotContext";
 import { NotificationToastHost } from "@/components/NotificationToastHost";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const router = useRouter();
+  const aiEnabled = Boolean(user?.ai_enabled);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -43,7 +44,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <AppSidebar />
             <div className="main-col">
               {children}
-              <CopilotSidePanel />
+              {aiEnabled ? <CopilotSidePanel /> : null}
               <NotificationToastHost />
             </div>
           </div>

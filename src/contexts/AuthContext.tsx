@@ -15,6 +15,7 @@ export interface AuthUser {
   assigned_locations: number[];
   groups_display: string[];
   avatar_url?: string | null;
+  ai_enabled: boolean;
 }
 
 interface AuthContextValue {

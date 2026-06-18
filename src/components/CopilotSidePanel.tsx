@@ -56,6 +56,12 @@ const DOCK_STORAGE_KEY = "ams-copilot-open";
 const DOCK_POS_KEY = "ams-copilot-pos";
 const DETACHED_PENDING_KEY = "ams-copilot-detached-pending";
 const VOICE_REPLIES_KEY = "ams-copilot-voice-replies";
+const DOCK_DRAG_MARGIN = 8;
+const DOCK_DEFAULT_MAX_WIDTH_REM = 32.5;
+const DOCK_MOBILE_MAX_WIDTH_REM = 26.25;
+const DOCK_MOBILE_BREAKPOINT_REM = 45;
+const DOCK_WIDTH_VIEWPORT_GUTTER_REM = 3;
+const DOCK_DRAGGED_HEIGHT_GUTTER_REM = 4.75;
 const DETACHED_PENDING_TTL_MS = 10 * 60 * 1000;
 // After the user clicks stop, ignore any straggler ASSISTANT_LOADING=true /
 // HUMAN_MESSAGE events from the iframe for this many milliseconds. The
@@ -166,16 +172,92 @@ const PLACEHOLDER_PHRASES = [
 ];
 
 type Pos = { left: number; top: number };
+type DockSize = { width: number; height: number };
 type DetachedTodo = { content?: unknown; status?: unknown } | null;
 type DetachedPending = { text: string; at: number } | null;
 type ApprovalContextSnapshot = {
   readables?: Array<{ id?: string; description?: string; value?: unknown }>;
 };
 
+function getRootRemPx(): number {
+  if (typeof window === "undefined") return 16;
+  const value = Number.parseFloat(
+    window.getComputedStyle(document.documentElement).fontSize,
+  );
+  return Number.isFinite(value) && value > 0 ? value : 16;
+}
+
+function clampValue(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function readStoredPos(value: unknown): Pos | null {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !("left" in value) ||
+    !("top" in value)
+  ) {
+    return null;
+  }
+
+  const left = Number(value.left);
+  const top = Number(value.top);
+  if (!Number.isFinite(left) || !Number.isFinite(top)) return null;
+  return { left, top };
+}
+
+function estimateDockSize(): DockSize {
+  const rem = getRootRemPx();
+  const mobileWidthQuery = `(max-width: ${DOCK_MOBILE_BREAKPOINT_REM}rem)`;
+  const maxWidthRem =
+    window.matchMedia(mobileWidthQuery).matches
+      ? DOCK_MOBILE_MAX_WIDTH_REM
+      : DOCK_DEFAULT_MAX_WIDTH_REM;
+
+  return {
+    width: Math.min(
+      maxWidthRem * rem,
+      Math.max(
+        DOCK_DRAG_MARGIN * 2,
+        window.innerWidth - DOCK_WIDTH_VIEWPORT_GUTTER_REM * rem,
+      ),
+    ),
+    height: Math.max(
+      DOCK_DRAG_MARGIN * 2,
+      window.innerHeight - DOCK_DRAGGED_HEIGHT_GUTTER_REM * rem,
+    ),
+  };
+}
+
+function clampDockPos(pos: Pos, size = estimateDockSize()): Pos {
+  const maxLeft = Math.max(
+    DOCK_DRAG_MARGIN,
+    window.innerWidth - size.width - DOCK_DRAG_MARGIN,
+  );
+  const maxTop = Math.max(
+    DOCK_DRAG_MARGIN,
+    window.innerHeight - size.height - DOCK_DRAG_MARGIN,
+  );
+
+  return {
+    left: clampValue(pos.left, DOCK_DRAG_MARGIN, maxLeft),
+    top: clampValue(pos.top, DOCK_DRAG_MARGIN, maxTop),
+  };
+}
+
+function saveDockPos(pos: Pos) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(DOCK_POS_KEY, JSON.stringify(pos));
+}
+
 function loadPos(): Pos | null {
   if (typeof window === "undefined") return null;
   try {
-    return JSON.parse(window.localStorage.getItem(DOCK_POS_KEY) ?? "null");
+    const pos = readStoredPos(
+      JSON.parse(window.localStorage.getItem(DOCK_POS_KEY) ?? "null"),
+    );
+    return pos ? clampDockPos(pos) : null;
   } catch {
     return null;
   }
@@ -676,6 +758,31 @@ export function CopilotSidePanel() {
   }, [isOpen]);
 
   // ── Drag ────────────────────────────────────────────────────────────────────
+  const clampSavedDragPos = useCallback(() => {
+    setDragPos((current) => {
+      if (!current) return current;
+
+      const rect = panelRef.current?.getBoundingClientRect();
+      const size =
+        rect && rect.width > 0 && rect.height > 0
+          ? { width: rect.width, height: rect.height }
+          : undefined;
+      const next = clampDockPos(current, size);
+      if (next.left === current.left && next.top === current.top) {
+        return current;
+      }
+
+      saveDockPos(next);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    clampSavedDragPos();
+    window.addEventListener("resize", clampSavedDragPos);
+    return () => window.removeEventListener("resize", clampSavedDragPos);
+  }, [clampSavedDragPos]);
+
   const startPanelDrag = useCallback((e: React.MouseEvent<HTMLElement>) => {
     if (e.button !== 0) return;
     // Don't drag when clicking a button inside the header
@@ -692,41 +799,27 @@ export function CopilotSidePanel() {
 
     setIsDragging(true);
     e.preventDefault();
-
-    const clamp = (v: number, lo: number, hi: number) =>
-      Math.max(lo, Math.min(hi, v));
+    const panelSize = { width: r.width, height: r.height };
 
     const onMove = (ev: MouseEvent) => {
-      const left = clamp(
-        sl + ev.clientX - sx,
-        8,
-        window.innerWidth - r.width - 8,
+      setDragPos(
+        clampDockPos(
+          { left: sl + ev.clientX - sx, top: st + ev.clientY - sy },
+          panelSize,
+        ),
       );
-      const top = clamp(
-        st + ev.clientY - sy,
-        8,
-        window.innerHeight - r.height - 8,
-      );
-      setDragPos({ left, top });
     };
 
     const onUp = (ev: MouseEvent) => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
-      const left = clamp(
-        sl + ev.clientX - sx,
-        8,
-        window.innerWidth - r.width - 8,
+      const pos = clampDockPos(
+        { left: sl + ev.clientX - sx, top: st + ev.clientY - sy },
+        panelSize,
       );
-      const top = clamp(
-        st + ev.clientY - sy,
-        8,
-        window.innerHeight - r.height - 8,
-      );
-      const pos = { left, top };
       setDragPos(pos);
       setIsDragging(false);
-      window.localStorage.setItem(DOCK_POS_KEY, JSON.stringify(pos));
+      saveDockPos(pos);
     };
 
     document.addEventListener("mousemove", onMove);
