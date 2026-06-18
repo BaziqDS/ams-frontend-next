@@ -57,6 +57,7 @@ import {
   buildInspectionFinanceCopilotFields,
   buildInspectionItemArrayCopilotFields,
   buildInspectionItemCopilotFields,
+  findInspectionItemCatalogLinkErrors,
   syncInspectionItemReferences,
 } from "@/lib/inspectionCopilotForm";
 import { buildCopilotDetailContext } from "@/lib/copilotPageContext";
@@ -1239,6 +1240,25 @@ export default function InspectionDetailPage() {
       });
 
       if (itemPatch.applied.length > 0) {
+        const catalogLinkErrors = findInspectionItemCatalogLinkErrors({
+          items: itemPatch.nextItems,
+          itemOptions: copilotItemOptions,
+          changedFields: itemPatch.applied,
+        });
+
+        if (Object.keys(catalogLinkErrors).length > 0) {
+          setStageFieldErrors(prev => ({
+            ...prev,
+            ...catalogLinkErrors,
+          }));
+          return {
+            applied: [],
+            ignored: Object.keys(values),
+            reason: "One or more inspection rows were linked to catalog items that do not match their description/specifications.",
+            fieldErrors: catalogLinkErrors,
+          };
+        }
+
         nextInspection = {
           ...nextInspection,
           items: syncInspectionItemReferences({

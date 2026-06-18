@@ -23,6 +23,7 @@ type InspectionCopilotItem = object;
 type InspectionReferenceItem = InspectionCopilotItem & {
   item?: unknown;
   item_description?: unknown;
+  item_specifications?: unknown;
   item_name?: unknown;
   item_code?: unknown;
   item_category_type?: unknown;
@@ -234,6 +235,125 @@ function resolveCatalogOption(
   }
 
   return null;
+}
+
+const TOKEN_STOPWORDS = new Set([
+  "and",
+  "for",
+  "from",
+  "item",
+  "model",
+  "new",
+  "no",
+  "nos",
+  "of",
+  "the",
+  "unit",
+  "with",
+]);
+
+function tokenizeCatalogText(value: unknown) {
+  return new Set(
+    String(value ?? "")
+      .toLowerCase()
+      .match(/[a-z0-9]+/g)
+      ?.filter(token => token.length >= 2 && !TOKEN_STOPWORDS.has(token)) ?? [],
+  );
+}
+
+function mergedTokens(...values: unknown[]) {
+  const tokens = new Set<string>();
+  values.forEach(value => {
+    tokenizeCatalogText(value).forEach(token => tokens.add(token));
+  });
+  return tokens;
+}
+
+function hasCatalogTextCompatibility(
+  item: InspectionReferenceItem,
+  catalogItem: SelectOption,
+) {
+  const rowTokens = mergedTokens(
+    item.item_name,
+    item.item_description,
+    item.item_specifications,
+  );
+  const catalogTokens = mergedTokens(
+    catalogItem.name,
+    catalogItem.code,
+    catalogItem.description,
+    catalogItem.specifications,
+  );
+
+  if (rowTokens.size === 0 || catalogTokens.size === 0) return true;
+
+  const overlap = [...rowTokens].filter(token => catalogTokens.has(token));
+  if (overlap.length === 0) return false;
+
+  const rowText = String([
+    item.item_name,
+    item.item_description,
+    item.item_specifications,
+  ].filter(Boolean).join(" ")).trim().toLowerCase();
+  const catalogText = String([
+    catalogItem.name,
+    catalogItem.code,
+    catalogItem.description,
+    catalogItem.specifications,
+  ].filter(Boolean).join(" ")).trim().toLowerCase();
+
+  if (rowText && catalogText && (rowText.includes(catalogText) || catalogText.includes(rowText))) {
+    return true;
+  }
+
+  return rowTokens.size <= 1 ? overlap.length >= 1 : overlap.length >= 2;
+}
+
+export function findInspectionItemCatalogLinkErrors<T extends InspectionReferenceItem>({
+  items,
+  itemOptions,
+  changedFields,
+}: {
+  items: T[];
+  itemOptions: SelectOption[];
+  changedFields: string[];
+}) {
+  const targetIndexes = new Set<number>();
+  for (const field of changedFields) {
+    if (field === "items") {
+      items.forEach((item, index) => {
+        if (item.item !== null && item.item !== undefined && item.item !== "") {
+          targetIndexes.add(index);
+        }
+      });
+      continue;
+    }
+    const parsed = parseInspectionItemFieldPath(field);
+    if (parsed?.field === "item") targetIndexes.add(parsed.index);
+  }
+
+  if (targetIndexes.size === 0) return {};
+
+  const byId = optionById(itemOptions);
+  const errors: Record<string, string> = {};
+
+  targetIndexes.forEach(index => {
+    const item = items[index];
+    if (!item || item.item === null || item.item === undefined || item.item === "") return;
+
+    const numericId = Number(item.item);
+    const catalogItem = Number.isFinite(numericId) ? byId.get(numericId) : null;
+    if (!catalogItem) return;
+
+    if (hasCatalogTextCompatibility(item, catalogItem)) return;
+
+    const rowLabel = String(item.item_description || item.item_name || `row ${index + 1}`).trim();
+    const catalogLabel = optionLabel(catalogItem);
+    errors[`items.${index}.item`] =
+      `Catalog item mismatch: inspection row "${rowLabel}" does not match selected catalog item "${catalogLabel}". Search options for this exact row again and choose a matching item, or ask the user before creating a new catalog item.`;
+  });
+
+  return errors;
 }
 
 export function syncInspectionItemReferences<T extends InspectionReferenceItem>({

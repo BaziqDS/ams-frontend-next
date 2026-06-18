@@ -11,7 +11,7 @@ import styles from "./reports.module.css";
 import { Button } from "@/components/ui/button";
 
 
-type ReportFamily = "all" | "operational" | "audit" | "finance" | "executive";
+type ReportFamily = "all" | "operational" | "audit";
 type Tone = "blue" | "green" | "amber" | "red" | "violet";
 
 type ReportId =
@@ -23,10 +23,7 @@ type ReportId =
   | "correction-control"
   | "inspection-aging"
   | "procurement-trace"
-  | "capitalization-pending"
-  | "fixed-asset-register"
-  | "asset-adjustments"
-  | "university-snapshot";
+;
 
 type ApiList<T> = Page<T> | T[];
 type ReportLoaderFilters = InventoryReportFilters | PendingAcknowledgementFilters | AssetCustodyFilters | MovementLedgerFilters | CorrectionFilters | ProcurementTraceFilters;
@@ -327,53 +324,6 @@ interface InspectionCertificate {
   updated_at?: string | null;
 }
 
-interface DepreciationSummary {
-  fiscal_year_start?: number | null;
-  opening_value?: string | null;
-  depreciation_amount?: string | null;
-  accumulated_depreciation?: string | null;
-  closing_value?: string | null;
-}
-
-interface FixedAssetEntry {
-  id: number;
-  asset_number: string;
-  item_name?: string | null;
-  item_code?: string | null;
-  instance_serial?: string | null;
-  batch_number?: string | null;
-  target_type: string;
-  asset_class_name?: string | null;
-  original_quantity: number;
-  remaining_quantity: number;
-  original_cost: string;
-  capitalization_date: string;
-  depreciation_start_date?: string | null;
-  status: string;
-  depreciation_summary?: DepreciationSummary | null;
-}
-
-interface UncapitalizedAsset {
-  target_type: string;
-  item_name: string;
-  item_code: string;
-  batch_number?: string | null;
-  quantity: number;
-  depreciation_setup_name?: string | null;
-  depreciation_rate?: string | null;
-}
-
-interface AssetAdjustment {
-  id: number;
-  asset_number?: string | null;
-  item_name?: string | null;
-  adjustment_type: string;
-  effective_date: string;
-  amount: string;
-  quantity_delta: number;
-  reason: string;
-  created_at?: string | null;
-}
 
 function normalizeList<T>(data: ApiList<T>) {
   return Array.isArray(data) ? data : data.results;
@@ -1215,87 +1165,31 @@ async function correctionControlReport(filters?: CorrectionFilters): Promise<Rep
   };
 }
 
-async function inspectionsReport(mode: "aging" | "capitalization"): Promise<ReportView> {
+async function inspectionsReport(): Promise<ReportView> {
   const rows = await fetchList<InspectionCertificate>("/api/inventory/inspections/");
-  if (mode === "aging") {
-    const open = rows.filter(row => !["COMPLETED", "CANCELLED", "REJECTED", "VOIDED"].includes(row.status));
-    return {
-      metrics: [
-        { label: "In-Progress Certificates", value: fmtNumber(open.length), hint: "not terminal", tone: "blue" },
-        { label: "Rejected", value: fmtNumber(rows.filter(row => row.status === "REJECTED").length), hint: "status rejected", tone: "red" },
-        { label: "Revision Requested", value: fmtNumber(rows.filter(row => row.revision_requested_at).length), hint: "revision_requested_at", tone: "amber" },
-        { label: "Finance Reviewed", value: fmtNumber(rows.filter(row => row.finance_reviewed_at).length), hint: "finance_reviewed_at", tone: "green" },
-        { label: "Total Inspection Items", value: fmtNumber(rows.reduce((sum, row) => sum + row.items.length, 0)), hint: "nested items", tone: "violet" },
-      ],
-      columns: ["Contract No", "Department", "Contractor Name", "Stage", "Status", "Initiated By", "Initiated At", "Stock Filled At", "Central Filled At", "Finance Reviewed At", "Revision Requested", "Rejected At"],
-      rows: rows.map(row => [
-        row.contract_no,
-        row.department_name ?? "-",
-        row.contractor_name ?? "-",
-        row.stage,
-        row.status,
-        row.initiated_by_name ?? "-",
-        fmtDate(row.initiated_at),
-        fmtDate(row.stock_filled_at),
-        fmtDate(row.central_store_filled_at),
-        fmtDate(row.finance_reviewed_at),
-        fmtDate(row.revision_requested_at),
-        fmtDate(row.rejected_at),
-      ]),
-      note: reportNote("/api/inventory/inspections/"),
-    };
-  }
-
-  const itemRows = rows.flatMap(certificate => certificate.items.map(item => ({ certificate, item })));
-  if (mode === "capitalization") {
-    const pending = itemRows.filter(({ item }) => item.depreciation_asset_class_name || item.capitalization_cost || item.capitalization_date);
-    return {
-      metrics: [
-        { label: "Accepted Fixed Asset Items", value: fmtNumber(pending.length), hint: "inspection items with finance fields", tone: "blue" },
-        { label: "Missing Capitalization Cost", value: fmtNumber(pending.filter(({ item }) => !item.capitalization_cost).length), hint: "capitalization_cost blank", tone: "amber" },
-        { label: "Missing Capitalization Date", value: fmtNumber(pending.filter(({ item }) => !item.capitalization_date).length), hint: "capitalization_date blank", tone: "red" },
-        { label: "Ready To Capitalize", value: fmtNumber(pending.filter(({ item }) => item.capitalization_cost && item.capitalization_date).length), hint: "cost and date present", tone: "green" },
-      ],
-      columns: ["Contract No", "Department", "Inspection Item", "Item Code", "Accepted Qty", "Depreciation Asset Class", "Capitalization Cost", "Capitalization Date", "Finance Reviewed At", "Finance Reviewed By"],
-      rows: pending.map(({ certificate, item }) => [
-        certificate.contract_no,
-        certificate.department_name ?? "-",
-        item.item_description || item.item_name || "-",
-        item.item_code ?? "-",
-        fmtNumber(item.accepted_quantity),
-        item.depreciation_asset_class_name ?? "-",
-        item.capitalization_cost ? fmtMoney(item.capitalization_cost) : "-",
-        item.capitalization_date ?? "-",
-        fmtDate(certificate.finance_reviewed_at),
-        certificate.finance_reviewed_by_name ?? "-",
-      ]),
-      note: reportNote("/api/inventory/inspections/"),
-    };
-  }
-
+  const open = rows.filter(row => !["COMPLETED", "CANCELLED", "REJECTED", "VOIDED"].includes(row.status));
   return {
     metrics: [
-      { label: "Accepted Quantity", value: fmtNumber(itemRows.reduce((sum, row) => sum + n(row.item.accepted_quantity), 0)), hint: "accepted_quantity", tone: "blue" },
-      { label: "Rejected Quantity", value: fmtNumber(itemRows.reduce((sum, row) => sum + n(row.item.rejected_quantity), 0)), hint: "rejected_quantity", tone: "red" },
-      { label: "Registered Items", value: fmtNumber(itemRows.filter(({ item }) => item.stock_register_name || item.stock_register_no).length), hint: "stock register refs", tone: "green" },
-      { label: "Missing Register", value: fmtNumber(itemRows.filter(({ item }) => !item.stock_register_name && !item.stock_register_no).length), hint: "no stock register ref", tone: "amber" },
-      { label: "Capitalization Rows", value: fmtNumber(itemRows.filter(({ item }) => item.capitalization_cost || item.capitalization_date).length), hint: "finance fields present", tone: "green" },
+      { label: "In-Progress Certificates", value: fmtNumber(open.length), hint: "not terminal", tone: "blue" },
+      { label: "Rejected", value: fmtNumber(rows.filter(row => row.status === "REJECTED").length), hint: "status rejected", tone: "red" },
+      { label: "Revision Requested", value: fmtNumber(rows.filter(row => row.revision_requested_at).length), hint: "revision_requested_at", tone: "amber" },
+      { label: "Finance Reviewed", value: fmtNumber(rows.filter(row => row.finance_reviewed_at).length), hint: "finance_reviewed_at", tone: "green" },
+      { label: "Total Inspection Items", value: fmtNumber(rows.reduce((sum, row) => sum + row.items.length, 0)), hint: "nested items", tone: "violet" },
     ],
-    columns: ["Contract No", "Inspection Item", "Item Code", "Tendered", "Accepted", "Rejected", "Stock Register", "Stock Page", "Central Register", "Central Page", "Stock Entry", "Capitalization Cost", "Capitalization Date"],
-    rows: itemRows.map(({ certificate, item }) => [
-      certificate.contract_no,
-      item.item_description || item.item_name || "-",
-      item.item_code ?? "-",
-      fmtNumber(item.tendered_quantity),
-      fmtNumber(item.accepted_quantity),
-      fmtNumber(item.rejected_quantity),
-      item.stock_register_name ?? item.stock_register_no ?? "-",
-      item.stock_register_page_no ?? "-",
-      item.central_register_name ?? item.central_register_no ?? "-",
-      item.central_register_page_no ?? "-",
-      certificate.stock_entries?.map(entry => entry.entry_number).join(", ") || "-",
-      item.capitalization_cost ? fmtMoney(item.capitalization_cost) : "-",
-      item.capitalization_date ?? "-",
+    columns: ["Contract No", "Department", "Contractor Name", "Stage", "Status", "Initiated By", "Initiated At", "Stock Filled At", "Central Filled At", "Finance Reviewed At", "Revision Requested", "Rejected At"],
+    rows: rows.map(row => [
+      row.contract_no,
+      row.department_name ?? "-",
+      row.contractor_name ?? "-",
+      row.stage,
+      row.status,
+      row.initiated_by_name ?? "-",
+      fmtDate(row.initiated_at),
+      fmtDate(row.stock_filled_at),
+      fmtDate(row.central_store_filled_at),
+      fmtDate(row.finance_reviewed_at),
+      fmtDate(row.revision_requested_at),
+      fmtDate(row.rejected_at),
     ]),
     note: reportNote("/api/inventory/inspections/"),
   };
@@ -1353,91 +1247,6 @@ async function procurementTraceReport(filters?: ProcurementTraceFilters): Promis
   };
 }
 
-async function fixedAssetRegisterReport(): Promise<ReportView> {
-  const rows = await fetchList<FixedAssetEntry>("/api/inventory/depreciation/assets/");
-  const original = rows.reduce((sum, row) => sum + n(row.original_cost), 0);
-  const accumulated = rows.reduce((sum, row) => sum + n(row.depreciation_summary?.accumulated_depreciation), 0);
-  const closing = rows.reduce((sum, row) => sum + n(row.depreciation_summary?.closing_value), 0);
-  return {
-    metrics: [
-      { label: "Active Assets", value: fmtNumber(rows.filter(row => row.status === "ACTIVE").length), hint: "status ACTIVE", tone: "blue" },
-      { label: "Original Cost", value: fmtMoney(original), hint: "gross capitalization", tone: "blue" },
-      { label: "Accumulated Depreciation", value: fmtMoney(accumulated), hint: "latest summary", tone: "violet" },
-      { label: "Current WDV / NBV", value: fmtMoney(closing), hint: "latest closing value", tone: "green" },
-      { label: "Register Entries", value: fmtNumber(rows.length), hint: "fixed assets", tone: "amber" },
-    ],
-    columns: ["Asset Number", "Item Code", "Item Name", "Target Type", "Instance / Batch", "Asset Class", "Orig Qty", "Rem Qty", "Original Cost", "Capitalization Date", "Opening Value", "Dep Amount", "Closing Value", "Status"],
-    rows: rows.map(row => [
-      row.asset_number,
-      row.item_code ?? "-",
-      row.item_name ?? "-",
-      row.target_type,
-      row.instance_serial ?? row.batch_number ?? "-",
-      row.asset_class_name ?? "-",
-      fmtNumber(row.original_quantity),
-      fmtNumber(row.remaining_quantity),
-      fmtMoney(row.original_cost),
-      row.capitalization_date,
-      fmtMoney(row.depreciation_summary?.opening_value),
-      fmtMoney(row.depreciation_summary?.depreciation_amount),
-      fmtMoney(row.depreciation_summary?.closing_value),
-      row.status,
-    ]),
-    note: reportNote("/api/inventory/depreciation/assets/"),
-  };
-}
-
-async function assetAdjustmentsReport(): Promise<ReportView> {
-  const rows = await fetchList<AssetAdjustment>("/api/inventory/depreciation/adjustments/");
-  return {
-    metrics: [
-      { label: "Capital Additions", value: fmtMoney(rows.filter(row => row.adjustment_type === "ADDITION").reduce((sum, row) => sum + n(row.amount), 0)), hint: "ADDITION", tone: "green" },
-      { label: "Disposals", value: fmtMoney(rows.filter(row => row.adjustment_type === "DISPOSAL").reduce((sum, row) => sum + n(row.amount), 0)), hint: "DISPOSAL", tone: "amber" },
-      { label: "Loss / Write-offs", value: fmtMoney(rows.filter(row => ["LOSS", "WRITE_OFF"].includes(row.adjustment_type)).reduce((sum, row) => sum + n(row.amount), 0)), hint: "LOSS + WRITE_OFF", tone: "red" },
-      { label: "Quantity Reductions", value: fmtNumber(rows.filter(row => row.adjustment_type === "QUANTITY_REDUCTION").length), hint: "quantity changes", tone: "violet" },
-      { label: "Adjustment Amount", value: fmtMoney(rows.reduce((sum, row) => sum + n(row.amount), 0)), hint: "net listed amount", tone: "blue" },
-    ],
-    columns: ["Asset Number", "Item", "Adjustment Type", "Effective Date", "Amount", "Quantity Delta", "Reason", "Created At"],
-    rows: rows.map(row => [
-      row.asset_number ?? "-",
-      row.item_name ?? "-",
-      row.adjustment_type,
-      row.effective_date,
-      fmtMoney(row.amount),
-      fmtNumber(row.quantity_delta),
-      row.reason,
-      fmtDate(row.created_at),
-    ]),
-    note: reportNote("/api/inventory/depreciation/adjustments/"),
-  };
-}
-
-async function universitySnapshotReport(): Promise<ReportView> {
-  const [inventory, pending, lowStock, fixedAssets, inspections] = await Promise.all([
-    inventoryPositionReport(),
-    pendingAcknowledgementReport(),
-    lowStockReport(),
-    fixedAssetRegisterReport(),
-    inspectionsReport("aging"),
-  ]);
-  return {
-    metrics: [
-      ...inventory.metrics.slice(0, 4),
-      ...fixedAssets.metrics.slice(0, 2),
-      pending.metrics[0],
-      inspections.metrics[0],
-    ],
-    columns: ["Indicator", "Current Value", "Evidence Source", "Primary Drilldown"],
-    rows: [
-      ["Stock status distribution", `${inventory.metrics[1].value} available / ${inventory.metrics[3].value} in transit`, "StockRecord", "Inventory Position"],
-      ["Pending acknowledgements", pending.metrics[0].value, "StockEntry.status", "Pending Acknowledgement"],
-      ["Asset register value", fixedAssets.metrics[3].value, "FixedAssetRegisterEntry + DepreciationEntry", "Fixed Asset Register"],
-      ["Open inspection aging", inspections.metrics[0].value, "InspectionCertificate", "Inspection Aging"],
-      ["Low-stock rows", lowStock.metrics[0].value, "StockRecord current balances", "Low Stock Risk"],
-    ],
-    note: "Live aggregate from distribution, stock entries, fixed assets, and inspections endpoints.",
-  };
-}
 
 const REPORTS: ReportDefinition[] = [
   {
@@ -1501,7 +1310,7 @@ const REPORTS: ReportDefinition[] = [
     description: "Monitors inspection certificates across workflow stages, revisions, and rejections.",
     schema: ["InspectionCertificate", "InspectionItem", "Location"],
     filters: ["Department", "Stage", "Status", "Contractor", "Revision Requested"],
-    loader: () => inspectionsReport("aging"),
+    loader: () => inspectionsReport(),
   },
   {
     id: "procurement-trace",
@@ -1512,53 +1321,15 @@ const REPORTS: ReportDefinition[] = [
     filters: ["Contract No", "Department", "Item", "Stock Register", "Central Register", "Finance Reviewed"],
     loader: filters => procurementTraceReport(filters as ProcurementTraceFilters | undefined),
   },
-  {
-    id: "capitalization-pending",
-    family: "finance",
-    title: "Capitalization Pending",
-    description: "Accepted fixed asset inspection rows with missing or incomplete capitalization evidence.",
-    schema: ["InspectionCertificate", "InspectionItem", "DepreciationAssetClass", "FixedAssetRegisterEntry"],
-    filters: ["Department", "Date Range", "Item", "Asset Class", "Finance Stage"],
-    loader: () => inspectionsReport("capitalization"),
-  },
-  {
-    id: "fixed-asset-register",
-    family: "finance",
-    title: "Fixed Asset Register and Depreciation Summary",
-    description: "Active fixed assets with latest depreciation values for the selected fiscal year.",
-    schema: ["FixedAssetRegisterEntry", "DepreciationEntry", "DepreciationRun", "DepreciationAssetClass"],
-    filters: ["Fiscal Year", "Department", "Asset Class", "Status", "Target Type"],
-    loader: fixedAssetRegisterReport,
-  },
-  {
-    id: "asset-adjustments",
-    family: "finance",
-    title: "Asset Adjustment / Disposal / Loss",
-    description: "Asset value adjustments including additions, disposals, losses, and quantity reductions.",
-    schema: ["AssetValueAdjustment", "FixedAssetRegisterEntry"],
-    filters: ["Fiscal Year", "Department", "Asset Class", "Adjustment Type", "Status"],
-    loader: assetAdjustmentsReport,
-  },
-  {
-    id: "university-snapshot",
-    family: "executive",
-    title: "University Asset Snapshot",
-    description: "High-level live view of inventory, fixed assets, inspections, and key operational indicators.",
-    schema: ["StockRecord", "FixedAssetRegisterEntry", "DepreciationEntry", "InspectionCertificate", "StockEntry"],
-    filters: ["Scope", "Department", "Fiscal Year", "As Of Date"],
-    loader: universitySnapshotReport,
-  },
 ];
 
 const FAMILY_LABELS: Record<ReportFamily, string> = {
   all: "All Reports",
   operational: "Operational",
   audit: "Audit & Control",
-  finance: "Finance & Fixed Assets",
-  executive: "Executive Snapshot",
 };
 
-const FAMILY_ORDER: ReportFamily[] = ["all", "operational", "audit", "finance", "executive"];
+const FAMILY_ORDER: ReportFamily[] = ["all", "operational", "audit"];
 
 function Icon({ children }: { children: ReactNode }) {
   return (
@@ -1656,11 +1427,11 @@ export default function ReportsPage() {
         groups[report.family].push(report);
         return groups;
       },
-      { operational: [], audit: [], finance: [], executive: [] },
+      { operational: [], audit: [] },
     );
   }, []);
 
-  const visibleGroups = (["operational", "audit", "finance", "executive"] as const).filter(group => family === "all" || family === group);
+  const visibleGroups = (["operational", "audit"] as const).filter(group => family === "all" || family === group);
 
   useEffect(() => {
     if (!authLoading && !canViewReports) router.replace("/403");
@@ -2301,8 +2072,6 @@ export default function ReportsPage() {
               ))}
             </div>
 
-            {selected.id === "university-snapshot" && view ? <SnapshotVisuals view={view} /> : null}
-
             {(!isProcurementTrace || Boolean(view?.rows.length)) ? <section className={styles.results}>
               <div className={styles.resultsHead}>
                 <span className="eyebrow">Results</span>
@@ -2351,54 +2120,3 @@ export default function ReportsPage() {
   );
 }
 
-function SnapshotVisuals({ view }: { view: ReportView }) {
-  return (
-    <div className={styles.snapshotGrid}>
-      <div className={styles.chartCard}>
-        <h3>Asset value by department (WDV)</h3>
-        <div className={styles.donut} />
-        <div className={styles.legend}>
-          <span><i className={styles.dotBlue} />Fixed asset register</span>
-          <span><i className={styles.dotGreen} />Depreciation entries</span>
-          <span><i className={styles.dotAmber} />Inspection evidence</span>
-        </div>
-      </div>
-      <div className={styles.chartCard}>
-        <h3>Stock status distribution</h3>
-        <div className={styles.ring} />
-        <div className={styles.legend}>
-          <span><i className={styles.dotGreen} />Available</span>
-          <span><i className={styles.dotAmber} />Allocated</span>
-          <span><i className={styles.dotBlue} />In transit</span>
-        </div>
-      </div>
-      <div className={styles.chartCard}>
-        <h3>Inspection stage aging</h3>
-        <div className={styles.bars}>
-          <span style={{ height: "42%" }} />
-          <span style={{ height: "58%" }} />
-          <span style={{ height: "88%" }} />
-          <span style={{ height: "52%" }} />
-        </div>
-      </div>
-      <div className={styles.printPreview}>
-        <div className={styles.printHeader}>
-          <img src="/ned_seal.webp" alt="NED University" />
-          <div>
-            <strong>NED UNIVERSITY OF ENGINEERING & TECHNOLOGY</strong>
-            <span>Asset Management System</span>
-          </div>
-        </div>
-        <h3>University Asset Snapshot</h3>
-        <table>
-          <tbody>
-            {view.metrics.slice(0, 5).map(metric => (
-              <tr key={metric.label}><td>{metric.label}</td><td>{metric.value}</td></tr>
-            ))}
-          </tbody>
-        </table>
-        <p>Printable HTML preview. Values are populated from current API responses.</p>
-      </div>
-    </div>
-  );
-}

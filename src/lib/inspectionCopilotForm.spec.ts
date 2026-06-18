@@ -5,6 +5,7 @@ import {
   buildInspectionFinanceCopilotFields,
   buildInspectionItemArrayCopilotFields,
   buildInspectionItemCopilotFields,
+  findInspectionItemCatalogLinkErrors,
   parseInspectionItemFieldPath,
   syncInspectionItemReferences,
 } from "./inspectionCopilotForm";
@@ -393,6 +394,56 @@ describe("inspection copilot form helpers", () => {
       central_register_no: "CENT-1",
       central_register_page_no: "10",
     });
+  });
+
+  it("rejects central-register catalog item links that do not match the row description", () => {
+    const errors = findInspectionItemCatalogLinkErrors({
+      changedFields: ["items.0.item"],
+      items: [
+        {
+          item: 58,
+          item_description: "Dell Laptop Core i5, 16GB RAM, 512GB SSD",
+          item_specifications: "",
+        },
+      ],
+      itemOptions: [
+        {
+          id: 58,
+          name: "Logitech Webcam C920",
+          code: "",
+          description: "Logitech Webcam C920, Full HD 1080p, Autofocus",
+          specifications: null,
+        },
+      ],
+    });
+
+    expect(errors).toMatchObject({
+      "items.0.item": expect.stringMatching(/does not match selected catalog item/i),
+    });
+  });
+
+  it("allows central-register catalog item links with description/specification overlap", () => {
+    const errors = findInspectionItemCatalogLinkErrors({
+      changedFields: ["items.0.item"],
+      items: [
+        {
+          item: 64,
+          item_description: "Dell Laptop Core i5, 16GB RAM, 512GB SSD",
+          item_specifications: "",
+        },
+      ],
+      itemOptions: [
+        {
+          id: 64,
+          name: "Dell Laptop Core i5",
+          code: "",
+          description: "Dell Laptop Core i5, 16GB RAM, 512GB SSD, Windows 11 Home",
+          specifications: null,
+        },
+      ],
+    });
+
+    expect(errors).toEqual({});
   });
 });
 
