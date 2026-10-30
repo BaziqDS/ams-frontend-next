@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildGoogleTranslateV2Body } from "@/lib/googleTranslateRequest";
+import { authorizeVoice, BodyTooLarge, readLimitedBody } from '@/lib/voiceRouteSecurity';
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,8 @@ function jsonError(message: string, status: number, details?: unknown) {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await authorizeVoice(request);
+  if (denied) return denied;
   const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY;
   if (!apiKey) {
     return jsonError(
@@ -25,12 +28,15 @@ export async function POST(request: NextRequest) {
 
   let body: { text?: string; source?: string; target?: string };
   try {
-    body = await request.json();
-  } catch {
+    body = JSON.parse(new TextDecoder().decode(await readLimitedBody(request, 32_000)));
+    if (!body || typeof body !== 'object') return jsonError('Expected a JSON object.', 400);
+  } catch (error) {
+    if (error instanceof BodyTooLarge) return jsonError('Translation request is too large.', 413);
     return jsonError("Expected JSON body with a 'text' field.", 400);
   }
 
   const text = typeof body.text === "string" ? body.text.trim() : "";
+  if (text.length > 5000) return jsonError('Text exceeds 5000 characters.', 413);
   if (!text) {
     return NextResponse.json({ ok: true, translatedText: "", detectedLanguage: null });
   }
@@ -57,16 +63,15 @@ export async function POST(request: NextRequest) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(translateBody),
+      signal: AbortSignal.timeout(30_000),
     });
 
     const payload = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      console.error("[voice/translate] Google API error:", response.status, JSON.stringify(payload));
       return jsonError(
         "Google Translate API request failed.",
-        response.status,
-        payload,
+        502,
       );
     }
 
@@ -85,7 +90,6 @@ export async function POST(request: NextRequest) {
     return jsonError(
       "Failed to reach Google Translate API.",
       502,
-      err instanceof Error ? err.message : String(err),
     );
   }
 }

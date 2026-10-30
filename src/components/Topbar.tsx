@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth, type AuthUser } from "@/contexts/AuthContext";
 import { useNotifications, type NotificationAlertRecord, type NotificationFeedItem } from "@/contexts/NotificationsContext";
 import { API_BASE, apiFetch } from "@/lib/api";
+import { useObjectUrl } from '@/lib/useObjectUrl';
 import {
   buildNotificationAlertDisplay,
   buildNotificationFeedDisplay,
@@ -227,7 +228,7 @@ function ProfileSettingsModal({
   const [draftLastName, setDraftLastName] = useState(lastName);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const avatarPreview = useObjectUrl(open ? avatarFile : null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -239,7 +240,6 @@ function ProfileSettingsModal({
     setDraftLastName(lastName);
     setPasswordModalOpen(false);
     setAvatarFile(null);
-    setAvatarPreview(null);
     setSubmitError(null);
   }, [chatbotEnabled, firstName, lastName, open, preferences]);
 
@@ -320,7 +320,6 @@ function ProfileSettingsModal({
                 onChange={event => {
                   const file = event.target.files?.[0] ?? null;
                   setAvatarFile(file);
-                  setAvatarPreview(file ? URL.createObjectURL(file) : null);
                 }}
               />
               <button type="button" className="btn btn-sm btn-ghost profile-avatar-action" onClick={() => fileInputRef.current?.click()}>

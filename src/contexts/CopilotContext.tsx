@@ -12,6 +12,7 @@ import {
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import { voiceRequest } from '@/lib/voiceClient';
 import {
   type CapabilityLevel,
   useCapabilities,
@@ -1355,7 +1356,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
           const form = new FormData();
           form.set("audio", blob, "voice-command.webm");
           form.set("language", language);
-          const response = await fetch("/api/copilot/voice/transcribe", {
+          const response = await voiceRequest("/api/copilot/voice/transcribe", {
             method: "POST",
             body: form,
           });
@@ -1390,7 +1391,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         const sourceLang = typeof event.data.sourceLang === "string" ? event.data.sourceLang : undefined;
         if (!callId) return;
         try {
-          const response = await fetch("/api/copilot/voice/translate", {
+          const response = await voiceRequest("/api/copilot/voice/translate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text, target, source: sourceLang }),

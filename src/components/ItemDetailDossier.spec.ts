@@ -151,7 +151,7 @@ describe("ItemDetailDossier distribution helpers", () => {
 
 describe("ItemDetailDossier action surface", () => {
   const source = readFileSync("src/components/ItemDetailDossier.tsx", "utf8");
-  const detailStyles = readFileSync("src/components/ItemDetailDossier.module.css", "utf8");
+  const detailStyles = readFileSync("src/components/ItemDetailDossier.module.css", "utf8").replace(/\r\n/g, "\n");
   const distributionViewSource = readFileSync("src/components/ItemDistributionView.tsx", "utf8");
   const itemModuleSource = readFileSync("src/components/ItemModuleViews.tsx", "utf8");
   const instancesRoute = readFileSync("src/app/(dashboard)/items/[id]/instances/page.tsx", "utf8");

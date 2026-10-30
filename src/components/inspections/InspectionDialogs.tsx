@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { apiFetch, type Page } from "@/lib/api";
+import { apiFetch, apiRequest, type Page } from "@/lib/api";
 import { useCopilotForm, type CopilotFormField } from "@/hooks/useCopilotForm";
 import { searchCentralRegisterItemOptions } from "@/lib/inspectionCopilotForm";
 import { ensureValueInOptions, normalizeCopilotSubmitError } from "@/lib/copilotFormRuntime";
@@ -497,7 +497,7 @@ export function InspectionModal({
         const url = mode === "edit" && inspection
           ? `${API_BASE}/api/inventory/inspections/${inspection.id}/`
           : `${API_BASE}/api/inventory/inspections/`;
-        const response = await fetch(url, {
+        const response = await apiRequest(url.replace(API_BASE, ''), {
           method: mode === "edit" ? "PATCH" : "POST",
           body: formData,
           credentials: "include",

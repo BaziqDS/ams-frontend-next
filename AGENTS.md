@@ -1,4 +1,13 @@
 <!-- BEGIN:nextjs-agent-rules -->
+
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
+
 # FRONTEND KNOWLEDGE BASE
 
 **Generated:** 2026-04-21
@@ -6,7 +15,7 @@
 **Branch:** N/A (verify locally if doing git work)
 
 ## OVERVIEW
-Active frontend app. Next.js 16.2.4 + React 19 App Router under `src/`, dashboard/admin UI, cookie-auth integration with Django backend.
+Active frontend app. Next.js 16.4.3 + React 19 App Router under `src/`, dashboard/admin UI, cookie-auth integration with Django backend.
 
 ## STRUCTURE
 ```text
@@ -70,7 +79,7 @@ npm run start
 - Large hotspots: `globals.css`, `src/components/AddUserModal.tsx`, dashboard page files.
 - For local browser testing, assume a superuser account is available with username `admin` and password `admin`.
 - When opening a browser for UI testing, use a full desktop-sized viewport, for example 1440×1000, before judging layout or screenshots.
-<!-- END:nextjs-agent-rules -->
+
 
 ## Frontend writing and visual hierarchy
 

@@ -1,4 +1,5 @@
 "use client";
+import { fetchAllPages, loadStoreInventory, loadMovementPage, loadSelectedItemInventory } from "@/lib/stockEntryData";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -7,7 +8,6 @@ import { ListPagination } from "@/components/ListPagination";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { DropdownPortal } from "@/components/DropdownPortal";
 import { apiFetch, type Page } from "@/lib/api";
-import { useClientPagination } from "@/lib/listPagination";
 import { getAllocatableTargetLocations, getAllocatableTargetPersons, getAllocatedReturnLocations, getAllocatedReturnPersons, getSelectableStockEntryStores, type StockAllocationRecord } from "@/lib/stockEntryLocationRules";
 import { getIssueAvailableQuantity, getIssueBatchOptions, getIssueInstanceOptions, getIssueItemOptions, getReturnBatchOptions, getReturnInstanceOptions, getReturnItemOptions, getReturnQuantityLimit, type StockEntryItemInstance, type StockEntryStockRecord, type StockEntryReturnTarget } from "@/lib/stockEntryItemRules";
 import { buildStockEntryPayload, getStockEntryDisplayDirection, getStockEntryRegisterStoreId, getStockEntrySourceRegisterOptions, resolveStockEntrySourceRegisterValue, validateStockEntryForm, type CreatableStockEntryType, type StockEntryFormItem, type StockEntryFormState } from "@/lib/stockEntryFormRules";
@@ -152,33 +152,6 @@ const Ic = ({ d, size = 16 }: { d: ReactNode | string; size?: number }) => (
     {typeof d === "string" ? <path d={d} /> : d}
   </svg>
 );
-
-function nextPagePath(next: string | null) {
-  if (!next) return null;
-  try {
-    const url = new URL(next);
-    return `${url.pathname}${url.search}`;
-  } catch {
-    return next;
-  }
-}
-
-async function fetchAllPages<T>(initialPath: string) {
-  const results: T[] = [];
-  let path: string | null = initialPath;
-
-  while (path) {
-    const data = await apiFetch<Page<T> | T[]>(path);
-    if (Array.isArray(data)) {
-      results.push(...data);
-      break;
-    }
-    results.push(...data.results);
-    path = nextPagePath(data.next);
-  }
-
-  return results;
-}
 
 function formatLabel(value: string | null | undefined, fallback = "—") {
   if (!value) return fallback;
@@ -609,12 +582,47 @@ function entrySource(entry: StockEntryRecord) {
   return getStockEntryDisplayDirection(entry).source;
 }
 
-function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocationIds, scopeStores = [], isSuperuser = false, onClose, onSave }: { open: boolean; mode: "create" | "edit"; entry: StockEntryRecord | null; refs: ReferenceData; refsLoading: boolean; assignedLocationIds?: number[]; scopeStores?: StockEntryScopeStore[]; isSuperuser?: boolean; onClose: () => void; onSave: (savedEntry: StockEntryRecord) => void | Promise<void> }) {
+function StockEntryModal({ open, mode, entry, refs: baseRefs, refsLoading: baseRefsLoading, assignedLocationIds, scopeStores = [], isSuperuser = false, onClose, onSave }: { open: boolean; mode: "create" | "edit"; entry: StockEntryRecord | null; refs: ReferenceData; refsLoading: boolean; assignedLocationIds?: number[]; scopeStores?: StockEntryScopeStore[]; isSuperuser?: boolean; onClose: () => void; onSave: (savedEntry: StockEntryRecord) => void | Promise<void> }) {
   const [form, setForm] = useState<StockEntryFormState>(emptyForm);
+  const [stockRefs, setStockRefs] = useState<Pick<ReferenceData, 'items' | 'stockRecords' | 'allocations'>>({ items: [], stockRecords: [], allocations: [] });
+  const [lineRefs, setLineRefs] = useState<Pick<ReferenceData, 'batches' | 'instances'>>({ batches: [], instances: [] });
+  const [stockRefsLoading, setStockRefsLoading] = useState(false);
+  const [lineRefsLoading, setLineRefsLoading] = useState(false);
+  const refs = useMemo(() => ({ ...baseRefs, ...stockRefs, ...lineRefs }), [baseRefs, stockRefs, lineRefs]);
+  const refsLoading = baseRefsLoading || stockRefsLoading || lineRefsLoading;
+  const stockStore = form.entry_type === 'ISSUE' ? form.from_location : form.to_location;
+  const selectedItemKey = [...new Set(form.items.map(row => row.item).filter(Boolean))].sort().join(',');
+
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [transferrableStores, setTransferrableStores] = useState<LocationRecord[]>([]);
+  useEffect(() => {
+    if (!open || !stockStore) { setStockRefsLoading(false); setStockRefs({ items: [], stockRecords: [], allocations: [] }); return; }
+    let active = true;
+    setStockRefsLoading(true);
+    setStockRefs({ items: [], stockRecords: [], allocations: [] });
+    (async () => {
+      const { items, stockRecords, allocations } = await loadStoreInventory<ItemRecord>(stockStore, entry?.items.map(row => row.item));
+      if (active) setStockRefs({ items, stockRecords, allocations });
+    })().catch(error => { if (active) setSubmitError(error instanceof Error ? error.message : 'Unable to load store inventory.'); })
+      .finally(() => { if (active) setStockRefsLoading(false); });
+    return () => { active = false; };
+  }, [open, stockStore]);
+
+  useEffect(() => {
+    if (!open || !selectedItemKey) { setLineRefsLoading(false); setLineRefs({ batches: [], instances: [] }); return; }
+    let active = true;
+    setLineRefsLoading(true);
+    setLineRefs({ batches: [], instances: [] });
+    (async () => {
+      const data = await loadSelectedItemInventory<ItemBatchRecord>(selectedItemKey.split(','), form.entry_type === 'ISSUE' ? stockStore : '');
+      if (active) setLineRefs(data);
+    })().catch(error => { if (active) setSubmitError(error instanceof Error ? error.message : 'Unable to load selected item inventory.'); })
+      .finally(() => { if (active) setLineRefsLoading(false); });
+    return () => { active = false; };
+  }, [open, selectedItemKey, stockStore, form.entry_type]);
+
   const [transferrableLoading, setTransferrableLoading] = useState(false);
   const selectableStoreOptions = useMemo(() => getSelectableStockEntryStores({
     assignedLocationIds,
@@ -1469,6 +1477,10 @@ export function StockEntriesView() {
   const canDelete = useCan("stock-entries", "full");
 
   const [entries, setEntries] = useState<StockEntryRecord[]>([]);
+  const [page, setPage] = useState(1);
+  const [entryCount, setEntryCount] = useState(0);
+  const entriesRequestRef = useRef(0);
+
   const [refs, setRefs] = useState<ReferenceData>({ items: [], batches: [], locations: [], persons: [], registers: [], allocations: [], stockRecords: [], instances: [] });
   const [isLoading, setIsLoading] = useState(true);
   const [refsLoading, setRefsLoading] = useState(false);
@@ -1498,26 +1510,12 @@ export function StockEntriesView() {
     setRefsLoading(true);
     const promise = (async () => {
       try {
-        const [itemsData, batchesData, locationsData, personsData, registersData, allocationsData, stockRecordsData, instancesData] = await Promise.all([
-          fetchAllPages<ItemRecord>("/api/inventory/items/?page_size=500"),
-          fetchAllPages<ItemBatchRecord>("/api/inventory/item-batches/?page_size=500"),
+        const [locationsData, personsData, registersData] = await Promise.all([
           fetchAllPages<LocationRecord>("/api/inventory/locations/?page_size=500"),
           fetchAllPages<PersonRecord>("/api/inventory/persons/?page_size=500"),
           fetchAllPages<StockRegisterRecord>("/api/inventory/stock-registers/?page_size=500"),
-          fetchAllPages<StockAllocationRecord>("/api/inventory/stock-allocations/?status=ALLOCATED&page_size=500"),
-          fetchAllPages<StockEntryStockRecord>("/api/inventory/distribution/?page_size=1000"),
-          fetchAllPages<StockEntryItemInstance>("/api/inventory/item-instances/?page_size=1000"),
         ]);
-        setRefs({
-          items: itemsData,
-          batches: batchesData,
-          locations: locationsData,
-          persons: personsData,
-          registers: registersData,
-          allocations: allocationsData,
-          stockRecords: stockRecordsData,
-          instances: instancesData,
-        });
+        setRefs({ items: [], batches: [], locations: locationsData, persons: personsData, registers: registersData, allocations: [], stockRecords: [], instances: [] });
         refsLoadedRef.current = true;
         return true;
       } catch (err) {
@@ -1536,19 +1534,20 @@ export function StockEntriesView() {
   const loadEntries = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
     if (showLoading) setIsLoading(true);
     setFetchError(null);
+    const generation = ++entriesRequestRef.current;
     try {
-      const params = new URLSearchParams({ page_size: "500" });
-      if (storeScope !== "all") params.set("store", storeScope);
-      const data = await fetchAllPages<StockEntryRecord>(`/api/inventory/stock-entries/?${params.toString()}`);
-      setEntries(data);
+      const data = await loadMovementPage<StockEntryRecord>({ page, search, status: statusFilter, store: storeScope });
+      if (generation !== entriesRequestRef.current) return true;
+      setEntries(data.results);
+      setEntryCount(data.count);
       return true;
     } catch (err) {
-      setFetchError(err instanceof Error ? err.message : "Failed to load stock entries");
+      if (generation === entriesRequestRef.current) setFetchError(err instanceof Error ? err.message : "Failed to load stock entries");
       return false;
     } finally {
-      if (showLoading) setIsLoading(false);
+      if (generation === entriesRequestRef.current) setIsLoading(false);
     }
-  }, [storeScope]);
+  }, [page, search, statusFilter, storeScope]);
 
   const loadScopeStores = useCallback(async () => {
     try {
@@ -1582,47 +1581,32 @@ export function StockEntriesView() {
 
     const replacementFor = searchParams.get("replacement_for");
     if (!replacementFor || !canManage || isLoading || replacementOpenedRef.current === replacementFor) return;
-    const source = entries.find(entry => String(entry.id) === replacementFor);
-    if (!source) return;
     replacementOpenedRef.current = replacementFor;
-    setModalMode("create");
-    setEditingEntry(source);
-    setModalOpen(true);
-    void loadRefs();
-    router.replace("/stock-entries");
+    const source = entries.find(entry => String(entry.id) === replacementFor);
+    void (async () => {
+      try {
+        const replacementSource = source ?? await apiFetch<StockEntryRecord>(`/api/inventory/stock-entries/${encodeURIComponent(replacementFor)}/`);
+        setModalMode("create");
+        setEditingEntry(replacementSource);
+        setModalOpen(true);
+        void loadRefs();
+        router.replace("/stock-entries");
+      } catch (error) {
+        setFetchError(error instanceof Error ? error.message : "Unable to load correction source.");
+        replacementOpenedRef.current = null;
+      }
+    })();
   }, [canManage, entries, isLoading, loadRefs, router, searchParams]);
 
   const movementEntries = useMemo(() => getStockEntryMovementRows(entries), [entries]);
 
-  const filteredEntries = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return movementEntries.filter(({ entry, receipt }) => {
-      if (q) {
-        const hay = [
-          entry.entry_number,
-          receipt?.entry_number ?? "",
-          entry.from_location_name ?? "",
-          entry.to_location_name ?? "",
-          entry.issued_to_name ?? "",
-          entry.purpose ?? "",
-          entry.remarks ?? "",
-          ...entry.items.map(item => item.item_name ?? ""),
-        ].join(" ").toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      if (statusFilter !== "all" && getStockEntryMovementStatus(entry, receipt) !== statusFilter) return false;
-      return true;
-    });
-  }, [movementEntries, search, statusFilter]);
-
-  const {
-    page,
-    totalPages,
-    pageItems: pagedEntries,
-    pageStart,
-    pageEnd,
-    setPage,
-  } = useClientPagination(filteredEntries, STOCK_ENTRIES_PAGE_SIZE, [search, statusFilter, storeScope]);
+  const filteredEntries = movementEntries;
+  const pagedEntries = movementEntries;
+  const totalPages = Math.max(1, Math.ceil(entryCount / STOCK_ENTRIES_PAGE_SIZE));
+  const pageStart = entryCount ? (page - 1) * STOCK_ENTRIES_PAGE_SIZE + 1 : 0;
+  const pageEnd = Math.min(entryCount, pageStart + pagedEntries.length - 1);
+  useEffect(() => { setPage(1); }, [search, statusFilter, storeScope]);
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
   const stockEntryListControls = useCopilotListControls({
     entity: "stock_entry",
@@ -1693,8 +1677,8 @@ export function StockEntriesView() {
   const stockEntriesListReadable = useMemo(() => buildCopilotListContext({
     route: "/stock-entries",
     entity: "stock_entry",
-    total: movementEntries.length,
-    filteredTotal: filteredEntries.length,
+    total: entryCount,
+    filteredTotal: entryCount,
     filters: {
       search: search || null,
       status: statusFilter,
@@ -1752,7 +1736,7 @@ export function StockEntriesView() {
     capsLoading,
     filteredEntries.length,
     isLoading,
-    movementEntries.length,
+    entryCount,
     page,
     pagedEntries,
     refsLoading,
@@ -1956,7 +1940,7 @@ export function StockEntriesView() {
             <div className="table-card-head">
               <div className="table-card-head-left">
                 <div className="eyebrow">Stock movement ledger</div>
-                <div className="table-count"><span className="mono">{filteredEntries.length}</span><span>of</span><span className="mono">{movementEntries.length}</span><span>entries</span></div>
+                <div className="table-count"><span className="mono">{entryCount}</span><span>entries</span></div>
               </div>
             </div>
             {isLoading ? <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", borderTop: "1px solid var(--hairline)" }}>Loading stock entries…</div> : (
@@ -1988,7 +1972,7 @@ export function StockEntriesView() {
               </div>
             )}
             <ListPagination
-              summary={filteredEntries.length === 0 ? "Showing 0 stock entries" : `Showing ${pageStart}-${pageEnd} of ${filteredEntries.length} stock entries`}
+              summary={filteredEntries.length === 0 ? "Showing 0 stock entries" : `Showing ${pageStart}-${pageEnd} of ${entryCount} stock entries`}
               page={page}
               totalPages={totalPages}
               onPrev={() => setPage(current => Math.max(1, current - 1))}
@@ -2016,7 +2000,7 @@ export function StockEntriesView() {
         ) : <div className="table-card"><div style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>No stock entries match the current filters.</div></div>}
         {mode === "grid" && filteredEntries.length > 0 ? (
           <ListPagination
-            summary={`Showing ${pageStart}-${pageEnd} of ${filteredEntries.length} stock entries`}
+            summary={`Showing ${pageStart}-${pageEnd} of ${entryCount} stock entries`}
             page={page}
             totalPages={totalPages}
             onPrev={() => setPage(current => Math.max(1, current - 1))}

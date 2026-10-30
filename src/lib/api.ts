@@ -108,20 +108,45 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const isFormData = typeof FormData !== "undefined" && options?.body instanceof FormData;
-  const headers = isFormData
-    ? options?.headers
-    : {
-        "Content-Type": "application/json",
-        ...options?.headers,
-      };
+let refreshInFlight: Promise<boolean> | null = null;
 
-  const res = await fetch(`${API_BASE}${path}`, {
+export async function csrfHeaders(): Promise<Record<string, string>> {
+  const csrf = await fetch(`${API_BASE}/auth/cookie/csrf/`, { credentials: 'include', cache: 'no-store' });
+  if (!csrf.ok) throw new ApiError(csrf.status, 'Unable to initialize request security.');
+  const { csrfToken } = await csrf.json();
+  if (typeof csrfToken !== 'string' || !csrfToken) throw new Error('Missing CSRF token.');
+  return { 'X-CSRFToken': csrfToken };
+}
+
+export async function apiRequest(path: string, options?: RequestInit): Promise<Response> {
+  const headers = new Headers(options?.headers);
+  const method = (options?.method ?? 'GET').toUpperCase();
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    // Fetch a masked token from the API origin so separate frontend/backend
+    // hosts work without exposing the httpOnly authentication cookies.
+    const csrf = await csrfHeaders();
+    headers.set('X-CSRFToken', csrf['X-CSRFToken']);
+  }
+  const send = () => fetch(`${API_BASE}${path}`, {
     ...options,
-    credentials: "include",
+    credentials: 'include',
     headers,
   });
+  const res = await send();
+  if (res.status !== 401 || path.startsWith('/auth/cookie/')) return res;
+  if (!refreshInFlight) {
+    refreshInFlight = apiRequest('/auth/cookie/refresh/', { method: 'POST' })
+      .then(response => response.ok).catch(() => false).finally(() => { refreshInFlight = null; });
+  }
+  return await refreshInFlight ? send() : res;
+}
+
+export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers = new Headers(options?.headers);
+  if (!(typeof FormData !== 'undefined' && options?.body instanceof FormData) && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  const res = await apiRequest(path, { ...options, headers });
 
   if (!res.ok) {
     let message = `HTTP ${res.status}`;

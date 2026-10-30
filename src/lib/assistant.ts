@@ -1,4 +1,4 @@
-import { API_BASE } from "@/lib/api";
+import { apiRequest } from "@/lib/api";
 
 export type AssistantMessageRole = "user" | "assistant" | "system";
 export type AssistantMessageKind = "text" | "openui";
@@ -69,7 +69,7 @@ export async function streamAssistantResponse({
   history: AssistantHistoryTurn[];
   onEvent: (event: AssistantStreamEvent) => void;
 }) {
-  const response = await fetch(`${API_BASE}/api/ai/chat/stream/`, {
+  const response = await apiRequest('/api/ai/chat/stream/', {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },

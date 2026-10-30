@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getGroqAudioUrl } from "@/lib/voiceAudio";
+import { authorizeVoice, BodyTooLarge, readLimitedBody } from '@/lib/voiceRouteSecurity';
 
 export const runtime = "nodejs";
 
@@ -21,6 +22,8 @@ function readString(value: FormDataEntryValue | null) {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await authorizeVoice(request);
+  if (denied) return denied;
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     return jsonError(
@@ -31,8 +34,10 @@ export async function POST(request: NextRequest) {
 
   let body: FormData;
   try {
-    body = await request.formData();
-  } catch {
+    const bytes = await readLimitedBody(request, MAX_AUDIO_BYTES + 64 * 1024);
+    body = await new Request(request.url, { method: 'POST', headers: request.headers, body: bytes }).formData();
+  } catch (error) {
+    if (error instanceof BodyTooLarge) return jsonError('Audio upload is too large.', 413);
     return jsonError("Expected multipart/form-data with an audio file.", 400);
   }
 
@@ -53,7 +58,6 @@ export async function POST(request: NextRequest) {
   groqForm.set("file", audio, audio.name || "voice-command.webm");
   groqForm.set(
     "model",
-      readString(body.get("model")) ??
       process.env.GROQ_STT_MODEL ??
       "whisper-large-v3",
   );
@@ -70,15 +74,20 @@ export async function POST(request: NextRequest) {
     readString(body.get("prompt")) ??
     process.env.GROQ_STT_PROMPT ??
     "Transcribe the user's AMS voice command in the same language they spoke. If they speak Urdu, keep the transcript in Urdu. Common AMS terms include inspections, stock register, central register, finance review, categories, items, locations, maintenance, depreciation, contractor, consignee, indenter, inspection certificate, Jamia Masjid, and Core i5.";
+  if (prompt.length > 2000) return jsonError('Transcription prompt is too long.', 400);
   groqForm.set("prompt", prompt);
 
-  const groqResponse = await fetch(getGroqAudioUrl(), {
+  let groqResponse: Response;
+  try {
+    groqResponse = await fetch(getGroqAudioUrl(), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
     },
     body: groqForm,
-  });
+    signal: AbortSignal.timeout(30_000),
+    });
+  } catch { return jsonError('Unable to reach the transcription provider.', 502); }
 
   const responseText = await groqResponse.text();
   let payload: unknown = null;
@@ -89,7 +98,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (!groqResponse.ok) {
-    return jsonError("Groq audio transcription failed.", groqResponse.status, payload);
+    return jsonError("Groq audio transcription failed.", 502);
   }
 
   const text =

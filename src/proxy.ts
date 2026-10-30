@@ -33,6 +33,9 @@ export async function proxy(request: NextRequest) {
     });
 
     if (meResponse.status === 401) {
+      // The client API layer rotates a valid refresh token before retrying.
+      // Backend permissions still authorize every request.
+      if (request.cookies.has('ams_refresh')) return NextResponse.next();
       return NextResponse.redirect(new URL("/login", request.url));
     }
 

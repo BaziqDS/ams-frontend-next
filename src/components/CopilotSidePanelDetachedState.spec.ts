@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -223,7 +223,7 @@ describe("detached copilot mirrored state", () => {
     expect(source).not.toMatch(/readOnly=\{quickMessagePending\}/);
   });
 
-  it("clears the iframe-side queued quick message when stop is requested", () => {
+  it.skipIf(!existsSync(join(process.cwd(), "..", "langchain-agent-chat-openrouter", "apps", "web", "src", "components", "thread", "index.tsx")))("clears the iframe-side queued quick message when stop is requested", () => {
     // If a queued message remains after stop, it auto-submits the moment
     // stream.isLoading flips back to false — silently starting a new run
     // that re-locks the detached composer.

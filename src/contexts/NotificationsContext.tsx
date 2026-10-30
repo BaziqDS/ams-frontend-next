@@ -19,6 +19,7 @@ export interface NotificationSummary {
   unread_notifications: number;
   open_alerts: number;
   modules: Record<string, NotificationModuleSummary>;
+  alerts?: NotificationAlertRecord[];
 }
 
 export interface NotificationAlertRecord {
@@ -243,6 +244,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         modules: data.modules ?? {},
       };
       setSummary(normalized);
+      if (Array.isArray(data.alerts)) applyAlerts(data.alerts, false);
       consecutiveFailuresRef.current = 0;
       broadcastRef.current?.postMessage({ type: "summary", summary: normalized } satisfies NotificationsBroadcast);
     } catch (err) {
@@ -255,7 +257,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         setIsSummaryLoading(false);
       }
     }
-  }, []);
+  }, [applyAlerts]);
 
   const loadPanelData = useCallback(async () => {
     const isInitialLoad = !hasLoadedPanelDataRef.current;
@@ -354,22 +356,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       ? new BroadcastChannel(broadcastChannelName)
       : null;
     broadcastRef.current = channel;
-    const alertsAbortController = new AbortController();
-    const fetchInitialAlerts = (signal: AbortSignal) => {
-      apiFetch<NotificationAlertRecord[]>(
-        "/api/notifications/alerts/",
-        { signal },
-      )
-        .then(nextAlerts => applyAlerts(nextAlerts ?? [], false))
-        .catch(err => {
-          if ((err as { name?: string } | null)?.name === "AbortError") return;
-          consecutiveFailuresRef.current = Math.min(consecutiveFailuresRef.current + 1, 8);
-        });
-    };
-    alertsAbortRef.current = alertsAbortController;
-
     void refreshSummary();
-    fetchInitialAlerts(alertsAbortController.signal);
 
     if (channel) {
       channel.onmessage = (event) => {
@@ -422,10 +409,6 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     const tick = () => {
       if (document.visibilityState === "visible") {
         void refreshSummary();
-        const tickController = new AbortController();
-        alertsAbortRef.current?.abort();
-        alertsAbortRef.current = tickController;
-        fetchInitialAlerts(tickController.signal);
       }
       scheduleNext();
     };

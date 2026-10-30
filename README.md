@@ -1,6 +1,6 @@
 # AMS frontend
 
-Next.js 16.2.4 / React 19 frontend for the AMS Django API.
+Next.js 16.4.3 / React 19 frontend for the AMS Django API.
 
 Copy `.env.example` to `.env.local` and fill in the URLs and optional keys.
 There is no application development/production selector. For local access,
@@ -28,6 +28,15 @@ from both the browser and the Next.js server.
 
 Configure the Django CORS/CSRF origins to include the frontend's actual origin.
 Keep frontend and backend domains compatible with the existing SameSite=Lax
-cookie authentication, for example `ams.example.com` and `api.example.com`.
+cookie authentication. For example, `ams.example.com` and `api.example.com`
+require backend `COOKIE_DOMAIN=.example.com` so the Next.js server can forward
+and validate the session. Prefer an empty cookie domain when both share one host.
+`AMS_BACKEND_URL` optionally overrides the backend URL used by voice routes on
+the server. Voice requires the user's chatbot preference to be enabled and uses
+backend per-user quotas. Browser writes, including multipart uploads, send CSRF.
+Expired access cookies are refreshed once before retrying.
 Next.js manages its standard `NODE_ENV` internally for its dev/build/start
 commands; application behavior does not branch on that value.
+
+Verification: `npx vitest run`, `npx tsc --noEmit`, `npm run build`, `npm audit`.
+One optional iframe integration test requires the separate Copilot repository.
