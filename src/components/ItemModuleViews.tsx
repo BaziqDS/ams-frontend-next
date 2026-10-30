@@ -752,7 +752,7 @@ export function ItemModal({
 
   const copilotFields = useMemo<CopilotFormField[]>(() => [
     { name: "name", label: "Item name", type: "string", required: true },
-    { name: "code", label: "Item code", type: "string", description: "Optional. Leave blank to let the backend generate one." },
+    { name: "code", label: "Item code", type: "string", description: "Optional. Leave blank to generate automatically." },
     {
       name: "category",
       label: "Subcategory",
@@ -848,7 +848,6 @@ export function ItemModal({
       <div className="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="item-modal-title">
         <header className="modal-head">
           <div>
-            <div className="eyebrow">Inventory / {isEdit ? "Edit Record" : "New Record"}</div>
             <h2 id="item-modal-title">{isEdit ? "Edit Item" : "Create Item"}</h2>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
@@ -869,12 +868,12 @@ export function ItemModal({
               </div>
             ) : null}
 
-            <Section n={1} title="Identity" sub="Core item details used throughout inventory records.">
+            <Section n={1} title="Identity">
               <div className="form-grid cols-2">
                 <Field label="Item name" required error={errors.name} copilotField="name">
                   <input value={form.name} onChange={e => set({ name: e.target.value })} onBlur={() => setTouched(prev => new Set(prev).add("name"))} placeholder="Enter item name" />
                 </Field>
-                <Field label="Item code" hint="Leave blank to let the backend generate one." copilotField="code">
+                <Field label="Item code" hint="Leave blank to generate automatically." copilotField="code">
                   <input value={form.code} onChange={e => set({ code: e.target.value.toUpperCase() })} placeholder="Enter item code" />
                 </Field>
                 <Field label="Subcategory" required error={errors.category} span={2} hint={categories.length === 0 ? "You need at least one subcategory before creating items." : "Tracking type is inherited from the selected subcategory."} copilotField="category">
@@ -917,7 +916,7 @@ export function ItemModal({
               </div>
             </Section>
 
-            <Section n={2} title="Description" sub="Describe the item so the catalog can be matched against future inspection items.">
+            <Section n={2} title="Description">
               <div className="form-grid cols-1">
                 <Field label="Description" required error={errors.description} copilotField="description">
                   <textarea
@@ -941,7 +940,7 @@ export function ItemModal({
           <div className="modal-foot-meta mono">
             {issueCount > 0
               ? <span className="foot-err">{issueCount} issue{issueCount > 1 ? "s" : ""} to resolve</span>
-              : <span className="foot-ok">Item record ready</span>}
+              : null}
           </div>
           <div className="modal-foot-actions">
             <Button type="button" variant="outline" size="md" onClick={onClose}>Cancel</Button>
@@ -1506,9 +1505,7 @@ export function ItemListView() {
 
         <div className="page-head">
           <div className="page-title-group">
-            <div className="eyebrow">Inventory</div>
             <h1>Items</h1>
-            <div className="page-sub">Browse inventory item definitions and open a full detail workspace from any row.</div>
           </div>
           <div className="page-head-actions">
             <Button type="button" variant="ghost" size="sm">
@@ -2038,9 +2035,6 @@ function WorkspaceEmptyState() {
     <div className={workspaceStyles.emptyState}>
       <div className={workspaceStyles.emptyBadge}>Item workspace</div>
       <h2 className={workspaceStyles.emptyTitle}>Select an item from the left</h2>
-      <p className={workspaceStyles.emptyCopy}>
-        Distribution, instances, and batches will open here in one continuous workspace instead of sending you through nested item routes.
-      </p>
     </div>
   );
 }
@@ -2481,7 +2475,6 @@ function WorkspaceSelectedItemPane({
                     <WorkspaceMetric
                       label="Deployed"
                       value={<>{formatQuantity(issuedQuantity)}</>}
-                      sub="in active use"
                     />
                     <WorkspaceMetric
                       label="Idle / Stock"
@@ -2507,12 +2500,10 @@ function WorkspaceSelectedItemPane({
                     <WorkspaceMetric
                       label="Available"
                       value={<>{formatQuantity(availableQuantity)}<span className={workspaceStyles.metricUnit}>{unit}</span></>}
-                      sub="usable stock in current scope"
                     />
                     <WorkspaceMetric
                       label="Allocated"
                       value={<>{formatQuantity(Math.max(totalQuantity - availableQuantity - inTransitQuantity, 0))}<span className={workspaceStyles.metricUnit}>{unit}</span></>}
-                      sub="committed downstream"
                     />
                     <WorkspaceMetric
                       label="In transit"
@@ -2532,7 +2523,6 @@ function WorkspaceSelectedItemPane({
                   <WorkspaceMetric
                     label="Min stock"
                     value={lowStockThreshold > 0 ? <>{formatQuantity(lowStockThreshold)}<span className={workspaceStyles.metricUnit}>{unit}</span></> : "—"}
-                    sub="re-order threshold"
                   />
                   <WorkspaceMetric
                     label="Available"
@@ -3506,7 +3496,6 @@ export function ItemDistributionView({ itemId }: { itemId: string }) {
 
         <div className="page-head">
           <div className="page-title-group">
-            <div className="eyebrow">Item distribution</div>
             <h1>{item?.name ?? "Item"}</h1>
             <div className="page-sub">
               {item ? `${item.code} / ${item.category_display ?? "Uncategorized"} / ${formatItemLabel(String(item.tracking_type ?? ""))}` : "Loading permission-scoped distribution."}
@@ -3695,7 +3684,6 @@ export function ItemBatchDistributionView({ itemId, batchId }: { itemId: string;
 
         <div className="page-head">
           <div className="page-title-group">
-            <div className="eyebrow">{singularBatchLabel} distribution</div>
             <h1>{batchTitle}</h1>
             <div className="page-sub">
               {item ? `${item.name} / ${item.code} / ${formatItemLabel(String(item.tracking_type ?? ""))}` : "Loading permission-scoped batch distribution."}
@@ -3911,7 +3899,6 @@ export function ItemStandaloneDistributionView({ itemId, standaloneId }: { itemI
 
         <div className="page-head">
           <div className="page-title-group">
-            <div className="eyebrow">Standalone detail</div>
             <h1>{unit?.name ?? "Location distribution"}</h1>
             <div className="page-sub">
               {item && unit ? `${item.name} / ${item.code} / ${unit.code}` : "Loading store, non-store, and employee distribution."}
@@ -4176,7 +4163,6 @@ export function ItemInstancesView({ itemId }: { itemId: string }) {
 
         <div className="page-head">
           <div className="page-title-group">
-            <div className="eyebrow">Item instances</div>
             <h1>{item?.name ?? "Instances"}</h1>
             <div className="page-sub">{item ? `${item.code} / ${formatItemLabel(String(item.tracking_type ?? ""))}` : "Loading tracked item instances."}</div>
           </div>
@@ -4371,7 +4357,6 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
           <>
             <div className="page-head-detail item-instance-detail-head">
               <div className="page-title-group">
-                <div className="eyebrow">Item Instance</div>
                 <h1>{title}</h1>
                 <div className="page-sub">{item ? `${item.name} / ${item.code}` : instance.item_name ?? "Tracked inventory instance"}</div>
                 <div className="page-id-row">
@@ -4396,7 +4381,6 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
               <main className="detail-card">
                 <header className="detail-card-head">
                   <div>
-                    <div className="eyebrow">Instance record</div>
                     <h2>Identity, custody and current placement</h2>
                   </div>
                 </header>
@@ -4420,7 +4404,6 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
               <aside className="detail-card item-instance-qr-card">
                 <header className="detail-card-head">
                   <div>
-                    <div className="eyebrow">QR asset</div>
                     <h2>Scan code</h2>
                   </div>
                 </header>
@@ -4514,7 +4497,6 @@ export function ItemBatchesView({ itemId }: { itemId: string }) {
 
         <div className="page-head">
           <div className="page-title-group">
-            <div className="eyebrow">Item {pluralBatchLabel.toLowerCase()}</div>
             <h1>{item?.name ?? pluralBatchLabel}</h1>
             <div className="page-sub">{item ? `${item.code} / ${formatItemLabel(String(item.tracking_type ?? ""))}` : "Loading item batch records."}</div>
           </div>

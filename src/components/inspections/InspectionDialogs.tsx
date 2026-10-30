@@ -823,7 +823,6 @@ export function InspectionModal({
         <div className="modal inspection-modal" role="dialog" aria-modal="true">
           <div className="modal-head">
             <div>
-              <div className="eyebrow">Inspection Certificate</div>
               <h2>{title}</h2>
             </div>
             <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
@@ -837,7 +836,7 @@ export function InspectionModal({
               </div>
             )}
 
-            <Section n={1} title="Contract Details" sub="Basic information about the inspection certificate and contract.">
+            <Section n={1} title="Contract Details">
               <div className="form-grid-2">
                 <Field label="Certificate Date" required={canEditBasic}>
                   <input type="date" value={date} onChange={event => setDate(event.target.value)} disabled={!canEditBasic} />
@@ -890,7 +889,7 @@ export function InspectionModal({
               </div>
             </Section>
 
-            <Section n={2} title="Inspection Details" sub="Information about the inspection process.">
+            <Section n={2} title="Inspection Details">
               <div className="form-grid-2">
                 <Field label="Inspected By" required={canEditBasic} error={touched ? errors.inspected_by : undefined}>
                   <input value={inspectedBy} onChange={event => setInspectedBy(event.target.value)} placeholder="Inspector name" disabled={!canEditBasic} />
@@ -910,7 +909,7 @@ export function InspectionModal({
               </div>
             </Section>
 
-            <Section n={3} title="Items" sub={canEditItems ? "Add items received under this inspection." : "Items on this inspection certificate."}>
+            <Section n={3} title="Items">
               <div className="inspection-items-card-list">
                 {items.map((item, index) => {
                   const canEditRejectionReason = canEditItems || canEditStage2 || canEditStage3 || canEditStage4;
@@ -1116,7 +1115,7 @@ export function InspectionModal({
             </Section>
 
             {mode === "edit" && inspection && (
-              <Section n={auditSectionNumber} title="Audit Trail" sub="Stage progression history for this certificate.">
+              <Section n={auditSectionNumber} title="Audit Trail">
                 <div className="inspection-audit-trail">
                   {inspection.initiated_by_name && (
                     <div className="audit-entry">
@@ -1222,7 +1221,6 @@ export function RejectInspectionModal({
       <div className="modal inspection-return-modal" role="dialog" aria-modal="true" aria-labelledby="inspection-cancel-title">
         <div className="modal-head">
           <div>
-            <div className="eyebrow">Inspection Workflow</div>
             <h2 id="inspection-cancel-title">Cancel Inspection</h2>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close cancellation dialog">
@@ -1297,7 +1295,6 @@ export function ReturnInspectionModal({
       <div className="modal inspection-return-modal" role="dialog" aria-modal="true" aria-labelledby="inspection-return-title">
         <div className="modal-head">
           <div>
-            <div className="eyebrow">Inspection Workflow</div>
             <h2 id="inspection-return-title">Request Revisions</h2>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close return dialog" disabled={submitting}>

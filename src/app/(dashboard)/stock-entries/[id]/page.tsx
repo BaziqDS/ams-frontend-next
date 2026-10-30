@@ -393,12 +393,11 @@ function Alert({ children }: { children: ReactNode }) {
   );
 }
 
-function Panel({ eyebrow, title, actions, children }: { eyebrow: string; title: ReactNode; actions?: ReactNode; children: ReactNode }) {
+function Panel({ title, actions, children }: { title: ReactNode; actions?: ReactNode; children: ReactNode }) {
   return (
     <section className="table-card" style={{ overflow: "hidden" }}>
       <div className="table-card-head" style={{ paddingTop: 12, paddingBottom: 12 }}>
         <div className="table-card-head-left">
-          <div className="eyebrow">{eyebrow}</div>
           <div style={{ color: "var(--ink)", fontWeight: 600 }}>{title}</div>
         </div>
         {actions}
@@ -585,7 +584,6 @@ function HeroStrip({ entry }: { entry: StockEntryRecord }) {
     <section className="detail-card stock-movement-card">
       <header className="detail-card-head stock-movement-head">
         <div>
-          <div className="eyebrow">{summary.eyebrow}</div>
           <h2>{summary.title}</h2>
         </div>
       </header>
@@ -628,9 +626,9 @@ function LifecyclePanel({ entry, related }: { entry: StockEntryRecord; related: 
   const issueAckAt = entry.entry_type === "ISSUE" ? related.linkedReceipt?.acknowledged_at : entry.acknowledged_at;
 
   return (
-    <Panel eyebrow="Audit" title="Lifecycle">
+    <Panel title="Lifecycle">
       <div style={{ display: "grid" }}>
-        <MetaRow label="Entry Date" value={formatDate(entry.entry_date)} sub="Movement document timestamp" />
+        <MetaRow label="Entry Date" value={formatDate(entry.entry_date)} />
         <MetaRow label="Created" value={entry.created_by_name ?? "Unknown"} sub={formatDate(entry.created_at)} />
         <MetaRow label={entry.entry_type === "RECEIPT" ? "Received / Acknowledged" : entry.entry_type === "RETURN" ? "Return Acknowledged" : "Dispatch Closed"} value={issueAckBy ?? (entry.status === "PENDING_ACK" ? "Pending" : "Not recorded")} sub={formatDate(issueAckAt)} />
         <MetaRow label="Cancelled" value={entry.cancelled_by_name ?? "No cancellation"} sub={formatDate(entry.cancelled_at)} />
@@ -641,7 +639,7 @@ function LifecyclePanel({ entry, related }: { entry: StockEntryRecord; related: 
 
 function RelatedRecordsPanel({ entry, related }: { entry: StockEntryRecord; related: RelatedEntries }) {
   return (
-    <Panel eyebrow="Links" title="Related Records">
+    <Panel title="Related Records">
       <div style={{ display: "grid", gap: 10 }}>
         {related.reference ? <RelatedEntryLink entry={related.reference} label="Reference Entry" /> : <div className="login-cell-sub">No reference entry recorded.</div>}
         {entry.entry_type === "ISSUE" && related.linkedReceipt ? <RelatedEntryLink entry={related.linkedReceipt} label="Receiving Entry" /> : null}
@@ -659,7 +657,7 @@ function RegisterTrailPanel({ entry, related }: { entry: StockEntryRecord; relat
   const ackRefs = uniqueRefs((entry.entry_type === "ISSUE" ? receiptSource : entry.items).map(item => item.ack_stock_register_name ? `${item.ack_stock_register_name}${item.ack_page_number ? ` / p.${item.ack_page_number}` : ""}` : null));
 
   return (
-    <Panel eyebrow="Registers" title="Register Trail">
+    <Panel title="Register Trail">
       <div style={{ display: "grid", gap: 12 }}>
         <div>
           <div className="eyebrow">Source References</div>
@@ -680,7 +678,7 @@ function RegisterTrailPanel({ entry, related }: { entry: StockEntryRecord; relat
 
 function NotesPanel({ entry }: { entry: StockEntryRecord }) {
   return (
-    <Panel eyebrow="Context" title="Purpose & Remarks">
+    <Panel title="Purpose & Remarks">
       <div style={{ display: "grid" }}>
         <MetaRow label="Purpose" value={entry.purpose ?? "No purpose recorded"} />
         <MetaRow label="Remarks" value={entry.remarks ?? "No remarks recorded."} />
@@ -817,7 +815,6 @@ function StockVoucherHead({ entry, related }: { entry: StockEntryRecord; related
   return (
     <div className="page-head-detail stock-voucher-head">
       <div className="page-title-group">
-        <div className="eyebrow">Stock Entry · {formatLabel(entry.entry_type)} voucher</div>
         <h1 className="display">{voucherTitle(entry)}</h1>
         <div className="page-sub">
           {summary.sourceLabel} <strong>{source}</strong> to <strong>{target}</strong>.
@@ -1327,7 +1324,6 @@ function LineItemDetailModal({
       <div className="modal modal-lg stock-line-modal" role="dialog" aria-modal="true" aria-labelledby="stock-line-detail-title" onMouseDown={event => event.stopPropagation()}>
         <div className="modal-head">
           <div>
-            <div className="eyebrow">{hasInstances ? "View instances" : "View batch"}</div>
             <h2 id="stock-line-detail-title">{group.itemName}</h2>
             <div className="login-cell-sub">
               {hasInstances
@@ -1390,7 +1386,7 @@ function ItemLedger({ entry, instances, related }: { entry: StockEntryRecord; in
   const partial = entry.items.some(item => (resolveLine(entry, item, related).returned ?? 0) > 0);
 
   return (
-    <Panel eyebrow="Ledger" title="Line Items" actions={<div style={{ display: "flex", gap: 8, alignItems: "center" }}>{partial && <span className="pill pill-warning">Partial acknowledgement</span>}<div className="table-count"><span className="mono">{entry.items.length}</span><span>rows</span></div></div>}>
+    <Panel title="Line Items" actions={<div style={{ display: "flex", gap: 8, alignItems: "center" }}>{partial && <span className="pill pill-warning">Partial acknowledgement</span>}<div className="table-count"><span className="mono">{entry.items.length}</span><span>rows</span></div></div>}>
       <div className="h-scroll" style={{ margin: "-12px -16px 0" }}>
         <table className="data-table">
           <thead>
@@ -1611,9 +1607,7 @@ function AckModal({ entry, related, registers, instances, onDone, onClose }: { e
       <div className="modal modal-lg stock-ack-modal" role="dialog" aria-modal="true" aria-labelledby="stock-ack-title" onMouseDown={event => event.stopPropagation()}>
         <div className="modal-head">
           <div>
-            <div className="eyebrow">Pending acknowledgement</div>
             <h2 id="stock-ack-title">{entry.entry_type === "RETURN" ? "Acknowledge Returned Stock" : "Record Receiving Decision"}</h2>
-            <div className="stock-ack-modal-sub">Capture the receiving register and confirm accepted quantities for each line item.</div>
           </div>
           <button type="button" className="modal-close" aria-label="Close acknowledgement modal" onClick={onClose}>×</button>
         </div>
@@ -1669,7 +1663,7 @@ function CorrectionActionsPanel({
   if (!hasActions) return null;
 
   return (
-    <Panel eyebrow="Controls" title="Entry correction actions">
+    <Panel title="Entry correction actions">
       <div style={{ display: "grid", gap: 12 }}>
         {activeCorrection ? (
           <div className="notice notice-warn">
@@ -1881,7 +1875,6 @@ function CorrectionModal({ entry, related, instances, onDone, onClose }: { entry
       <div className="modal stock-correction-modal" role="dialog" aria-modal="true" aria-labelledby="stock-correction-title" onMouseDown={event => event.stopPropagation()}>
         <div className="modal-head">
           <div>
-            <div className="eyebrow">Contextual correction</div>
             <h2 id="stock-correction-title">{copy.title}</h2>
             <div className="stock-ack-modal-sub">Use this only when the quantity on record is wrong.</div>
           </div>
@@ -2058,7 +2051,6 @@ function FullReversalModal({ entry, onDone, onClose }: { entry: StockEntryRecord
       <div className="modal stock-correction-modal stock-reversal-modal" role="dialog" aria-modal="true" aria-labelledby="stock-reversal-title" onMouseDown={event => event.stopPropagation()}>
         <div className="modal-head">
           <div>
-            <div className="eyebrow">Exceptional stock action</div>
             <h2 id="stock-reversal-title">{copy.title}</h2>
             <div className="stock-ack-modal-sub">No quantity editing. This requests return of the complete transfer.</div>
           </div>

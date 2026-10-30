@@ -879,11 +879,10 @@ function DistributionSection({
     <div className={styles.section}>
       <div className={styles.sectionHead}>
         <div className={styles.sectionHeadLeft}>
-          <span className={styles.sectionNum}>01 / Distribution</span>
-          <h2 className={styles.sectionTitle}>Where this item lives</h2>
+          <h2 className={styles.sectionTitle}>Distribution</h2>
         </div>
         <span className={styles.sectionMeta}>
-          {units.length} {units.length === 1 ? "location" : "locations"} · select a row for the breakdown
+          {units.length} {units.length === 1 ? "location" : "locations"}
         </span>
       </div>
 
@@ -1122,8 +1121,7 @@ function InstancesSection({
     <div className={styles.section}>
       <div className={styles.sectionHead}>
         <div className={styles.sectionHeadLeft}>
-          <span className={styles.sectionNum}>02 / Instances</span>
-          <h2 className={styles.sectionTitle}>Individually tracked units</h2>
+          <h2 className={styles.sectionTitle}>Instances</h2>
         </div>
         <span className={styles.sectionMeta}>
           {selectedLocationId ? "scoped to selected location" : "all instances visible in scope"}
@@ -1151,8 +1149,7 @@ function BatchesSection({
     <div className={styles.section}>
       <div className={styles.sectionHead}>
         <div className={styles.sectionHeadLeft}>
-          <span className={styles.sectionNum}>· / Batches</span>
-          <h2 className={styles.sectionTitle}>Lots, batches and capitalised assets</h2>
+          <h2 className={styles.sectionTitle}>Batches</h2>
         </div>
         <span className={styles.sectionMeta}>
           {selectedLocationId ? "scoped to selected location" : "all batches visible in scope"}
@@ -1178,7 +1175,6 @@ function InfoSection({ item, units }: { item: ItemRecord; units: ItemDistributio
     <div className={styles.section}>
       <div className={styles.sectionHead}>
         <div className={styles.sectionHeadLeft}>
-          <span className={styles.sectionNum}>· / Identity</span>
           <h2 className={styles.sectionTitle}>Specifications & identity</h2>
         </div>
         <span className={styles.sectionMeta}>full record details</span>
@@ -1271,10 +1267,8 @@ function ActivitySection({ item }: { item: ItemRecord }) {
     <div className={styles.section}>
       <div className={styles.sectionHead}>
         <div className={styles.sectionHeadLeft}>
-          <span className={styles.sectionNum}>· / Activity</span>
           <h2 className={styles.sectionTitle}>Recorded events</h2>
         </div>
-        <span className={styles.sectionMeta}>latest known record events</span>
       </div>
       {events.length === 0 ? (
         <div className={styles.loading}>No activity is available for this record yet.</div>

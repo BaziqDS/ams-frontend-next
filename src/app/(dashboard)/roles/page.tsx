@@ -442,7 +442,6 @@ function RoleModal({
       <div className="modal modal-lg">
         <div className="modal-head">
           <div>
-            <div className="eyebrow">Administration</div>
             <h2>{mode === "edit" ? "Edit Role" : "Create Role"}</h2>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close modal">
@@ -450,7 +449,7 @@ function RoleModal({
           </button>
         </div>
         <div className="modal-body">
-          <Section n={1} title="Role Details" sub="Use a clear reusable label such as Department Editor or Procurement Viewer.">
+          <Section n={1} title="Role Details">
             <Field label="Role name" required error={nameError ?? undefined}>
               <input value={name} onChange={e => setName(e.target.value)} onBlur={() => setTouched(true)} placeholder="Enter role name" />
             </Field>
@@ -734,9 +733,7 @@ export default function RolesPage() {
 
         <div className="page-head">
           <div className="page-title-group">
-            <div className="eyebrow">Administration</div>
             <h1>Role Management</h1>
-            <div className="page-sub">Create reusable permission bundles, search them quickly, and keep access rules aligned with the dashboard.</div>
           </div>
         </div>
 

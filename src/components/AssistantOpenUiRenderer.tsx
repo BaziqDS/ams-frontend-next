@@ -195,7 +195,6 @@ export function AssistantOpenUiRenderer({
           >
             <div className="assistant-genui-modal-header">
               <div>
-                <div className="eyebrow">OpenUI Preview</div>
                 <div className="assistant-genui-modal-title">Larger generated UI view</div>
               </div>
               <Button

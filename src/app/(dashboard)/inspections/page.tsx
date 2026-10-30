@@ -792,13 +792,7 @@ export default function InspectionsPage() {
 
         <div className="page-head">
           <div className="page-title-group">
-            <div className="eyebrow">Operations</div>
             <h1>Inspection Certificates</h1>
-            <div className="page-sub">
-              Track each certificate from draft to completion, then open the
-              detail page to continue the staged workflow and review the full
-              register trail.
-            </div>
           </div>
         </div>
 

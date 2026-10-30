@@ -537,9 +537,7 @@ export default function UsersPage() {
         {/* Page header */}
         <div className="page-head">
           <div className="page-title-group">
-            <div className="eyebrow">Administration</div>
             <h1>User Management</h1>
-            <div className="page-sub">Manage user accounts, roles and location assignments across the university.</div>
           </div>
           <div className="page-head-actions">
             <Button type="button" variant="outline" size="sm" disabled title="Employees module unavailable in this build" style={unavailableActionStyle}>

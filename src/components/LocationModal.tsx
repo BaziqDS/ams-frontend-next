@@ -356,7 +356,7 @@ export function LocationModal({ open, mode, location, createContext = "default",
       name: "code",
       label: "Location code",
       type: "string",
-      description: "Optional unique code. Leave blank to let the backend generate one.",
+      description: "Optional unique code. Leave blank to generate automatically.",
     },
     {
       name: "main_store_name",
@@ -574,7 +574,6 @@ export function LocationModal({ open, mode, location, createContext = "default",
       <div className="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="location-modal-title">
         <header className="modal-head">
           <div>
-            <div className="eyebrow">Inventory · {isEditMode ? "Edit Record" : "New Record"}</div>
             <h2 id="location-modal-title">{isEditMode ? "Edit Location" : "Create Location"}</h2>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
@@ -596,12 +595,12 @@ export function LocationModal({ open, mode, location, createContext = "default",
                 </div>
               )}
 
-              <Section n={1} title="Identity" sub="Core values that identify the location record.">
+              <Section n={1} title="Identity">
                 <div className="form-grid cols-2">
                   <Field label="Location name" required error={errors.name} copilotField="name">
                     <input value={form.name} onChange={e => set({ name: e.target.value })} onBlur={() => setTouched(prev => new Set(prev).add("name"))} placeholder="Enter location name" />
                   </Field>
-                  <Field label="Location code" hint="Leave blank to let the backend generate one." copilotField="code">
+                  <Field label="Location code" hint="Leave blank to generate automatically." copilotField="code">
                     <input value={form.code} onChange={e => set({ code: e.target.value.toUpperCase() })} placeholder="Enter location code" />
                   </Field>
                   {!isEditMode && createContext === "standalone" && (
@@ -621,7 +620,6 @@ export function LocationModal({ open, mode, location, createContext = "default",
               <Section
                 n={2}
                 title={isClassificationOnly ? "Classification" : "Hierarchy"}
-                sub={isClassificationOnly ? "Choose how this location is categorized." : "Parenting and location classification."}
               >
                 <div className="form-grid cols-2">
                   {showParentSelector && (
@@ -703,7 +701,7 @@ export function LocationModal({ open, mode, location, createContext = "default",
                 </div>
               </Section>
 
-              <Section n={3} title="Details" sub="Descriptive information shown in admin views.">
+              <Section n={3} title="Details">
                 <div className="form-grid cols-2">
                   <Field label="Description" span={2} copilotField="description">
                     <textarea className="textarea-field" rows={4} value={form.description} onChange={e => set({ description: e.target.value })} placeholder="Optional description" />
@@ -731,7 +729,7 @@ export function LocationModal({ open, mode, location, createContext = "default",
                 ? <span className="foot-err">Loading parent locations…</span>
                 : issueCount > 0
                   ? <span className="foot-err">{issueCount} issue{issueCount > 1 ? "s" : ""} to resolve</span>
-                  : <span className="foot-ok">{form.create_main_store ? "Main store" : `${locationTypeLabel(form.location_type)}${form.is_store ? " store" : " location"}`} ready</span>}
+                  : null}
           </div>
           <div className="modal-foot-actions">
             <Button type="button" variant="outline" size="md" onClick={onClose}>Cancel</Button>

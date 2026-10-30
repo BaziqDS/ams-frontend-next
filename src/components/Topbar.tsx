@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { BellIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth, type AuthUser } from "@/contexts/AuthContext";
 import { useNotifications, type NotificationAlertRecord, type NotificationFeedItem } from "@/contexts/NotificationsContext";
@@ -54,12 +55,10 @@ function writeProfilePreferences(storageKey: string, preferences: ProfileSetting
 
 function ToggleRow({
   title,
-  description,
   checked,
   onChange,
 }: {
   title: string;
-  description: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
 }) {
@@ -67,9 +66,8 @@ function ToggleRow({
     <label className="profile-toggle-row">
       <span>
         <span className="profile-toggle-title">{title}</span>
-        <span className="profile-toggle-description">{description}</span>
       </span>
-      <input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} />
+      <Switch aria-label={title} checked={checked} onCheckedChange={onChange} />
     </label>
   );
 }
@@ -152,7 +150,6 @@ function ChangePasswordModal({
       <div className="modal profile-password-modal" role="dialog" aria-modal="true" aria-labelledby="profile-password-title">
         <header className="modal-head">
           <div>
-            <div className="eyebrow">Security</div>
             <h2 id="profile-password-title">Change password</h2>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close change password">
@@ -182,7 +179,7 @@ function ChangePasswordModal({
             </div>
           </div>
           <footer className="modal-foot">
-            <div className="modal-foot-meta mono">{error ? <span className="foot-err">{error}</span> : "Current password is required"}</div>
+            <div className="modal-foot-meta mono">{error ? <span className="foot-err">{error}</span> : null}</div>
             <div className="modal-foot-actions">
               <button type="button" className="btn btn-md" onClick={onClose} disabled={submitting}>Cancel</button>
               <button type="submit" className="btn btn-md btn-primary" disabled={submitting}>{submitting ? "Saving..." : "Change password"}</button>
@@ -204,6 +201,7 @@ function ProfileSettingsModal({
   avatarUrl,
   firstName,
   lastName,
+  chatbotEnabled,
   preferences,
   onClose,
   onSave,
@@ -217,12 +215,14 @@ function ProfileSettingsModal({
   avatarUrl?: string | null;
   firstName: string;
   lastName: string;
+  chatbotEnabled: boolean;
   preferences: ProfileSettingsPreferences;
   onClose: () => void;
   onSave: (result: ProfileSettingsResult) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(preferences.notificationsEnabled);
+  const [draftChatbotEnabled, setDraftChatbotEnabled] = useState(chatbotEnabled);
   const [draftFirstName, setDraftFirstName] = useState(firstName);
   const [draftLastName, setDraftLastName] = useState(lastName);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
@@ -234,13 +234,14 @@ function ProfileSettingsModal({
   useEffect(() => {
     if (!open) return;
     setNotificationsEnabled(preferences.notificationsEnabled);
+    setDraftChatbotEnabled(chatbotEnabled);
     setDraftFirstName(firstName);
     setDraftLastName(lastName);
     setPasswordModalOpen(false);
     setAvatarFile(null);
     setAvatarPreview(null);
     setSubmitError(null);
-  }, [firstName, lastName, open, preferences]);
+  }, [chatbotEnabled, firstName, lastName, open, preferences]);
 
   useEffect(() => {
     if (!open) return;
@@ -264,6 +265,7 @@ function ProfileSettingsModal({
       const formData = new FormData();
       formData.set("first_name", draftFirstName.trim());
       formData.set("last_name", draftLastName.trim());
+      formData.set("ai_enabled", String(draftChatbotEnabled));
       if (avatarFile) formData.set("avatar", avatarFile);
       const saved = await apiFetch<AuthUser>(`/api/users/management/${userId}/`, {
         method: "PATCH",
@@ -289,7 +291,6 @@ function ProfileSettingsModal({
       <div className="modal modal-lg profile-settings-modal" role="dialog" aria-modal="true" aria-labelledby="profile-settings-title">
         <header className="modal-head">
           <div>
-            <div className="eyebrow">Account</div>
             <h2 id="profile-settings-title">Profile settings</h2>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close profile settings">
@@ -339,7 +340,6 @@ function ProfileSettingsModal({
                   <div className="form-section-n mono">01</div>
                   <div>
                     <h3>Personal details</h3>
-                    <div className="form-section-sub">These values come from your AMS account.</div>
                   </div>
                 </header>
                 <div className="form-section-body">
@@ -366,16 +366,19 @@ function ProfileSettingsModal({
                 <header className="form-section-head">
                   <div className="form-section-n mono">02</div>
                   <div>
-                    <h3>Notification preferences</h3>
-                    <div className="form-section-sub">Control how much activity the topbar surfaces for this browser.</div>
+                    <h3>Preferences</h3>
                   </div>
                 </header>
                 <div className="form-section-body">
                   <ToggleRow
                     title="Enable notifications"
-                    description="Show the bell badge and allow the notification panel to open."
                     checked={notificationsEnabled}
                     onChange={setNotificationsEnabled}
+                  />
+                  <ToggleRow
+                    title="Enable chatbot"
+                    checked={draftChatbotEnabled}
+                    onChange={setDraftChatbotEnabled}
                   />
                 </div>
               </section>
@@ -384,7 +387,7 @@ function ProfileSettingsModal({
 
           <footer className="modal-foot">
             <div className="modal-foot-meta mono">
-              {submitError ? <span className="foot-err">{submitError}</span> : "Profile changes sync to your account"}
+              {submitError ? <span className="foot-err">{submitError}</span> : null}
             </div>
             <div className="modal-foot-actions">
               <button type="button" className="btn btn-md" onClick={onClose} disabled={submitting}>
@@ -686,6 +689,7 @@ export function Topbar({ breadcrumb }: TopbarProps) {
         avatarUrl={user?.avatar_url}
         firstName={user?.first_name || ""}
         lastName={user?.last_name || ""}
+        chatbotEnabled={user?.ai_enabled === true}
         preferences={profilePreferences}
         onClose={() => setProfileOpen(false)}
         onSave={handleSaveProfileSettings}

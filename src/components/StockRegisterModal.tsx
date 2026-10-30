@@ -315,7 +315,6 @@ export function StockRegisterModal({ open, mode, register, stores, storesLoading
       <div className="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="stock-register-modal-title">
         <header className="modal-head">
           <div>
-            <div className="eyebrow">Operations · {isEditMode ? "Edit Record" : "New Record"}</div>
             <h2 id="stock-register-modal-title">{isEditMode ? "Edit Stock Register" : "Create Stock Register"}</h2>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
@@ -337,7 +336,7 @@ export function StockRegisterModal({ open, mode, register, stores, storesLoading
                 </div>
               )}
 
-              <Section n={1} title="Register Details" sub="Reference number and register classification for the store ledger.">
+              <Section n={1} title="Register Details">
                 <div className="form-grid cols-2">
                   <Field label="Register number" required error={errors.register_number} copilotField="register_number">
                     <input value={form.register_number} onChange={(e) => set({ register_number: e.target.value })} onBlur={() => setTouched((prev) => new Set(prev).add("register_number"))} placeholder="Enter register number" />
@@ -395,7 +394,7 @@ export function StockRegisterModal({ open, mode, register, stores, storesLoading
           <div className="modal-foot-meta mono">
             {issueCount > 0
               ? <span className="foot-err">{issueCount} issue{issueCount > 1 ? "s" : ""} to resolve</span>
-              : <span className="foot-ok">Register ready to save</span>}
+              : null}
           </div>
           <div className="modal-foot-actions">
             <Button type="button" variant="outline" size="md" onClick={onClose}>Cancel</Button>

@@ -1304,6 +1304,8 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
   }, [schedulePush, systemContext]);
 
   useEffect(() => {
+    if (user?.ai_enabled !== true) return;
+
     const handleMessage = async (event: MessageEvent) => {
       if (event.origin !== TRUSTED_ORIGIN) return;
       if (event.data?.source !== "ams-copilot-iframe") return;
@@ -1529,6 +1531,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
   }, [
+    user?.ai_enabled,
     executeActionRequest,
     pathname,
     queueActionExecutionUntilReady,

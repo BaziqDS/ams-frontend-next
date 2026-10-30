@@ -289,14 +289,12 @@ function Metric({ label, value, sub }: { label: string; value: ReactNode; sub?: 
 }
 
 function ModalShell({
-  eyebrow,
   title,
   children,
   footer,
   onClose,
   maxWidth = "min(760px, calc(100vw - 32px))",
 }: {
-  eyebrow: string;
   title: string;
   children: ReactNode;
   footer: ReactNode;
@@ -316,7 +314,6 @@ function ModalShell({
       <div className="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="depreciation-modal-title" style={{ maxWidth }}>
         <header className="modal-head">
           <div>
-            <div className="eyebrow">{eyebrow}</div>
             <h2 id="depreciation-modal-title">{title}</h2>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
@@ -750,9 +747,7 @@ export default function DepreciationPage() {
 
         <div className="page-head">
           <div className="page-title-group">
-            <div className="eyebrow">Finance</div>
             <h1>Depreciation</h1>
-            <div className="page-sub">Finance setup, capitalization queue, fixed asset register, yearly runs, and adjustments.</div>
           </div>
           <div className="page-head-actions">
             <Button type="button" variant="outline" size="sm" onClick={() => load()} disabled={isLoading || busy !== null}>
@@ -763,9 +758,9 @@ export default function DepreciationPage() {
         </div>
 
         <div className="detail-kv-grid" style={{ marginBottom: 16 }}>
-          <Metric label="Register entries" value={<span className="mono">{formatQuantity(summary.count)}</span>} sub="capitalized fixed assets" />
-          <Metric label="Original cost" value={formatMoney(summary.originalCost)} sub="gross capitalization value" />
-          <Metric label="Accumulated depreciation" value={formatMoney(summary.accumulated)} sub="posted depreciation to date" />
+          <Metric label="Register entries" value={<span className="mono">{formatQuantity(summary.count)}</span>} />
+          <Metric label="Original cost" value={formatMoney(summary.originalCost)} />
+          <Metric label="Accumulated depreciation" value={formatMoney(summary.accumulated)} />
           <Metric label="Current WDV / NBV" value={formatMoney(summary.currentWdv)} sub="latest posted value" />
         </div>
 
@@ -1214,8 +1209,7 @@ export default function DepreciationPage() {
 
         {previewRunId ? (
           <ModalShell
-            eyebrow="Run Preview"
-            title={previewRunRecord?.fiscal_year_label ?? (previewRunRecord ? `${previewRunRecord.fiscal_year_start}-${String(previewRunRecord.fiscal_year_start + 1).slice(-2)}` : "Depreciation Run")}
+            title={`Depreciation run · ${previewRunRecord?.fiscal_year_label ?? (previewRunRecord ? `${previewRunRecord.fiscal_year_start}-${String(previewRunRecord.fiscal_year_start + 1).slice(-2)}` : previewRunId)}`}
             maxWidth="min(980px, calc(100vw - 32px))"
             onClose={closePreviewModal}
             footer={(
@@ -1262,7 +1256,6 @@ export default function DepreciationPage() {
 
         {rateModalOpen ? (
           <ModalShell
-            eyebrow="Depreciation Setup"
             title="Add / Update Rate"
             onClose={() => setRateModalOpen(false)}
             footer={(
@@ -1317,8 +1310,7 @@ export default function DepreciationPage() {
 
         {historyAssetClass ? (
           <ModalShell
-            eyebrow="Rate History"
-            title={assetClassDisplayName(historyAssetClass)}
+            title={`Rate history · ${assetClassDisplayName(historyAssetClass)}`}
             maxWidth="min(980px, calc(100vw - 32px))"
             onClose={() => setHistoryClassId(null)}
             footer={(
@@ -1364,7 +1356,6 @@ export default function DepreciationPage() {
 
         {capitalizationModalOpen ? (
           <ModalShell
-            eyebrow="Fixed Asset Register"
             title="Capitalize Asset"
             onClose={() => setCapitalizationModalOpen(false)}
             footer={(
@@ -1429,7 +1420,6 @@ export default function DepreciationPage() {
 
         {adjustmentModalOpen ? (
           <ModalShell
-            eyebrow="Fixed Asset Register"
             title="Add Adjustment"
             onClose={() => setAdjustmentModalOpen(false)}
             footer={(

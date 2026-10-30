@@ -1181,9 +1181,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
       <div className="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="stock-entry-modal-title">
         <div className="modal-head">
           <div>
-            <div className="eyebrow">Stock operation</div>
             <h2 id="stock-entry-modal-title">{mode === "edit" ? "Edit Stock Entry" : entry ? "Create Replacement Entry" : "Create Stock Entry"}</h2>
-            <p>{mode === "edit" ? "Draft entries can be revised before stock movement is committed." : entry ? "Create a normal stock entry linked to the original record." : "Record a transfer/allocation or receipt with line items."}</p>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close stock entry modal">×</button>
         </div>
@@ -1319,7 +1317,7 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
             </div>
           </Section>
 
-          <Section n={2} title="Line Items" sub="Add each item, quantity, and source register page when applicable.">
+          <Section n={2} title="Line Items">
             <div style={{ display: "grid", gap: 12 }}>
               {form.items.map((row, index) => {
                 const itemOptions = getItemOptions();
@@ -1436,7 +1434,6 @@ function StockEntryModal({ open, mode, entry, refs, refsLoading, assignedLocatio
         </div>
 
         <div className="modal-foot">
-          <div className="modal-foot-meta">Backend scoping still enforces which source and destination rows you can use.</div>
           <div className="modal-foot-actions">
             <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>Cancel</Button>
             <Button type="button"  onClick={() => { void submitManually("submit"); }} disabled={!canSubmit}>{submitting ? "Saving…" : mode === "edit" ? "Save Changes" : "Create Entry"}</Button>
@@ -1892,9 +1889,7 @@ export function StockEntriesView() {
 
         <div className="page-head">
           <div className="page-title-group">
-            <div className="eyebrow">Operations</div>
             <h1>Stock Entries</h1>
-            <div className="page-sub">Create transfers, allocations, and receipts while backend scoping keeps rows tied to assigned stores and standalone locations.</div>
           </div>
         </div>
 

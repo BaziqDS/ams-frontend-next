@@ -219,8 +219,7 @@ function CertificateInfoCard({ inspection }: { inspection: InspectionRecord }) {
     <section className="detail-card active-stage-card">
       <header className="detail-card-head">
         <div>
-          <div className="eyebrow">Certificate information</div>
-          <h2>Contract, indenter, delivery and inspection details</h2>
+          <h2>Certificate details</h2>
         </div>
         <StageStatusPill inspection={inspection} />
       </header>
@@ -251,8 +250,7 @@ function ItemsSummary({ inspection }: { inspection: InspectionRecord }) {
     <section className="detail-card">
       <header className="detail-card-head">
         <div>
-          <div className="eyebrow">Items inspected</div>
-          <h2>Accepted, rejected and pricing summary</h2>
+          <h2>Inspected items</h2>
         </div>
         <div className="detail-card-head-meta">{inspection.items.length} line items</div>
       </header>
@@ -313,7 +311,6 @@ function ItemsSummary({ inspection }: { inspection: InspectionRecord }) {
       </div>
       <footer className="detail-card-foot">
         <div className="inspection-lines-foot">
-          <div className="inspection-lines-foot-meta">Totals are calculated from the certificate item lines currently returned by the backend.</div>
           <div className="inspection-lines-foot-totals">
             <div className="detail-total-block">
               <div className="detail-total-label">Accepted value</div>
@@ -343,8 +340,7 @@ function RegisterTrailCard({ inspection }: { inspection: InspectionRecord }) {
     <section className="detail-card">
       <header className="detail-card-head">
         <div>
-          <div className="eyebrow">Register trail</div>
-          <h2>Department and central register snapshot</h2>
+          <h2>Register trail</h2>
         </div>
         <div className="detail-card-head-meta">{rows.length} accepted line{rows.length === 1 ? "" : "s"}</div>
       </header>
@@ -422,8 +418,7 @@ function SupportingDocuments({ inspection }: { inspection: InspectionRecord }) {
     <section className="detail-card">
       <header className="detail-card-head">
         <div>
-          <div className="eyebrow">Supporting documents</div>
-          <h2>Attachments and evidence</h2>
+          <h2>Documents</h2>
         </div>
         <div className="detail-card-head-meta">{inspection.documents.length} files</div>
       </header>
@@ -517,7 +512,6 @@ function ActiveStageCard({
     <section className="detail-card" id="active-stage-form">
       <header className="detail-card-head">
         <div>
-          <div className="eyebrow">Active stage form</div>
           <h2>{getInspectionStageDisplayLabel(inspection)}</h2>
           <div className="detail-card-head-meta">{getInspectionStageGuidance(inspection)}</div>
         </div>
@@ -572,7 +566,6 @@ function WorkflowHistory({ inspection }: { inspection: InspectionRecord }) {
     <section className="detail-card">
       <header className="detail-card-head">
         <div>
-          <div className="eyebrow">Approval trail</div>
           <h2>Workflow history</h2>
         </div>
         <div className="detail-card-head-meta">{entries.length} events</div>
@@ -606,7 +599,6 @@ function RelatedStockEntries({ inspection }: { inspection: InspectionRecord }) {
     <section className="detail-card">
       <header className="detail-card-head">
         <div>
-          <div className="eyebrow">Related entries</div>
           <h2>Generated stock entries</h2>
         </div>
         <div className="detail-card-head-meta">{inspection.stock_entries.length} entries</div>
@@ -1431,7 +1423,6 @@ export default function InspectionDetailPage() {
           <>
             <div className="page-head-detail">
               <div className="page-title-group">
-                <div className="eyebrow">Inspection Certificate - Acceptance</div>
                 <h1>{getDisplayTitle(inspection)}</h1>
                 <div className="page-sub">{getDisplaySubtitle(inspection)}</div>
                 <div className="page-id-row">

@@ -174,7 +174,6 @@ function TagsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
       <div className="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="tags-modal-title">
         <header className="modal-head">
           <div>
-            <div className="eyebrow">Inventory · Tags</div>
             <h2 id="tags-modal-title">Tags</h2>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
@@ -249,7 +248,6 @@ function TagsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
                     <div className="form-section-n mono">01</div>
                     <div>
                       <h3>New Tag</h3>
-                      <div className="form-section-sub">Create a reusable reporting/grouping tag for locations.</div>
                     </div>
                   </header>
                   <div className="form-section-body">
@@ -607,9 +605,6 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
     ? locations.find(location => location.parent_location === null) ?? null
     : null;
   const title = isChildrenView ? (parentLocation?.name ?? "Locations") : "Locations";
-  const subtitle = isChildrenView
-    ? "Manage the immediate sub-locations for this location."
-    : "Manage standalone location units with the same admin workflow used by users and roles.";
   const tableLabel = isChildrenView ? "Sub-locations list" : "Locations list";
   const createLabel = isChildrenView ? "Add Sub Location" : "Add Location";
   const emptyMessage = isChildrenView ? "No sub-locations match the current filters." : "No locations match the current filters.";
@@ -820,9 +815,7 @@ export function LocationListView({ variant, parentId }: LocationListViewProps) {
 
         <div className="page-head">
           <div className="page-title-group">
-            <div className="eyebrow">Inventory</div>
             <h1>{title}</h1>
-            <div className="page-sub">{subtitle}</div>
           </div>
           <div className="page-head-actions">
             {isChildrenView ? (

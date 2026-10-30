@@ -247,14 +247,12 @@ function Alert({ children, onDismiss }: { children: ReactNode; onDismiss?: () =>
 
 function ModalShell({
   title,
-  eyebrow,
   children,
   footer,
   onClose,
   wide = false,
 }: {
   title: string;
-  eyebrow: string;
   children: ReactNode;
   footer: ReactNode;
   onClose: () => void;
@@ -267,7 +265,6 @@ function ModalShell({
       <section className={"modal" + (wide ? " modal-lg" : "")} role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-head">
           <div>
-            <div className="eyebrow">{eyebrow}</div>
             <h2>{title}</h2>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close">x</button>
@@ -587,9 +584,7 @@ export default function MaintenancePage() {
       <main className="page" data-density={density}>
         <div className="page-head">
           <div className="page-title-group">
-            <div className="eyebrow">Operations</div>
             <h1>Maintenance</h1>
-            <p className="page-sub">Plan, execute, and evidence preventive and corrective maintenance for individual assets and quantity batches.</p>
           </div>
           <div className="page-head-actions">
             {canFull ? <Button type="button" variant="outline" size="sm" onClick={() => setShowPlanModal(true)}>Add Plan</Button> : null}
@@ -820,12 +815,10 @@ export default function MaintenancePage() {
       {showWorkOrderModal ? (
         <ModalShell
           title="Create Work Order"
-          eyebrow="Maintenance execution"
           onClose={() => setShowWorkOrderModal(false)}
           wide
           footer={(
             <>
-              <span className="modal-foot-meta">Client targets are validated against instance status or batch stock at location.</span>
               <div className="modal-foot-actions">
                 <Button type="button" variant="secondary" onClick={() => setShowWorkOrderModal(false)}>Cancel</Button>
                 <Button type="submit" form="maintenance-work-order-form" >Create</Button>
@@ -896,12 +889,10 @@ export default function MaintenancePage() {
       {showPlanModal ? (
         <ModalShell
           title="Create Maintenance Plan"
-          eyebrow="Preventive strategy"
           onClose={() => setShowPlanModal(false)}
           wide
           footer={(
             <>
-              <span className="modal-foot-meta">Calendar, meter, and condition plans create auditable future work orders.</span>
               <div className="modal-foot-actions">
                 <Button type="button" variant="secondary" onClick={() => setShowPlanModal(false)}>Cancel</Button>
                 <Button type="submit" form="maintenance-plan-form" >Save Plan</Button>
@@ -910,7 +901,7 @@ export default function MaintenancePage() {
           )}
         >
           <form id="maintenance-plan-form" onSubmit={submitPlan}>
-            <Section n={1} title="Plan target and cadence" sub="Define the asset target and recurrence logic used to generate work orders.">
+            <Section n={1} title="Plan target and cadence">
               <div className="form-grid cols-2">
                 <Field label="Target type">
                   <ThemedSelect value={planForm.target_type} options={enumOptions(["INSTANCE", "BATCH"])} onChange={value => setPlanForm(prev => ({ ...prev, target_type: value as MaintenanceTargetType, item: "", instance: "", batch: "" }))} />
@@ -982,11 +973,9 @@ export default function MaintenancePage() {
       {showReadingModal ? (
         <ModalShell
           title="Record Reading"
-          eyebrow="Predictive evidence"
           onClose={() => setShowReadingModal(false)}
           footer={(
             <>
-              <span className="modal-foot-meta">Readings support meter and condition-based maintenance triggers.</span>
               <div className="modal-foot-actions">
                 <Button type="button" variant="secondary" onClick={() => setShowReadingModal(false)}>Cancel</Button>
                 <Button type="submit" form="maintenance-reading-form" >Record</Button>
@@ -995,7 +984,7 @@ export default function MaintenancePage() {
           )}
         >
           <form id="maintenance-reading-form" onSubmit={submitReading}>
-            <Section n={1} title="Reading details" sub="Attach meter or condition evidence to a scoped instance or batch.">
+            <Section n={1} title="Reading details">
               <div className="form-grid cols-2">
                 <Field label="Target type">
                   <ThemedSelect value={readingForm.target_type} options={enumOptions(["INSTANCE", "BATCH"])} onChange={value => setReadingForm(prev => ({ ...prev, target_type: value as MaintenanceTargetType, instance: "", batch: "", location: "" }))} />
@@ -1039,7 +1028,6 @@ export default function MaintenancePage() {
       {completeTarget ? (
         <ModalShell
           title={`Complete ${completeTarget.work_order_number}`}
-          eyebrow="Maintenance closure"
           onClose={() => setCompleteTarget(null)}
           wide
           footer={(
@@ -1053,7 +1041,7 @@ export default function MaintenancePage() {
           )}
         >
           <form id="maintenance-complete-form" onSubmit={submitCompletion}>
-            <Section n={1} title="Closure evidence" sub="Record what was done, condition after service, and any follow-up requirement.">
+            <Section n={1} title="Closure evidence">
               <div className="form-grid cols-2">
                 <label className="field" style={{ gridColumn: "1 / -1" }}>
                   <span className="field-label">Action taken</span>
@@ -1091,7 +1079,6 @@ export default function MaintenancePage() {
       {historyTarget ? (
         <ModalShell
           title={`${historyTarget.work_order_number} History`}
-          eyebrow="Maintenance audit trail"
           onClose={() => setHistoryTarget(null)}
           wide
           footer={<Button type="button"  onClick={() => setHistoryTarget(null)}>Close</Button>}

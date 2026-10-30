@@ -106,7 +106,6 @@ interface DashboardData {
 interface MetricCard {
   label: string;
   value: string;
-  hint: string;
   tone: Tone;
   icon: React.ComponentType<{ "aria-hidden"?: boolean }>;
   trend?: string;
@@ -340,10 +339,7 @@ function MetricCardView({ metric }: { metric: MetricCard }) {
       <div className={styles.metricBody}>
         <div className={styles.metricLabel}>{metric.label}</div>
         <div className={styles.metricValue}>{metric.value}</div>
-        <div className={styles.metricMeta}>
-          {metric.trend ? <span className={styles.metricTrend}>{metric.trend}</span> : null}
-          <span>{metric.hint}</span>
-        </div>
+        {metric.trend ? <div className={styles.metricMeta}><span className={styles.metricTrend}>{metric.trend}</span></div> : null}
       </div>
       <span className={styles.scopeChip}>{metric.scope}</span>
     </section>
@@ -442,7 +438,6 @@ export default function DashboardPage() {
       {
         label: access.stock ? "Accessible assets" : "Accessible modules",
         value: access.stock ? fmtNumber(totals.stockTotal) : fmtNumber(accessibleModuleCount),
-        hint: access.stock ? "stock quantity in allowed scope" : "sections available to your role",
         tone: "violet",
         icon: Boxes,
         trend: access.stock ? "+ scoped" : undefined,
@@ -451,7 +446,6 @@ export default function DashboardPage() {
       {
         label: access.stock ? "In transit" : "Unread updates",
         value: access.stock ? fmtNumber(totals.transit) : fmtNumber(totals.unread),
-        hint: access.stock ? "movement not yet settled" : "notifications visible to you",
         tone: "blue",
         icon: Truck,
         trend: totals.transit > 0 ? "active" : undefined,
@@ -460,7 +454,6 @@ export default function DashboardPage() {
       {
         label: "Open alerts",
         value: fmtNumber(totals.openAlerts),
-        hint: "permission-filtered alert count",
         tone: totals.openAlerts > 0 ? "amber" : "green",
         icon: Bell,
         trend: totals.openAlerts > 0 ? "review" : "clear",
@@ -469,7 +462,6 @@ export default function DashboardPage() {
       {
         label: access.stockEntries ? "Pending acknowledgements" : "Actionable queues",
         value: access.stockEntries ? fmtNumber(totals.pendingAcknowledgements) : fmtNumber(totals.inspectionWaiting + totals.maintenanceOverdue),
-        hint: access.stockEntries ? "stock entries awaiting movement closure" : "tasks from accessible modules",
         tone: totals.pendingAcknowledgements + totals.inspectionWaiting + totals.maintenanceOverdue > 0 ? "red" : "green",
         icon: ClipboardCheck,
         trend: access.stockEntries ? "workflow" : undefined,
@@ -630,9 +622,7 @@ export default function DashboardPage() {
       <main className="page">
         <div className="page-head">
           <div className="page-title-group">
-            <div className="eyebrow">Overview</div>
             <h1 className="display">Dashboard</h1>
-            <div className="page-sub">Role-aware operational summary for accessible assets and workflows.</div>
           </div>
           <div className="page-head-actions">
             <span className={styles.scopeStatus}>
@@ -661,7 +651,6 @@ export default function DashboardPage() {
             <div className="card">
               <header className="card-head">
                 <h3>Accessible activity by month</h3>
-                <span className="head-meta">Live records</span>
               </header>
               <div className="card-body">
                 <div className={styles.chartLegend}>
@@ -671,9 +660,6 @@ export default function DashboardPage() {
                   <span><i className={styles.dotUnknown} />Notifications</span>
                 </div>
                 <ActivityChart rows={activityMonths} />
-                <p className={styles.chartNote}>
-                  Totals come only from live records returned for this role. Months with no accessible records remain at zero.
-                </p>
               </div>
             </div>
 
@@ -771,7 +757,6 @@ export default function DashboardPage() {
               <div className="table-card-head">
                 <div className="table-card-head-left">
                   <div>
-                    <div className="eyebrow">Activity</div>
                     <strong className={styles.tableTitle}>Recent activity in your scope</strong>
                   </div>
                 </div>
@@ -811,7 +796,6 @@ export default function DashboardPage() {
                 </table>
               </div>
               <div className="table-card-foot">
-                <span>Permission-filtered live records only.</span>
                 <Link href="/notifications" className={styles.inlineLink}>View all updates <ArrowRight aria-hidden /></Link>
               </div>
             </div>

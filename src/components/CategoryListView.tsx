@@ -664,9 +664,6 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
   const deleteBusyCategoryId = busyAction?.kind === "delete" ? busyAction.categoryId : null;
   const isChildrenView = variant === "children";
   const title = isChildrenView ? (parentCategory?.name ?? "Category") : "Categories";
-  const subtitle = isChildrenView
-    ? "Manage the immediate subcategories for this category."
-    : "Browse top-level inventory categories and open one to manage its subcategories.";
   const tableLabel = isChildrenView ? "Subcategories list" : "Categories list";
   const createLabel = isChildrenView ? "Add Subcategory" : "Add Category";
   const emptyMessage = isChildrenView ? "No subcategories match the current filters." : "No categories match the current filters.";
@@ -704,9 +701,7 @@ export function CategoryListView({ variant, parentId }: CategoryListViewProps) {
 
         <div className="page-head">
           <div className="page-title-group">
-            <div className="eyebrow">Inventory</div>
             <h1>{title}</h1>
-            <div className="page-sub">{subtitle}</div>
           </div>
           <div className="page-head-actions">
             {isChildrenView ? (

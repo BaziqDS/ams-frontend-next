@@ -2790,7 +2790,8 @@ kbd {
   color: var(--muted);
 }
 
-.profile-toggle-row input {
+.ui-switch {
+  padding: 0;
   flex: 0 0 auto;
   appearance: none;
   width: 38px;
@@ -2803,8 +2804,8 @@ kbd {
   transition: background var(--t-fast), border-color var(--t-fast);
 }
 
-.profile-toggle-row input::after {
-  content: "";
+.ui-switch-thumb {
+  display: block;
   position: absolute;
   width: 16px;
   height: 16px;
@@ -2816,16 +2817,16 @@ kbd {
   transition: transform var(--t-fast);
 }
 
-.profile-toggle-row input:checked {
+.ui-switch[data-state="checked"] {
   border-color: color-mix(in oklch, var(--primary) 72%, transparent);
   background: var(--primary);
 }
 
-.profile-toggle-row input:checked::after {
+.ui-switch[data-state="checked"] .ui-switch-thumb {
   transform: translateX(16px);
 }
 
-.profile-toggle-row input:focus-visible {
+.ui-switch:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 18%, transparent);
 }
@@ -3227,11 +3228,6 @@ kbd {
   overflow: hidden;
   background: #0e1730;
 }
-.login-v2-photo {
-  position: absolute;
-  inset: 0;
-  opacity: 0.7;
-}
 .login-v2-overlay {
   position: relative;
   z-index: 2;
@@ -3239,8 +3235,6 @@ kbd {
   display: flex;
   flex-direction: column;
   padding: 40px 48px;
-  background:
-    linear-gradient(180deg, rgba(12,18,40,0.55) 0%, rgba(12,18,40,0.82) 100%);
   color: white;
 }
 
@@ -4101,7 +4095,7 @@ tr:hover .row-action { opacity: 1; }
 .foot-err { color: var(--danger); }
 .foot-ok { color: var(--success); }
 
-.modal-foot-actions { display: flex; gap: 8px; }
+.modal-foot-actions { display: flex; gap: 8px; margin-inline-start: auto; }
 
 .btn-md { height: 38px; padding: 0 16px; font-size: 13.5px; }
 

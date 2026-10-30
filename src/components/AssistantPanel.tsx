@@ -185,9 +185,7 @@ export function AssistantPanel() {
         <div className="assistant-panel-chrome">
           <div className="assistant-panel-header">
             <div>
-              <div className="eyebrow">Database Copilot</div>
               <div className="assistant-panel-title">AMS Assistant</div>
-              <div className="assistant-panel-sub">Live inventory answers rendered in a compact side panel.</div>
             </div>
             <Button type="button" variant="ghost" size="icon" onClick={() => setIsOpen(false)} aria-label="Close AI assistant">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -253,7 +251,6 @@ export function AssistantPanel() {
           />
           <div className="assistant-composer-foot">
             <div className="assistant-composer-hint">
-              Full-database SQL access is enabled for this testing slice.
               {requestError ? <span className="assistant-composer-error"> {requestError}</span> : null}
             </div>
             <Button type="submit"  disabled={!canSend}>

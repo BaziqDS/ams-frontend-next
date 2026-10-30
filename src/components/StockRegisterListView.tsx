@@ -317,7 +317,6 @@ function RegisterLifecycleModal({
       <div className="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="stock-register-lifecycle-title">
         <header className="modal-head">
           <div>
-            <div className="eyebrow">Operations · Stock Registers</div>
             <h2 id="stock-register-lifecycle-title">{title}</h2>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
@@ -333,7 +332,7 @@ function RegisterLifecycleModal({
                 </div>
               )}
 
-              <Section n={1} title="Register Context" sub="Confirm which register is being updated before saving this lifecycle action.">
+              <Section n={1} title="Register Context">
                 <div className="form-grid cols-2">
                   <ModalField label="Register">
                     <input value={register.register_number} readOnly />
@@ -715,9 +714,7 @@ export function StockRegisterListView() {
 
         <div className="page-head">
           <div className="page-title-group">
-            <div className="eyebrow">Operations</div>
             <h1>Stock Registers</h1>
-            <div className="page-sub">Manage stock-register ledgers for the stores within your current operational scope.</div>
           </div>
         </div>
 

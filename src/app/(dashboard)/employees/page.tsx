@@ -223,7 +223,6 @@ function EmployeeModal({
       <form className="modal modal-lg" onSubmit={submit}>
         <div className="modal-head">
           <div>
-            <div className="eyebrow">{employee ? "Edit employee" : "New employee"}</div>
             <h2>{employee ? employee.name : "Add Employee"}</h2>
           </div>
           <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={isSaving} aria-label="Close">
@@ -237,7 +236,6 @@ function EmployeeModal({
               <span className="form-section-n">01</span>
               <div>
                 <h3>Employee identity</h3>
-                <p className="form-section-sub">Record the university employee who can receive issued assets.</p>
               </div>
             </div>
             <div className="form-section-body form-grid cols-2">
@@ -457,9 +455,7 @@ export default function EmployeesPage() {
         {(fetchError || actionError) ? <div className="error-banner">{fetchError ?? actionError}</div> : null}
         <div className="page-head">
           <div className="page-title-group">
-            <div className="eyebrow">Administration</div>
             <h1>Employees</h1>
-            <p className="page-sub">Maintain the university employees who can receive issued inventory items.</p>
           </div>
         </div>
 

@@ -385,7 +385,6 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
           <>
             <div className={styles.pageHead}>
               <div className={styles.pageTitleGroup}>
-                <div className="eyebrow">Item Instance</div>
                 <h1 className={styles.pageTitle}>{primaryIdentifier}</h1>
                 <div className={styles.pageSub}>{itemContext}</div>
                 <div className={styles.pageIdRow}>
@@ -641,7 +640,6 @@ export function ItemInstanceDetailView({ itemId, instanceId }: { itemId: string;
                       <Link className={styles.relatedWorkRow} href={`/maintenance?instance=${instance.id}`}>
                         <span>
                           <strong>Work Orders</strong>
-                          <em>Open / in progress / closed</em>
                         </span>
                         <b>{maintenanceOrders.length}</b>
                       </Link>

@@ -141,7 +141,6 @@ export default function InspectionItemDistributionPage() {
           <>
             <div className="page-head-detail">
               <div className="page-title-group">
-                <div className="eyebrow">Quantity Trace</div>
                 <h1>{payload.inspection_item.item_name}</h1>
                 <div className="page-sub">
                   {payload.inspection.contract_no} / {payload.inspection.department_name ?? "Unknown department"} / {payload.inspection_item.item_code}
@@ -198,7 +197,6 @@ export default function InspectionItemDistributionPage() {
               <section key={unit.id} className="detail-card" style={{ marginTop: 16 }}>
                 <header className="detail-card-head">
                   <div>
-                    <div className="eyebrow">Current holder group</div>
                     <h2>{unit.name}</h2>
                   </div>
                   <div className="detail-card-head-meta">{formatQuantity(unit.totalQuantity)}</div>

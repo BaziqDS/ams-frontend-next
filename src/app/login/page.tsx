@@ -7,43 +7,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 
 
-function CampusPlaceholder() {
-  return (
-    <div className="campus-ph">
-      <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice" viewBox="0 0 800 1000">
-        <defs>
-          <pattern id="stripes" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
-            <rect width="8" height="8" fill="#1a2942" />
-            <line x1="0" y1="0" x2="0" y2="8" stroke="#1e2f4d" strokeWidth="4" />
-          </pattern>
-          <linearGradient id="gd" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#0e1730" />
-            <stop offset="100%" stopColor="#273957" />
-          </linearGradient>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#gd)" />
-        <rect width="100%" height="100%" fill="url(#stripes)" opacity="0.25" />
-        <g opacity="0.35" fill="#0b1424">
-          <rect x="80" y="520" width="130" height="380" />
-          <rect x="230" y="440" width="180" height="460" />
-          <rect x="430" y="480" width="90" height="420" />
-          <rect x="540" y="380" width="180" height="520" />
-          <polygon points="230,440 320,380 410,440" />
-          <polygon points="540,380 630,320 720,380" />
-        </g>
-        <g fill="#4a6194" opacity="0.5">
-          {Array.from({ length: 48 }).map((_, i) => (
-            <rect key={i} x={90 + (i % 12) * 55} y={560 + Math.floor(i / 12) * 40} width="8" height="12" />
-          ))}
-        </g>
-      </svg>
-      <div className="campus-ph-label">
-        <span style={{ fontFamily: "var(--font-mono)" }}>NED CAMPUS · REPLACE WITH PHOTO</span>
-      </div>
-    </div>
-  );
-}
-
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
@@ -72,9 +35,6 @@ export default function LoginPage() {
     <div className="login-v2">
       {/* Left — institutional signage */}
       <div className="login-v2-left">
-        <div className="login-v2-photo">
-          <CampusPlaceholder />
-        </div>
         <div className="login-v2-overlay">
           <div className="login-v2-center">
             <div className="login-v2-seal">
@@ -97,7 +57,6 @@ export default function LoginPage() {
         <div className="login-v2-form-frame">
           <div className="login-v2-head">
             <h1>Welcome back</h1>
-            <p>Sign in to continue. Your access is scoped to your assigned locations and roles.</p>
           </div>
 
           {error && (

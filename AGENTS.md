@@ -43,6 +43,7 @@ ams-redesign/
 - This is NOT the Next.js you know. Read local Next docs in `node_modules/next/dist/docs/` before nontrivial framework changes.
 - App Router lives in `src/app/`; dashboard routes are grouped under `src/app/(dashboard)/`.
 - Frontend API access goes through `src/lib/api.ts`.
+- Application configuration is explicit in `.env.local`; see `.env.example`. Do not introduce application development/production switches.
 - `@/*` path alias is enabled and used broadly.
 - Client-heavy page files are accepted in this codebase; do not assume abstraction exists already.
 
@@ -70,3 +71,7 @@ npm run start
 - For local browser testing, assume a superuser account is available with username `admin` and password `admin`.
 - When opening a browser for UI testing, use a full desktop-sized viewport, for example 1440×1000, before judging layout or screenshots.
 <!-- END:nextjs-agent-rules -->
+
+## Frontend writing and visual hierarchy
+
+Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.

@@ -34,7 +34,7 @@ type ReportLoaderFilters = InventoryReportFilters | PendingAcknowledgementFilter
 interface SummaryMetric {
   label: string;
   value: string;
-  hint: string;
+  hint?: string;
   tone?: Tone;
 }
 
@@ -434,8 +434,8 @@ function locationTagLabels(row: { location_tags_display?: LocationTagSummary[] }
     .join(", ");
 }
 
-function reportNote(source: string) {
-  return `Live data from ${source}. Rows shown are limited by the current API page size.`;
+function reportNote() {
+  return "Results are limited to the loaded page of records.";
 }
 
 function safeFilePart(value: string) {
@@ -493,7 +493,7 @@ function openReportPdfPrintView(report: ReportDefinition, view: ReportView) {
         <div>
           <span>${htmlEscape(metric.label)}</span>
           <strong>${htmlEscape(metric.value)}</strong>
-          <small>${htmlEscape(metric.hint)}</small>
+          <small>${htmlEscape(metric.hint ?? "")}</small>
         </div>
       `).join("")}</section>`
     : "";
@@ -596,7 +596,7 @@ function openReportPdfPrintView(report: ReportDefinition, view: ReportView) {
     <thead><tr>${tableHead}</tr></thead>
     <tbody>${tableRows || `<tr><td colspan="${Math.max(view.columns.length, 1)}">No records returned for this report.</td></tr>`}</tbody>
   </table>
-  <footer>${htmlEscape(view.note ?? "Live report data only. No mock data is rendered.")}</footer>
+  <footer>${htmlEscape(view.note ?? "")}</footer>
   <script>
     window.addEventListener("load", () => {
       window.document.title = ${JSON.stringify(report.title)};
@@ -741,7 +741,7 @@ async function inventoryPositionReport(filters?: InventoryReportFilters): Promis
 
   return {
     metrics: [
-      { label: "Total Quantity", value: fmtNumber(total), hint: "physical stock in selected scope", tone: "blue" },
+      { label: "Total Quantity", value: fmtNumber(total), tone: "blue" },
       { label: "Available", value: fmtNumber(available), hint: `${pct(available, total)} of total`, tone: "green" },
       { label: "Allocated", value: fmtNumber(allocated), hint: `${pct(allocated, total)} of total`, tone: "amber" },
       { label: "In Transit", value: fmtNumber(transit), hint: `${pct(transit, total)} of total`, tone: "violet" },
@@ -762,7 +762,7 @@ async function inventoryPositionReport(filters?: InventoryReportFilters): Promis
       fmtNumber(row.available_quantity),
       fmtDate(row.last_updated),
     ]),
-    note: filters ? "Live scoped inventory position. Filters are applied to backend-scoped stock records." : reportNote("/api/inventory/distribution/"),
+    note: reportNote(),
   };
 }
 
@@ -775,13 +775,13 @@ async function lowStockReport(filters?: InventoryReportFilters): Promise<ReportV
   return {
     ...base,
     metrics: [
-      { label: "Low-Stock Items", value: fmtNumber(lowRows.filter(row => stockStatus(row) === "Low Stock").length), hint: "computed from current balances", tone: "amber" },
-      { label: "Out-of-Stock Rows", value: fmtNumber(lowRows.filter(row => stockStatus(row) === "Out Of Stock").length), hint: "available quantity is zero", tone: "red" },
+      { label: "Low-Stock Items", value: fmtNumber(lowRows.filter(row => stockStatus(row) === "Low Stock").length), tone: "amber" },
+      { label: "Out-of-Stock Rows", value: fmtNumber(lowRows.filter(row => stockStatus(row) === "Out Of Stock").length), tone: "red" },
       { label: "Available Quantity", value: fmtNumber(available), hint: "across low-risk rows", tone: "green" },
-      { label: "Allocated Quantity", value: fmtNumber(allocated), hint: "currently allocated", tone: "violet" },
+      { label: "Allocated Quantity", value: fmtNumber(allocated), tone: "violet" },
     ],
     rows: base.rows.filter(row => row[row.length - 2] !== "Healthy"),
-    note: "Live scoped low-stock rows. Filters are applied to backend-scoped stock records.",
+    note: reportNote(),
   };
 }
 
@@ -815,7 +815,7 @@ async function pendingAcknowledgementReport(filters?: PendingAcknowledgementFilt
 
   return {
     metrics: [
-      { label: "Pending Acknowledgement Entries", value: fmtNumber(pending.length), hint: "StockEntry.status = PENDING_ACK", tone: "amber" },
+      { label: "Pending Acknowledgement Entries", value: fmtNumber(pending.length), tone: "amber" },
     ],
     columns: ["Entry Number", "Entry Date", "Entry Type", "From Location", "To Location", "Issued To Employee", "Item", "Sent Quantity", "Accepted Quantity", "Status", "Created By", "Created At", "Acknowledged By"],
     rows: pending.map(entry => {
@@ -838,7 +838,7 @@ async function pendingAcknowledgementReport(filters?: PendingAcknowledgementFilt
         entry.acknowledged_by_name ?? "-",
       ];
     }),
-    note: "Live pending acknowledgement entries only. Filters are applied to backend-scoped stock entries.",
+    note: reportNote(),
   };
 }
 
@@ -942,10 +942,10 @@ async function assetCustodyReport(filters?: AssetCustodyFilters): Promise<Report
   const allocated = rows.filter(row => row.status === "Allocated");
   return {
     metrics: [
-      { label: "Fixed Asset Positions", value: fmtNumber(rows.length), hint: "current fixed-asset rows", tone: "blue" },
+      { label: "Fixed Asset Positions", value: fmtNumber(rows.length), tone: "blue" },
       { label: "Total Quantity", value: fmtNumber(rows.reduce((sum, row) => sum + n(row.quantity), 0)), hint: "fixed assets only", tone: "green" },
-      { label: "In Store", value: fmtNumber(inStore.reduce((sum, row) => sum + n(row.quantity), 0)), hint: "available in stores", tone: "violet" },
-      { label: "Allocated Out", value: fmtNumber(allocated.reduce((sum, row) => sum + n(row.quantity), 0)), hint: "held by employee/location", tone: "amber" },
+      { label: "In Store", value: fmtNumber(inStore.reduce((sum, row) => sum + n(row.quantity), 0)), tone: "violet" },
+      { label: "Allocated Out", value: fmtNumber(allocated.reduce((sum, row) => sum + n(row.quantity), 0)), tone: "amber" },
     ],
     columns: ["Item Code", "Item Name", "Subcategory", "Current Holder Type", "Current Holder", "Source Store", "Quantity", "Position Status", "Evidence", "Recorded At"],
     rows: rows.map(row => [
@@ -991,10 +991,10 @@ async function movementLedgerReport(filters?: MovementLedgerFilters): Promise<Re
   const qty = rows.reduce((sum, row) => sum + n(row.quantity), 0);
   return {
     metrics: [
-      { label: "Movement Events", value: fmtNumber(rows.length), hint: "total events", tone: "blue" },
-      { label: "Quantity Moved", value: fmtNumber(qty), hint: "sum quantity", tone: "blue" },
-      { label: "Allocations", value: fmtNumber(rows.filter(row => row.action === "ALLOCATE").length), hint: "allocation events", tone: "green" },
-      { label: "Returns", value: fmtNumber(rows.filter(row => row.action === "RETURN").length), hint: "return events", tone: "violet" },
+      { label: "Movement Events", value: fmtNumber(rows.length), tone: "blue" },
+      { label: "Quantity Moved", value: fmtNumber(qty), tone: "blue" },
+      { label: "Allocations", value: fmtNumber(rows.filter(row => row.action === "ALLOCATE").length), tone: "green" },
+      { label: "Returns", value: fmtNumber(rows.filter(row => row.action === "RETURN").length), tone: "violet" },
     ],
     columns: ["Timestamp", "Action", "Item", "Batch", "Instance / Serial", "From Location", "To Location", "Quantity", "Stock Entry", "Allocation", "Performed By", "Remarks"],
     rows: rows.map(row => [
@@ -1011,7 +1011,7 @@ async function movementLedgerReport(filters?: MovementLedgerFilters): Promise<Re
       row.performed_by_name ?? "-",
       row.remarks ?? "-",
     ]),
-    note: "Live movement ledger rows. Filters are applied to backend-scoped movement history.",
+    note: reportNote(),
   };
 }
 
@@ -1156,10 +1156,10 @@ async function correctionControlReport(filters?: CorrectionFilters): Promise<Rep
   const correctionRows = filterCorrectionRows(await fetchList<StockCorrection>("/api/inventory/stock-corrections/"), filters);
   return {
     metrics: [
-      { label: "Correction Requests", value: fmtNumber(correctionRows.length), hint: "stock correction workflow", tone: "blue" },
-      { label: "Pending Approval", value: fmtNumber(correctionRows.filter(row => row.status === "REQUESTED").length), hint: "status REQUESTED", tone: "amber" },
-      { label: "Applied", value: fmtNumber(correctionRows.filter(row => row.status === "APPLIED").length), hint: "correction applied", tone: "green" },
-      { label: "Rejected / Blocked", value: fmtNumber(correctionRows.filter(row => ["REJECTED", "BLOCKED"].includes(row.status)).length), hint: "workflow stopped", tone: "red" },
+      { label: "Correction Requests", value: fmtNumber(correctionRows.length), tone: "blue" },
+      { label: "Pending Approval", value: fmtNumber(correctionRows.filter(row => row.status === "REQUESTED").length), tone: "amber" },
+      { label: "Applied", value: fmtNumber(correctionRows.filter(row => row.status === "APPLIED").length), tone: "green" },
+      { label: "Rejected / Blocked", value: fmtNumber(correctionRows.filter(row => ["REJECTED", "BLOCKED"].includes(row.status)).length), tone: "red" },
     ],
     columns: ["Correction ID", "Original Entry", "Status", "Resolution Type", "Requested By", "Requested At", "Approved At", "Applied At", "Generated Entries", "Reason"],
     rows: correctionRows.map(row => [
@@ -1174,7 +1174,7 @@ async function correctionControlReport(filters?: CorrectionFilters): Promise<Rep
       row.generated_entries?.map(entry => entry.entry_number).join(", ") || "-",
       row.reason ?? row.message ?? "-",
     ]),
-    note: "Live correction workflow data from /api/inventory/stock-corrections/.",
+    note: reportNote(),
   };
 }
 
@@ -1184,11 +1184,11 @@ async function inspectionsReport(mode: "aging" | "capitalization"): Promise<Repo
     const open = rows.filter(row => !["COMPLETED", "CANCELLED", "REJECTED", "VOIDED"].includes(row.status));
     return {
       metrics: [
-        { label: "In-Progress Certificates", value: fmtNumber(open.length), hint: "not terminal", tone: "blue" },
-        { label: "Rejected", value: fmtNumber(rows.filter(row => row.status === "REJECTED").length), hint: "status rejected", tone: "red" },
-        { label: "Revision Requested", value: fmtNumber(rows.filter(row => row.revision_requested_at).length), hint: "revision_requested_at", tone: "amber" },
-        { label: "Finance Reviewed", value: fmtNumber(rows.filter(row => row.finance_reviewed_at).length), hint: "finance_reviewed_at", tone: "green" },
-        { label: "Total Inspection Items", value: fmtNumber(rows.reduce((sum, row) => sum + row.items.length, 0)), hint: "nested items", tone: "violet" },
+        { label: "In-Progress Certificates", value: fmtNumber(open.length), tone: "blue" },
+        { label: "Rejected", value: fmtNumber(rows.filter(row => row.status === "REJECTED").length), tone: "red" },
+        { label: "Revision Requested", value: fmtNumber(rows.filter(row => row.revision_requested_at).length), tone: "amber" },
+        { label: "Finance Reviewed", value: fmtNumber(rows.filter(row => row.finance_reviewed_at).length), tone: "green" },
+        { label: "Total Inspection Items", value: fmtNumber(rows.reduce((sum, row) => sum + row.items.length, 0)), tone: "violet" },
       ],
       columns: ["Contract No", "Department", "Contractor Name", "Stage", "Status", "Initiated By", "Initiated At", "Stock Filled At", "Central Filled At", "Finance Reviewed At", "Revision Requested", "Rejected At"],
       rows: rows.map(row => [
@@ -1205,7 +1205,7 @@ async function inspectionsReport(mode: "aging" | "capitalization"): Promise<Repo
         fmtDate(row.revision_requested_at),
         fmtDate(row.rejected_at),
       ]),
-      note: reportNote("/api/inventory/inspections/"),
+      note: reportNote(),
     };
   }
 
@@ -1214,10 +1214,10 @@ async function inspectionsReport(mode: "aging" | "capitalization"): Promise<Repo
     const pending = itemRows.filter(({ item }) => item.depreciation_asset_class_name || item.capitalization_cost || item.capitalization_date);
     return {
       metrics: [
-        { label: "Accepted Fixed Asset Items", value: fmtNumber(pending.length), hint: "inspection items with finance fields", tone: "blue" },
-        { label: "Missing Capitalization Cost", value: fmtNumber(pending.filter(({ item }) => !item.capitalization_cost).length), hint: "capitalization_cost blank", tone: "amber" },
-        { label: "Missing Capitalization Date", value: fmtNumber(pending.filter(({ item }) => !item.capitalization_date).length), hint: "capitalization_date blank", tone: "red" },
-        { label: "Ready To Capitalize", value: fmtNumber(pending.filter(({ item }) => item.capitalization_cost && item.capitalization_date).length), hint: "cost and date present", tone: "green" },
+        { label: "Accepted Fixed Asset Items", value: fmtNumber(pending.length), tone: "blue" },
+        { label: "Missing Capitalization Cost", value: fmtNumber(pending.filter(({ item }) => !item.capitalization_cost).length), tone: "amber" },
+        { label: "Missing Capitalization Date", value: fmtNumber(pending.filter(({ item }) => !item.capitalization_date).length), tone: "red" },
+        { label: "Ready To Capitalize", value: fmtNumber(pending.filter(({ item }) => item.capitalization_cost && item.capitalization_date).length), tone: "green" },
       ],
       columns: ["Contract No", "Department", "Inspection Item", "Item Code", "Accepted Qty", "Depreciation Asset Class", "Capitalization Cost", "Capitalization Date", "Finance Reviewed At", "Finance Reviewed By"],
       rows: pending.map(({ certificate, item }) => [
@@ -1232,17 +1232,17 @@ async function inspectionsReport(mode: "aging" | "capitalization"): Promise<Repo
         fmtDate(certificate.finance_reviewed_at),
         certificate.finance_reviewed_by_name ?? "-",
       ]),
-      note: reportNote("/api/inventory/inspections/"),
+      note: reportNote(),
     };
   }
 
   return {
     metrics: [
-      { label: "Accepted Quantity", value: fmtNumber(itemRows.reduce((sum, row) => sum + n(row.item.accepted_quantity), 0)), hint: "accepted_quantity", tone: "blue" },
-      { label: "Rejected Quantity", value: fmtNumber(itemRows.reduce((sum, row) => sum + n(row.item.rejected_quantity), 0)), hint: "rejected_quantity", tone: "red" },
-      { label: "Registered Items", value: fmtNumber(itemRows.filter(({ item }) => item.stock_register_name || item.stock_register_no).length), hint: "stock register refs", tone: "green" },
-      { label: "Missing Register", value: fmtNumber(itemRows.filter(({ item }) => !item.stock_register_name && !item.stock_register_no).length), hint: "no stock register ref", tone: "amber" },
-      { label: "Capitalization Rows", value: fmtNumber(itemRows.filter(({ item }) => item.capitalization_cost || item.capitalization_date).length), hint: "finance fields present", tone: "green" },
+      { label: "Accepted Quantity", value: fmtNumber(itemRows.reduce((sum, row) => sum + n(row.item.accepted_quantity), 0)), tone: "blue" },
+      { label: "Rejected Quantity", value: fmtNumber(itemRows.reduce((sum, row) => sum + n(row.item.rejected_quantity), 0)), tone: "red" },
+      { label: "Registered Items", value: fmtNumber(itemRows.filter(({ item }) => item.stock_register_name || item.stock_register_no).length), tone: "green" },
+      { label: "Missing Register", value: fmtNumber(itemRows.filter(({ item }) => !item.stock_register_name && !item.stock_register_no).length), tone: "amber" },
+      { label: "Capitalization Rows", value: fmtNumber(itemRows.filter(({ item }) => item.capitalization_cost || item.capitalization_date).length), tone: "green" },
     ],
     columns: ["Contract No", "Inspection Item", "Item Code", "Tendered", "Accepted", "Rejected", "Stock Register", "Stock Page", "Central Register", "Central Page", "Stock Entry", "Capitalization Cost", "Capitalization Date"],
     rows: itemRows.map(({ certificate, item }) => [
@@ -1260,7 +1260,7 @@ async function inspectionsReport(mode: "aging" | "capitalization"): Promise<Repo
       item.capitalization_cost ? fmtMoney(item.capitalization_cost) : "-",
       item.capitalization_date ?? "-",
     ]),
-    note: reportNote("/api/inventory/inspections/"),
+    note: reportNote(),
   };
 }
 
@@ -1297,10 +1297,10 @@ async function procurementTraceReport(filters?: ProcurementTraceFilters): Promis
 
   return {
     metrics: [
-      { label: "Inspection Items", value: fmtNumber(certificate.items.length), hint: "item lines on certificate", tone: "blue" },
-      { label: "Accepted Quantity", value: fmtNumber(acceptedQty), hint: "accepted across all items", tone: "green" },
-      { label: "Stock Registers", value: fmtNumber(withStockRegister), hint: "item lines with stage 2 evidence", tone: "violet" },
-      { label: "Stock Entries", value: fmtNumber(certificate.stock_entries?.length ?? 0), hint: "receipt evidence", tone: "amber" },
+      { label: "Inspection Items", value: fmtNumber(certificate.items.length), tone: "blue" },
+      { label: "Accepted Quantity", value: fmtNumber(acceptedQty), tone: "green" },
+      { label: "Stock Registers", value: fmtNumber(withStockRegister), tone: "violet" },
+      { label: "Stock Entries", value: fmtNumber(certificate.stock_entries?.length ?? 0), tone: "amber" },
     ],
     columns: ["Stage", "Recorded At", "Recorded By", "Evidence", "Status"],
     rows: steps.map(step => [step.label, step.value, step.actor ?? "-", step.note ?? "-", step.state === "done" ? "Completed" : step.state === "blocked" ? "Blocked" : step.state === "current" ? "Current" : "Pending"]),
@@ -1323,11 +1323,11 @@ async function fixedAssetRegisterReport(): Promise<ReportView> {
   const closing = rows.reduce((sum, row) => sum + n(row.depreciation_summary?.closing_value), 0);
   return {
     metrics: [
-      { label: "Active Assets", value: fmtNumber(rows.filter(row => row.status === "ACTIVE").length), hint: "status ACTIVE", tone: "blue" },
-      { label: "Original Cost", value: fmtMoney(original), hint: "gross capitalization", tone: "blue" },
-      { label: "Accumulated Depreciation", value: fmtMoney(accumulated), hint: "latest summary", tone: "violet" },
+      { label: "Active Assets", value: fmtNumber(rows.filter(row => row.status === "ACTIVE").length), tone: "blue" },
+      { label: "Original Cost", value: fmtMoney(original), tone: "blue" },
+      { label: "Accumulated Depreciation", value: fmtMoney(accumulated), tone: "violet" },
       { label: "Current WDV / NBV", value: fmtMoney(closing), hint: "latest closing value", tone: "green" },
-      { label: "Register Entries", value: fmtNumber(rows.length), hint: "fixed assets", tone: "amber" },
+      { label: "Register Entries", value: fmtNumber(rows.length), tone: "amber" },
     ],
     columns: ["Asset Number", "Item Code", "Item Name", "Target Type", "Instance / Batch", "Asset Class", "Orig Qty", "Rem Qty", "Original Cost", "Capitalization Date", "Opening Value", "Dep Amount", "Closing Value", "Status"],
     rows: rows.map(row => [
@@ -1346,7 +1346,7 @@ async function fixedAssetRegisterReport(): Promise<ReportView> {
       fmtMoney(row.depreciation_summary?.closing_value),
       row.status,
     ]),
-    note: reportNote("/api/inventory/depreciation/assets/"),
+    note: reportNote(),
   };
 }
 
@@ -1354,10 +1354,10 @@ async function assetAdjustmentsReport(): Promise<ReportView> {
   const rows = await fetchList<AssetAdjustment>("/api/inventory/depreciation/adjustments/");
   return {
     metrics: [
-      { label: "Capital Additions", value: fmtMoney(rows.filter(row => row.adjustment_type === "ADDITION").reduce((sum, row) => sum + n(row.amount), 0)), hint: "ADDITION", tone: "green" },
-      { label: "Disposals", value: fmtMoney(rows.filter(row => row.adjustment_type === "DISPOSAL").reduce((sum, row) => sum + n(row.amount), 0)), hint: "DISPOSAL", tone: "amber" },
-      { label: "Loss / Write-offs", value: fmtMoney(rows.filter(row => ["LOSS", "WRITE_OFF"].includes(row.adjustment_type)).reduce((sum, row) => sum + n(row.amount), 0)), hint: "LOSS + WRITE_OFF", tone: "red" },
-      { label: "Quantity Reductions", value: fmtNumber(rows.filter(row => row.adjustment_type === "QUANTITY_REDUCTION").length), hint: "quantity changes", tone: "violet" },
+      { label: "Capital Additions", value: fmtMoney(rows.filter(row => row.adjustment_type === "ADDITION").reduce((sum, row) => sum + n(row.amount), 0)), tone: "green" },
+      { label: "Disposals", value: fmtMoney(rows.filter(row => row.adjustment_type === "DISPOSAL").reduce((sum, row) => sum + n(row.amount), 0)), tone: "amber" },
+      { label: "Loss / Write-offs", value: fmtMoney(rows.filter(row => ["LOSS", "WRITE_OFF"].includes(row.adjustment_type)).reduce((sum, row) => sum + n(row.amount), 0)), tone: "red" },
+      { label: "Quantity Reductions", value: fmtNumber(rows.filter(row => row.adjustment_type === "QUANTITY_REDUCTION").length), tone: "violet" },
       { label: "Adjustment Amount", value: fmtMoney(rows.reduce((sum, row) => sum + n(row.amount), 0)), hint: "net listed amount", tone: "blue" },
     ],
     columns: ["Asset Number", "Item", "Adjustment Type", "Effective Date", "Amount", "Quantity Delta", "Reason", "Created At"],
@@ -1371,7 +1371,7 @@ async function assetAdjustmentsReport(): Promise<ReportView> {
       row.reason,
       fmtDate(row.created_at),
     ]),
-    note: reportNote("/api/inventory/depreciation/adjustments/"),
+    note: reportNote(),
   };
 }
 
@@ -1398,7 +1398,7 @@ async function universitySnapshotReport(): Promise<ReportView> {
       ["Open inspection aging", inspections.metrics[0].value, "InspectionCertificate", "Inspection Aging"],
       ["Low-stock rows", lowStock.metrics[0].value, "StockRecord current balances", "Low Stock Risk"],
     ],
-    note: "Live aggregate from distribution, stock entries, fixed assets, and inspections endpoints.",
+    note: reportNote(),
   };
 }
 
@@ -1742,7 +1742,7 @@ export default function ReportsPage() {
     } catch (err) {
       const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Unable to load report data.";
       setError(message);
-      setView({ metrics: [], columns: [], rows: [], note: "No mock fallback is used. Start the backend or grant access to the required module to load this report." });
+      setView({ metrics: [], columns: [], rows: [], note: "Report data could not be loaded." });
     } finally {
       setLoading(false);
     }
@@ -1759,7 +1759,7 @@ export default function ReportsPage() {
     } catch (err) {
       const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Unable to load report data.";
       setError(message);
-      setView({ metrics: [], columns: [], rows: [], note: "No mock fallback is used. Start the backend or grant access to the required module to load this report." });
+      setView({ metrics: [], columns: [], rows: [], note: "Report data could not be loaded." });
     } finally {
       setLoading(false);
     }
@@ -1857,9 +1857,7 @@ export default function ReportsPage() {
       <div className="page">
         <div className="page-head">
           <div className="page-title-group">
-            <div className="eyebrow">Operations</div>
             <h1>Reports</h1>
-            <div className="page-sub">Generate operational, audit, and financial reports from live asset data.</div>
           </div>
           <Button type="button" variant="outline" size="sm" onClick={loadReport} disabled={loading}>
             <Icon><path d="M3 12a9 9 0 109-9" /><path d="M3 3v6h6" /></Icon>
@@ -1880,7 +1878,7 @@ export default function ReportsPage() {
             <div className={styles.catalogHead}>
               <div>
                 <div className="eyebrow">Report Catalog</div>
-                {!catalogCollapsed ? <span>{REPORTS.length} live report views</span> : null}
+                {!catalogCollapsed ? <span>{REPORTS.length} reports</span> : null}
               </div>
               <Button
                 type="button"
@@ -1958,18 +1956,9 @@ export default function ReportsPage() {
             <details className={styles.filterDisclosure} open={filtersOpen} onToggle={event => setFiltersOpen(event.currentTarget.open)}>
               <summary>
                 <span>
-                  <span className="eyebrow">Report setup</span>
-                  <strong>
-                    {isInventoryStockReport
-                      ? "Filter live stock records by your accessible scope, location, item, tag, and update date."
-                      : isPendingAcknowledgement
-                        ? "Filter pending acknowledgement entries by source, destination, item, creator, and created date."
-                        : isProcurementTrace
-                          ? "Search by inspection contract or invoice number, then generate the procurement-to-register lifecycle report."
-                          : "This report currently runs against all accessible live records."}
-                  </strong>
+                  <strong>Filters</strong>
                 </span>
-                <span className="chip">Show filters</span>
+                <span aria-hidden="true">{filtersOpen ? "−" : "+"}</span>
               </summary>
               {isInventoryStockReport ? (
                 <div className={styles.filters}>
@@ -2236,7 +2225,7 @@ export default function ReportsPage() {
                   <span>
                     <span className={styles.metricLabel}>{metric.label}</span>
                     <strong>{metric.value}</strong>
-                    <span className={styles.metricHint}>{metric.hint}</span>
+                    {metric.hint ? <span className={styles.metricHint}>{metric.hint}</span> : null}
                   </span>
                 </div>
               ))}
@@ -2260,7 +2249,7 @@ export default function ReportsPage() {
                     {!loading && view && view.rows.length === 0 ? (
                       <tr>
                         <td colSpan={view.columns.length || 1}>
-                          <div className={styles.emptyState}>No records returned by the backend for this report.</div>
+                          <div className={styles.emptyState}>No records match this report.</div>
                         </td>
                       </tr>
                     ) : null}
@@ -2277,7 +2266,7 @@ export default function ReportsPage() {
                 </table>
               </div>
               <div className="table-card-foot">
-                <div className="eyebrow">{view?.note ?? "Live report data only. No mock data is rendered."}</div>
+                {view?.note ? <div className="muted-note">{view.note}</div> : null}
                 <div className="pager">
                   <Button type="button" variant="outline" size="xs" disabled>‹ Prev</Button>
                   <span className="mono pager-current">1</span>
@@ -2338,7 +2327,6 @@ function SnapshotVisuals({ view }: { view: ReportView }) {
             ))}
           </tbody>
         </table>
-        <p>Printable HTML preview. Values are populated from current API responses.</p>
       </div>
     </div>
   );

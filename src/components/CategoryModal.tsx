@@ -267,7 +267,7 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
 
   const copilotFields = useMemo<CopilotFormField[]>(() => [
     { name: "name", label: "Category name", type: "string", required: true },
-    { name: "code", label: "Category code", type: "string", description: "Optional. Leave blank to let the backend generate one." },
+    { name: "code", label: "Category code", type: "string", description: "Optional. Leave blank to generate automatically." },
     {
       name: "parent_category",
       label: "Parent category",
@@ -366,7 +366,6 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
       <div className="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="category-modal-title">
         <header className="modal-head">
           <div>
-            <div className="eyebrow">Inventory · {isEditMode ? "Edit Record" : "New Record"}</div>
             <h2 id="category-modal-title">{isEditMode ? "Edit Category" : "Create Category"}</h2>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
@@ -388,12 +387,12 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
                 </div>
               )}
 
-              <Section n={1} title="Identity" sub="Core details used for navigation, labels, and lookups.">
+              <Section n={1} title="Identity">
                 <div className="form-grid cols-2">
                   <Field label="Category name" required error={errors.name} copilotField="name">
                     <input value={form.name} onChange={e => set({ name: e.target.value })} onBlur={() => setTouched(prev => new Set(prev).add("name"))} placeholder="Enter category name" />
                   </Field>
-                  <Field label="Category code" hint="Leave blank to let the backend generate one." copilotField="code">
+                  <Field label="Category code" hint="Leave blank to generate automatically." copilotField="code">
                     <input value={form.code} onChange={e => set({ code: e.target.value.toUpperCase() })} placeholder="Enter category code" />
                   </Field>
                   <Field label="Active state" span={2} copilotField="is_active">
@@ -405,7 +404,7 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
                 </div>
               </Section>
 
-              <Section n={2} title="Classification" sub="Category type and tracking rules.">
+              <Section n={2} title="Classification">
                 <div className="form-grid cols-2">
                   <Field label="Category type" required={!parentSelected} error={errors.category_type} hint={categoryTypeLocked ? "Category type is locked after creation." : parentSelected ? "Optional for subcategories; inherited from the parent when left blank." : undefined} copilotField="category_type">
                     <ThemedSelect
@@ -445,7 +444,7 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
                 </div>
               </Section>
 
-              <Section n={3} title="Notes" sub="Optional audit text passed through to the backend on save.">
+              <Section n={3} title="Notes">
                 <div className="form-grid cols-1">
                   <Field label="Notes" span={1} copilotField="notes">
                     <textarea className="textarea-field" rows={4} value={form.notes} onChange={e => set({ notes: e.target.value })} placeholder="Optional notes" />
@@ -460,7 +459,7 @@ export function CategoryModal({ open, mode, category, createContext = "root", lo
           <div className="modal-foot-meta mono">
             {issueCount > 0
               ? <span className="foot-err">{issueCount} issue{issueCount > 1 ? "s" : ""} to resolve</span>
-              : <span className="foot-ok">{form.parent_category ? "Subcategory ready" : "Top-level category ready"}</span>}
+              : null}
           </div>
           <div className="modal-foot-actions">
             <Button type="button" variant="outline" size="md" onClick={onClose}>Cancel</Button>

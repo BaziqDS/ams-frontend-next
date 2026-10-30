@@ -347,7 +347,7 @@ function CatalogItemPreviewCard({
         <div className="stage3-preview-eyebrow">Catalog preview</div>
         <div className="stage3-preview-title">No catalog item selected</div>
         <p className="stage3-preview-copy">
-          Hover any search result to preview it here. Once linked, this panel will keep showing the linked item details for quick verification.
+          Hover a search result to preview it.
         </p>
         <div className="stage3-preview-placeholder-block">
           <span className="stage3-preview-placeholder-label">Inspection item</span>
@@ -1109,8 +1109,7 @@ export function Stage4Form({ data, onChange, readOnly, errors }: StageFormProps)
         <div className="inspection-finance-stack">
           <div className="inspection-finance-section-head">
             <div>
-              <div className="eyebrow">Fixed asset capitalization</div>
-              <h3>Review the asset class, capitalization date, and recorded cost for each accepted fixed asset.</h3>
+              <h3>Fixed asset capitalization</h3>
             </div>
             <span className="pill pill-info">{fixedAssetRows.length} lines</span>
           </div>

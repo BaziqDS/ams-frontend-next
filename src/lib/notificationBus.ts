@@ -184,62 +184,6 @@ class NotificationBus {
 
 export const notificationBus = new NotificationBus();
 
-// Dev-only console helper. Lets you trigger a proactive event from the
-// browser DevTools without waiting for a real backend notification:
-//
-//   window.__amsTestProactive({
-//     kind: "inspection.submitted_to_central_register",
-//     intent: "fill_next_stage",
-//     recordId: 5,
-//     route: "/inspections/5",
-//     title: "Inspection IC-2025-0001 needs Central Register",
-//   })
-//
-// Gated on NODE_ENV so production builds never expose it.
-if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
-  let counter = 1_000_000;
-  (window as unknown as { __amsTestProactive?: unknown }).__amsTestProactive = (
-    overrides: {
-      kind?: string;
-      intent?: string;
-      recordId?: number;
-      route?: string;
-      title?: string;
-      message?: string;
-      severity?: string;
-    } = {},
-  ) => {
-    const id = ++counter;
-    const fake: NotificationFeedItem = {
-      id,
-      event_id: id,
-      module: "inspections",
-      kind: overrides.kind ?? "inspection.submitted_to_central_register",
-      severity: overrides.severity ?? "warning",
-      title: overrides.title ?? "Test proactive event",
-      message: overrides.message ?? "Synthetic event from __amsTestProactive",
-      href: overrides.route ?? "/inspections/1",
-      entity_type: "inspection",
-      entity_id: overrides.recordId ?? 1,
-      actor_id: null,
-      actor_name: null,
-      metadata: {
-        suggested_intent: overrides.intent ?? "fill_next_stage",
-        intent_target: {
-          form_id: `inspection_detail_${overrides.recordId ?? 1}_central_register`,
-          record_id: overrides.recordId ?? 1,
-          route: overrides.route ?? `/inspections/${overrides.recordId ?? 1}`,
-        },
-      },
-      created_at: new Date().toISOString(),
-      is_read: false,
-      read_at: null,
-    };
-    notificationBus.ingest([fake]);
-    return id;
-  };
-}
-
 /**
  * React glue. Mount this once near the root (alongside NotificationsProvider)
  * to keep the bus in sync with the live feed. Consumers subscribe via

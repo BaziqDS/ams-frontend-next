@@ -504,7 +504,6 @@ function AdminChangePasswordModal({
       <div className="modal profile-password-modal" role="dialog" aria-modal="true" aria-labelledby="admin-password-title">
         <header className="modal-head">
           <div>
-            <div className="eyebrow">User Management</div>
             <h2 id="admin-password-title">Change password</h2>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close change password">
@@ -799,7 +798,6 @@ export function AddUserModal({
         {/* Header */}
         <header className="modal-head">
           <div>
-            <div className="eyebrow">User Management · {isEditMode ? "Edit Record" : "New Record"}</div>
             <h2 id="user-modal-title">{isEditMode ? "Edit User" : "Add User"}</h2>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
@@ -821,7 +819,7 @@ export function AddUserModal({
           )}
 
           {/* 01 Identity */}
-          <Section n={1} title="Identity" sub="Basic profile details for the account.">
+          <Section n={1} title="Identity">
             <div className="form-grid cols-2">
               <Field label="First name" required error={errors.first_name}>
                 <input value={form.first_name} onChange={e => set({ first_name: e.target.value })} onBlur={() => { blur("first_name"); suggestUsername(); }} />
@@ -829,7 +827,7 @@ export function AddUserModal({
               <Field label="Last name" required error={errors.last_name}>
                 <input value={form.last_name} onChange={e => set({ last_name: e.target.value })} onBlur={() => { blur("last_name"); suggestUsername(); }} />
               </Field>
-              <Field label="Username" required error={errors.username} hint="Lowercase, dot-separated. Used for sign-in.">
+              <Field label="Username" required error={errors.username}>
                 <div className="input-wrap">
                   <span className="input-prefix mono">@</span>
                   <input className="input-with-prefix" value={form.username} onChange={e => set({ username: e.target.value.toLowerCase() })} onBlur={() => blur("username")} />
@@ -1009,7 +1007,7 @@ export function AddUserModal({
                       ? <span className="foot-err">Loading locations…</span>
                       : Object.keys(errors).length > 0
                           ? <span className="foot-err">{Object.keys(errors).length} issue{Object.keys(errors).length > 1 ? "s" : ""} to resolve</span>
-                          : <span className="foot-ok">Ready to save</span>}
+                          : null}
           </div>
           <div className="modal-foot-actions">
             <Button type="button" variant="outline" size="md" onClick={onClose}>Cancel</Button>

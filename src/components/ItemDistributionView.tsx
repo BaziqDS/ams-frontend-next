@@ -616,7 +616,6 @@ export function ItemDistributionPanel({
         <header className={styles.tableHead}>
           <div>
             <h2>Distribution by location</h2>
-            <p>Expand a location to see its stores, non-store rooms, and assigned employees.</p>
           </div>
           <div className={styles.tableTools}>
             <Button
@@ -781,11 +780,7 @@ export function ItemDistributionView({ itemId }: { itemId: string }) {
 
         <div className="page-head-detail">
           <div className="page-title-group">
-            <div className="eyebrow">Stock Distribution</div>
             <h1>{item?.name ?? "Distribution"}</h1>
-            <div className="page-sub">
-              Live aggregation across every location in your permission scope, with a drill-down into stores and holders.
-            </div>
             {item ? (
               <div className="page-id-row">
                 <span className="doc-no">{item.code}</span>
@@ -842,7 +837,6 @@ export function ItemDistributionView({ itemId }: { itemId: string }) {
           <header className={styles.tableHead}>
             <div>
               <h2>Distribution by location</h2>
-              <p>Expand a location to see its stores, non-store rooms, and assigned employees.</p>
             </div>
             <div className={styles.filterRail}>
               {FILTER_TABS.map(tab => (
@@ -1058,7 +1052,6 @@ function StoreDetailDrawer({
           <div>
             <span>{unit.name}</span>
             <h3>{store.locationName}</h3>
-            <p>{isIndividual ? "Instance-level store detail" : "Batch and allocation detail"}</p>
           </div>
           <button type="button" className={styles.detailClose} aria-label="Close store detail" onClick={onClose}>
             <Ic d="M18 6 6 18M6 6l12 12" size={16} />

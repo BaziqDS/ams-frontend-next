@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button";
 type StatCardProps = {
   title: string;
   value: number | string;
-  hint: string;
+  hint?: string;
   badge?: { label: string; tone: "neutral" | "warning" | "critical" | "ok" };
   icon: LucideIcon;
   iconTone: "neutral" | "warning" | "critical" | "ok";
@@ -37,7 +37,7 @@ function StatCard({ title, value, hint, badge, icon: Icon, iconTone }: StatCardP
         <div className="notif-stat-title">{title}</div>
         <div className="notif-stat-value">{value}</div>
         <div className="notif-stat-meta">
-          <span className="notif-stat-hint">{hint}</span>
+          {hint ? <span className="notif-stat-hint">{hint}</span> : null}
           {badge ? (
             <span className={`notif-stat-badge is-${badge.tone}`}>{badge.label}</span>
           ) : null}
@@ -159,9 +159,7 @@ export default function NotificationsPage() {
       <div className="page">
         <div className="page-head">
           <div className="page-title-group">
-            <div className="eyebrow">Workspace activity</div>
             <h1>Notifications & alerts</h1>
-            <div className="page-sub">Review operational alerts and recent updates across the modules currently visible to your role.</div>
           </div>
         </div>
 
@@ -169,7 +167,6 @@ export default function NotificationsPage() {
           <StatCard
             title="Needs action"
             value={summary.open_alerts}
-            hint="Active alerts"
             badge={summary.open_alerts > 0
               ? { label: `${summary.open_alerts} open`, tone: "warning" }
               : { label: "All clear", tone: "ok" }}
@@ -179,7 +176,6 @@ export default function NotificationsPage() {
           <StatCard
             title="Critical"
             value={criticalAlertCount}
-            hint="Highest priority"
             badge={criticalAlertCount > 0
               ? { label: "Review now", tone: "critical" }
               : { label: "None", tone: "ok" }}
@@ -189,7 +185,6 @@ export default function NotificationsPage() {
           <StatCard
             title="Unread updates"
             value={summary.unread_notifications}
-            hint="Feed items not opened"
             badge={summary.unread_notifications > 0
               ? { label: `${summary.unread_notifications} new`, tone: "neutral" }
               : { label: "Caught up", tone: "ok" }}
@@ -215,9 +210,7 @@ export default function NotificationsPage() {
             <div className="table-card-head notifications-section-head">
               <div className="table-card-head-left">
                 <div>
-                  <div className="eyebrow">Alerts</div>
                   <div className="notifications-section-title">Needs action</div>
-                  <div className="notifications-section-sub">Curated alerts that still require operational attention.</div>
                 </div>
               </div>
               <Button type="button" variant="ghost" size="xs" onClick={handleRefresh} disabled={isPanelLoading || isPanelRefreshing}>
@@ -243,9 +236,7 @@ export default function NotificationsPage() {
             <div className="table-card-head notifications-section-head">
               <div className="table-card-head-left">
                 <div>
-                  <div className="eyebrow">Updates</div>
                   <div className="notifications-section-title">Notification feed</div>
-                  <div className="notifications-section-sub">Recent updates from inspections, stock entries, depreciation, items, and other modules.</div>
                 </div>
               </div>
               <div className="notifications-section-actions">
